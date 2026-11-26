@@ -14,4 +14,4 @@ The design starts from the experience of application developers, users and opera
 
 ## Extension hooks
 
-The hook language is an open design decision. One option is to run WebAssembly extensions with explicit permissions and resource limits. The project will evaluate authoring tools, isolation, diagnostics and a migration path for existing scripts before selecting a runtime.
+The proposed hook runtime is WebAssembly, hosted by Rust. Existing scripts would be ported to modules and tested against representative events before cutover. The design calls for explicit permissions, bounded execution and a Python-free production runtime.
