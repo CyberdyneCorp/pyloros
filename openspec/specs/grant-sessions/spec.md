@@ -70,3 +70,14 @@ The issuer SHALL create the session and assemble a bearer response in the caller
 #### Scenario: Access only
 - **WHEN** the grant includes neither openid nor offline_access
 - **THEN** the response omits both optional credentials
+
+### Requirement: Audit successful authorization code grants
+A successful authorization code exchange SHALL record a verifiable token grant event in the session transaction. The event SHALL identify the account, client, session, granted scopes and available request attribution.
+
+#### Scenario: Committed grant
+- **WHEN** the session transaction commits
+- **THEN** its audit record can be verified from the stored fields
+
+#### Scenario: Rolled back grant
+- **WHEN** the session transaction rolls back
+- **THEN** its success event is discarded

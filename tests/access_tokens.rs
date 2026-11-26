@@ -169,16 +169,21 @@ async fn grant_access_claims() {
         require_verified_admin_email: true,
         resources: policy.resources,
     };
+    sqlx::query("CREATE TEMP TABLE auth_events(id uuid,subject_email text,details jsonb,content_hash text,request_id text)")
+        .execute(&mut *tx).await.unwrap();
+    use sqlx::Acquire;
+    let mut grant_tx = tx.begin().await.unwrap();
     claimed.grant.scopes.clear();
     let response = issuer
-        .issue_grant_response(
-            &mut tx,
+        .issue_code_response(
+            &mut grant_tx,
             &claimed,
             &settings,
             pyloros::grant_response::SessionOrigin {
                 user_agent: None,
                 ip: None,
             },
+            Some("invalid correlation id"),
             now,
         )
         .await
@@ -195,9 +200,31 @@ async fn grant_access_claims() {
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM refresh_tokens WHERE session_id=$1")
             .bind(claimed.session_id)
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut *grant_tx)
             .await
             .unwrap(),
         1
     );
+    let event = sqlx::query_as::<_, (String, Value, String, Option<String>)>(
+        "SELECT subject_email,details,content_hash,request_id FROM auth_events",
+    )
+    .fetch_one(&mut *grant_tx)
+    .await
+    .unwrap();
+    assert_eq!(event.0, "owner@example.org");
+    assert_eq!(
+        event.1,
+        json!({"grant_type":"authorization_code","session_id":claimed.session_id.to_string(),"scope":[]})
+    );
+    assert_eq!(event.2.len(), 64);
+    assert!(event.3.is_none());
+    grant_tx.rollback().await.unwrap();
+    let counts = sqlx::query_as::<_, (i64, i64, i64)>(
+        "SELECT (SELECT count(*) FROM auth_events),
+        (SELECT count(*) FROM sessions),(SELECT count(*) FROM refresh_tokens)",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(counts, (0, 0, 0));
 }

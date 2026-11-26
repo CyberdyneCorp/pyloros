@@ -1,0 +1,2 @@
+- [x] Record a sealed success event for code grants.
+- [x] Verify transaction behavior and interoperability of the stored event.

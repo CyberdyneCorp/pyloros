@@ -18,6 +18,7 @@ pub struct GrantSettings<'a> {
     pub resources: &'a BTreeMap<String, Option<String>>,
 }
 
+#[derive(Clone, Copy)]
 pub struct SessionOrigin<'a> {
     pub user_agent: Option<&'a str>,
     pub ip: Option<IpAddr>,

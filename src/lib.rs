@@ -4,6 +4,7 @@ mod client_auth;
 pub mod code_exchange;
 pub mod config;
 pub mod discovery;
+mod grant_audit;
 pub mod grant_response;
 pub mod grant_sessions;
 pub mod headers;
