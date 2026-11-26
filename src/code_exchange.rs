@@ -1,4 +1,4 @@
-//! Grant checks used after client authentication and grant authorization.
+//! Client and grant validation for authorization-code redemption.
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
@@ -9,7 +9,8 @@ use uuid::Uuid;
 use crate::authorization_codes::{Grant, StoredCode, claim, find};
 
 pub struct ExchangeRequest<'a> {
-    pub authenticated_client: &'a str,
+    pub client_id: &'a str,
+    pub client_secret: Option<&'a str>,
     pub code: &'a str,
     pub verifier: &'a str,
     pub redirect_uri: Option<&'a str>,
@@ -18,6 +19,10 @@ pub struct ExchangeRequest<'a> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Refusal {
+    MissingClient,
+    UnknownClient,
+    BadClientSecret,
+    UnauthorizedClient,
     MissingCode,
     MissingVerifier,
     UnknownCode,
@@ -90,13 +95,18 @@ pub async fn redeem(
     session: Uuid,
     now: DateTime<Utc>,
 ) -> Result<Exchange, sqlx::Error> {
+    if let Some(reason) =
+        crate::client_auth::check_client(tx, req.client_id, req.client_secret, now).await?
+    {
+        return Ok(Exchange::Refused(reason));
+    }
     if req.code.is_empty() {
         return Ok(Exchange::Refused(Refusal::MissingCode));
     }
     if req.verifier.is_empty() {
         return Ok(Exchange::Refused(Refusal::MissingVerifier));
     }
-    let Some(stored) = find(tx, req.code, req.authenticated_client).await? else {
+    let Some(stored) = find(tx, req.code, req.client_id).await? else {
         return Ok(Exchange::Refused(Refusal::UnknownCode));
     };
     if stored.consumed_at.is_some() {
@@ -115,6 +125,6 @@ pub async fn redeem(
     if claim(tx, stored.id, session).await? {
         return Ok(Exchange::Granted(Box::new(stored.grant)));
     }
-    let winner = find(tx, req.code, req.authenticated_client).await?;
+    let winner = find(tx, req.code, req.client_id).await?;
     replay(tx, winner.and_then(|row| row.session_id), now).await
 }

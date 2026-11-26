@@ -54,7 +54,11 @@ async fn competing_exchanges_and_rollback() {
     assert_eq!(stored.grant.resource, grant.resource);
     assert_eq!(stored.challenge_method, "S256");
     sqlx::raw_sql(
-        "CREATE TABLE users(id uuid PRIMARY KEY, is_active boolean);
+        "CREATE TABLE oauth_clients(client_id text, client_type text, grant_types text, active boolean,
+                   secret_hash text, previous_secret_hash text, previous_secret_expires_at timestamptz);
+                   INSERT INTO oauth_clients(client_id, client_type, grant_types, active)
+                   VALUES ('web','public','authorization_code',true),('other','public','authorization_code',true);
+                   CREATE TABLE users(id uuid PRIMARY KEY, is_active boolean);
                    CREATE TABLE sessions(id uuid PRIMARY KEY, revoked_at timestamptz);
                    CREATE TABLE refresh_tokens(session_id uuid, revoked_at timestamptz)",
     )
@@ -69,7 +73,8 @@ async fn competing_exchanges_and_rollback() {
     let now = Utc::now();
     let session = Uuid::new_v4();
     let request = ExchangeRequest {
-        authenticated_client: "web",
+        client_id: "web",
+        client_secret: None,
         code: &code,
         redirect_uri: Some(&grant.redirect_uri),
         verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
@@ -89,7 +94,7 @@ async fn competing_exchanges_and_rollback() {
         (ExchangeRequest { ..request }, now, Refusal::UserUnavailable),
         (
             ExchangeRequest {
-                authenticated_client: "other",
+                client_id: "other",
                 ..request
             },
             now,

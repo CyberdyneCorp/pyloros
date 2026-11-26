@@ -1,0 +1,2 @@
+- [x] 1. Authenticate registered clients before evaluating any code.
+- [x] 2. Test public and confidential clients, rotation boundaries and inactive registrations using PostgreSQL.
