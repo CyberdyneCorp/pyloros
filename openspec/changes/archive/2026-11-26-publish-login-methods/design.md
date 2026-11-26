@@ -1,0 +1,1 @@
+Resolve configuration at startup and share only the public method names and relying-party identifier with HTTP handlers. Keep these routes independent of issuer discovery, user sessions and database readiness.

@@ -11,6 +11,7 @@ pub mod grant_response;
 pub mod grant_sessions;
 pub mod headers;
 pub mod id_tokens;
+pub mod login_methods;
 pub mod token_authorization;
 pub mod token_http;
 mod token_runtime;

@@ -29,7 +29,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let token =
         pyloros::token_http::routes(provider.as_ref(), pool.clone(), environment == "production")
             .await?;
-    let app = pyloros::router(environment, pool.clone()).merge(token);
+    let login_methods = pyloros::login_methods::routes(&environment)?;
+    let app = pyloros::router(environment, pool.clone())
+        .merge(token)
+        .merge(login_methods);
     let app = app.merge(pyloros::discovery::routes(provider));
     let app = pyloros::cors::apply(app, pool, Duration::from_secs(seconds)).await?;
     axum::serve(

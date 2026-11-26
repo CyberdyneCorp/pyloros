@@ -1,0 +1,2 @@
+- [x] Implement provider discovery and passkey capabilities.
+- [x] Compare enabled and disabled deployments and exercise the shared login page.
