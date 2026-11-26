@@ -15,6 +15,7 @@ pub mod headers;
 pub mod id_tokens;
 pub mod login_methods;
 pub mod mfa_challenges;
+pub mod password_login;
 pub mod passwords;
 pub mod profile;
 pub mod session_cookies;

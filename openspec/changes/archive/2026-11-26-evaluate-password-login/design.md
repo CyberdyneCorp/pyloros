@@ -1,0 +1,1 @@
+Look up the normalized email and release the connection during password hashing. On a match, lock the account and recheck its credential and current settings. Commit the TOTP challenge event before returning its token. Hand a still-locked transaction to the remaining login policy for other accounts. Record a refusal independently of any session mutation.

@@ -126,6 +126,8 @@ pub(crate) enum AuditActivity<'a> {
         details: Value,
     },
     PhoneEdit,
+    PasswordRefused(&'static str),
+    TotpChallenge,
 }
 
 pub(crate) async fn write_activity<'e>(
@@ -141,7 +143,7 @@ pub(crate) async fn write_activity<'e>(
         email,
         organization,
     } = subject;
-    let (class, activity, protocol, client, reason, details) = match activity {
+    let (class, activity, protocol, client, outcome, reason, details) = match activity {
         AuditActivity::Grant {
             client,
             reason,
@@ -151,6 +153,11 @@ pub(crate) async fn write_activity<'e>(
             "token_grant",
             Some("oidc"),
             client,
+            if reason.is_some() {
+                "failure"
+            } else {
+                "success"
+            },
             reason,
             details,
         ),
@@ -159,8 +166,27 @@ pub(crate) async fn write_activity<'e>(
             "subject_rectification",
             None,
             "",
+            "success",
             None,
             json!({"fields":["phone"]}),
+        ),
+        AuditActivity::PasswordRefused(reason) => (
+            "authentication",
+            "logon",
+            Some("password"),
+            "",
+            "failure",
+            Some(reason),
+            json!({}),
+        ),
+        AuditActivity::TotpChallenge => (
+            "authentication",
+            "mfa_challenge",
+            Some("password"),
+            "",
+            "success",
+            Some("mfa_required"),
+            json!({"method":"totp"}),
         ),
     };
     let email = email.filter(|s| !s.is_empty()).map(|s| {
@@ -183,7 +209,7 @@ pub(crate) async fn write_activity<'e>(
         "schema_version": 1,
         "event_class": class,
         "activity": activity,
-        "outcome": if reason.is_some() { "failure" } else { "success" },
+        "outcome": outcome,
         "reason_code": reason,
         "auth_protocol": protocol,
         "is_mfa": false,
