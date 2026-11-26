@@ -1,0 +1,2 @@
+- [x] Implement authenticated profile reads.
+- [x] Verify reference tokens, refusals and the unchanged browser session probe.

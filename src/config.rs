@@ -23,3 +23,35 @@ pub(crate) fn pem(path_var: &str, inline_var: &str) -> Result<Option<String>, Bo
             }
         }))
 }
+
+pub(crate) fn admin_emails() -> Result<Vec<String>, Box<dyn Error>> {
+    let list = env::var("ADMIN_EMAIL_LIST").unwrap_or_default();
+    let admins = if list.trim_start().starts_with('[') {
+        serde_json::from_str(&list)?
+    } else {
+        list.split(',')
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_owned)
+            .collect()
+    };
+    Ok(admins)
+}
+
+pub(crate) fn effective_admin(
+    stored: bool,
+    email: Option<&str>,
+    verified: bool,
+    require_verified: bool,
+    allowed: &[String],
+) -> bool {
+    stored
+        || ((!require_verified || verified)
+            && email.is_some_and(|value| {
+                let email = value.to_lowercase();
+                !email.is_empty()
+                    && allowed
+                        .iter()
+                        .any(|entry| entry.trim().to_lowercase() == email)
+            }))
+}

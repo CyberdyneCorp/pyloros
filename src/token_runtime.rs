@@ -124,16 +124,7 @@ impl Runtime {
             pem.as_bytes(),
             lifetime("JWT_REFRESH_TOKEN_TTL_DAYS", 30, 86400)?,
         )?;
-        let list = env::var("ADMIN_EMAIL_LIST").unwrap_or_default();
-        let admins = if list.trim_start().starts_with('[') {
-            serde_json::from_str(&list)?
-        } else {
-            list.split(',')
-                .map(str::trim)
-                .filter(|v| !v.is_empty())
-                .map(str::to_owned)
-                .collect()
-        };
+        let admins = crate::config::admin_emails()?;
         Ok(Some(Self {
             access_ttl: lifetime("JWT_ACCESS_TOKEN_TTL_MINUTES", 15, 60)?,
             id_ttl: lifetime("OIDC_ID_TOKEN_TTL_MINUTES", 15, 60)?,

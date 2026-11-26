@@ -44,6 +44,27 @@ pub async fn resolve(
     client: &str,
     audience: Option<&str>,
 ) -> Result<Option<AuthorizationClaims>, sqlx::Error> {
+    let Some(roles) = role_buckets(tx, user).await? else {
+        return Ok(None);
+    };
+    let permissions = permissions(tx, &roles, client, audience).await?;
+    Ok(Some(AuthorizationClaims {
+        roles: assignments(roles),
+        permissions: Some(assignments(permissions)),
+    }))
+}
+
+pub(crate) async fn profile_roles(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+) -> Result<Option<Assignments>, sqlx::Error> {
+    Ok(role_buckets(tx, user).await?.map(assignments))
+}
+
+async fn role_buckets(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+) -> Result<Option<Buckets>, sqlx::Error> {
     let mut lookup = tx.begin().await?;
     let names = sqlx::query_scalar::<_, Vec<String>>(
         "SELECT ARRAY(SELECT g.name FROM iam_group_members m JOIN iam_groups g ON g.id=m.group_id
@@ -81,11 +102,7 @@ pub async fn resolve(
             roles.entry(org).or_default().insert(token);
         }
     }
-    let permissions = permissions(tx, &roles, client, audience).await?;
-    Ok(Some(AuthorizationClaims {
-        roles: assignments(roles),
-        permissions: Some(assignments(permissions)),
-    }))
+    Ok(Some(roles))
 }
 
 async fn permissions(

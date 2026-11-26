@@ -1,0 +1,1 @@
+Select the explicit bearer credential before the ambient access cookie. Verify the configured signing algorithm, issuer, lifetime and user-token type before querying profile data. Resolve applicable revocations and current account, entitlement and role information with PostgreSQL.

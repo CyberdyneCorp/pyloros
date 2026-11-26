@@ -68,18 +68,13 @@ impl GrantSessionIssuer {
             ),
             None => account.try_get::<Option<&str>, _>("default_audience")?,
         };
-        let email = account
-            .try_get::<Option<&str>, _>("primary_email")?
-            .unwrap_or_default()
-            .to_lowercase();
-        let admin = account.try_get::<bool, _>("is_admin")?
-            || (!email.is_empty()
-                && (!policy.require_verified_admin_email
-                    || account.try_get::<bool, _>("is_email_verified")?)
-                && policy
-                    .admin_emails
-                    .iter()
-                    .any(|allowed| allowed.trim().to_lowercase() == email));
+        let admin = crate::config::effective_admin(
+            account.try_get("is_admin")?,
+            account.try_get("primary_email")?,
+            account.try_get("is_email_verified")?,
+            policy.require_verified_admin_email,
+            policy.admin_emails,
+        );
         let scopes = grant
             .scopes
             .split_ascii_whitespace()
