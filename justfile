@@ -55,3 +55,7 @@ health:
     @echo
     curl --fail-with-body --silent --show-error "{{base_url}}/api/v1/health/ready"
     @echo
+
+# Validate the project specifications with the OpenSpec CLI.
+spec-check:
+    openspec validate --all --strict

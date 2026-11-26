@@ -1,0 +1,5 @@
+schema: spec-driven
+context: |
+  Pyloros is a Rust identity service backed by PostgreSQL.
+  Specs under openspec/specs describe the implemented HTTP contract.
+  Propose new capabilities under openspec/changes before implementation.
