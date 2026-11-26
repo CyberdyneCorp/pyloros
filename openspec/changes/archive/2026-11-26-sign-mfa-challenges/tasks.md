@@ -1,0 +1,1 @@
+- [x] Implement challenge signing and verification and exercise both migration directions.

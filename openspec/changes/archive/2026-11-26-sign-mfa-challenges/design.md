@@ -1,0 +1,1 @@
+Use the same signing header and issuer machinery as grant tokens. Pin the verification algorithm and issuer. Represent the challenge context as one of three alternatives and require both identifiers for the passkey ceremony. Return only verified context to the caller. Session creation and database checks for factor completion belong to the consuming workflow.

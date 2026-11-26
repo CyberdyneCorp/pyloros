@@ -1,6 +1,6 @@
 //! Bind a signed refresh credential to a successfully claimed user grant.
+use crate::signing::SigningIdentity;
 use chrono::{DateTime, TimeDelta, Utc};
-use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
@@ -10,9 +10,7 @@ use uuid::Uuid;
 use crate::code_exchange::ClaimedGrant;
 
 pub struct GrantSessionIssuer {
-    key: EncodingKey,
-    header: Header,
-    issuer: String,
+    signing: SigningIdentity,
     refresh_lifetime: TimeDelta,
 }
 
@@ -38,22 +36,18 @@ impl GrantSessionIssuer {
         if refresh_lifetime.num_seconds() < 1 {
             return Err(SessionError::InvalidLifetime);
         }
-        let mut header = Header::new(Algorithm::RS256);
-        header.kid = Some(key_id);
         Ok(Self {
-            key: EncodingKey::from_rsa_pem(private_pem)?,
-            header,
-            issuer,
+            signing: SigningIdentity::rsa(issuer, key_id, private_pem)?,
             refresh_lifetime,
         })
     }
 
     pub(crate) fn issuer(&self) -> &str {
-        &self.issuer
+        self.signing.issuer()
     }
 
     pub(crate) fn sign(&self, claims: &Value) -> Result<String, SessionError> {
-        Ok(encode(&self.header, claims, &self.key)?)
+        Ok(self.signing.sign(claims)?)
     }
 
     /// Call in the same transaction as redemption. Release the returned credential only after commit.
@@ -71,7 +65,7 @@ impl GrantSessionIssuer {
             .ok_or(SessionError::InvalidLifetime)?;
         let jti = Uuid::new_v4();
         let token = self.sign(&json!({
-            "iss":self.issuer,"sub":grant.user_id.to_string(),"sid":claimed.session_id.to_string(),
+            "iss":self.issuer(),"sub":grant.user_id.to_string(),"sid":claimed.session_id.to_string(),
             "jti":jti.to_string(),"type":"refresh","iat":now.timestamp(),"exp":expires.timestamp()
         }))?;
         let digest = format!("{:x}", Sha256::digest(token.as_bytes()));
