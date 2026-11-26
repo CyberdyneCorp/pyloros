@@ -1,0 +1,2 @@
+- [x] Compose the exchange decision and shared audit writer.
+- [x] Verify error mapping, request attribution and committed refusal behavior.

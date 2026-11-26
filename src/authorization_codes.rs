@@ -27,7 +27,7 @@ pub struct StoredCode {
     pub session_id: Option<Uuid>,
 }
 
-fn digest(code: &str) -> String {
+pub(crate) fn digest(code: &str) -> String {
     format!("{:x}", Sha256::digest(code.as_bytes()))
 }
 

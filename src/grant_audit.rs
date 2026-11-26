@@ -58,43 +58,91 @@ impl GrantSessionIssuer {
                 .take(320)
                 .collect::<String>()
         });
-        let timestamp = now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string();
-        let mut event = json!({
-            "id": Uuid::new_v4().to_string(),
-            "occurred_at": timestamp,
-            "schema_version": 1,
-            "event_class": "authorization",
-            "activity": "token_grant",
-            "outcome": "success",
-            "reason_code": null,
-            "auth_protocol": "oidc",
-            "is_mfa": false,
-            "subject_format": if email.is_some() { "email" } else { "opaque" },
-            "subject_identifier": email.is_none().then(|| user.to_string()),
-            "subject_user_id": user.to_string(),
-            "subject_email": email,
-            "subject_issuer": null,
-            "actor_type": "user",
-            "actor_user_id": user.to_string(),
-            "actor_client_id": null,
-            "client_id": claimed.grant.client_id.chars().take(128).collect::<String>(),
-            "organization_id": organization.map(|id| id.to_string()),
-            "ip_address": origin.ip.map(|ip| ip.to_string()),
-            "request_id": request_id.filter(|id| valid_request_id(id)),
-            "user_agent": origin.user_agent.filter(|s| !s.is_empty()).map(|s| s.chars().take(512).collect::<String>()),
-            "details": grant_details(claimed.session_id, &response.scope)
-        });
-        event.sort_all_objects();
-        let digest = Sha256::digest(event.to_string().as_bytes());
-        event["content_hash"] = json!(format!("{digest:x}"));
-        // The hash uses a UTC wall-clock value. Give PostgreSQL an explicit zone on input.
-        event["occurred_at"] = json!(format!("{timestamp}Z"));
-        sqlx::query(
-            "INSERT INTO auth_events SELECT * FROM jsonb_populate_record(NULL::auth_events, $1)",
+        write_event(
+            &mut **tx,
+            GrantEvent {
+                user: Some(user),
+                email,
+                organization,
+                client: &claimed.grant.client_id,
+                reason: None,
+                details: grant_details(claimed.session_id, &response.scope),
+            },
+            origin,
+            request_id,
+            now,
         )
-        .bind(event)
-        .execute(&mut **tx)
         .await?;
         Ok(response)
     }
+}
+
+pub(crate) struct GrantEvent<'a> {
+    pub user: Option<Uuid>,
+    pub email: Option<String>,
+    pub organization: Option<Uuid>,
+    pub client: &'a str,
+    pub reason: Option<&'static str>,
+    pub details: Value,
+}
+
+pub(crate) async fn write_event<'e>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
+    event: GrantEvent<'_>,
+    origin: SessionOrigin<'_>,
+    request_id: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    let GrantEvent {
+        user,
+        email,
+        organization,
+        client,
+        reason,
+        details,
+    } = event;
+    let subject = user.map(|id| id.to_string());
+    let subject_format = if email.is_some() {
+        Some("email")
+    } else {
+        user.map(|_| "opaque")
+    };
+    let timestamp = now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string();
+    let mut event = json!({
+        "id": Uuid::new_v4().to_string(),
+        "occurred_at": timestamp,
+        "schema_version": 1,
+        "event_class": "authorization",
+        "activity": "token_grant",
+        "outcome": if reason.is_some() { "failure" } else { "success" },
+        "reason_code": reason,
+        "auth_protocol": "oidc",
+        "is_mfa": false,
+        "subject_format": subject_format,
+        "subject_identifier": subject.as_ref().filter(|_| email.is_none()),
+        "subject_user_id": subject,
+        "subject_email": email,
+        "subject_issuer": null,
+        "actor_type": "user",
+        "actor_user_id": subject,
+        "actor_client_id": null,
+        "client_id": (!client.is_empty()).then(||client.chars().take(128).collect::<String>()),
+        "organization_id": organization.map(|id| id.to_string()),
+        "ip_address": origin.ip.map(|ip| ip.to_string()),
+        "request_id": request_id.filter(|id| valid_request_id(id)),
+        "user_agent": origin.user_agent.filter(|s| !s.is_empty()).map(|s| s.chars().take(512).collect::<String>()),
+        "details": details
+    });
+    event.sort_all_objects();
+    let digest = Sha256::digest(event.to_string().as_bytes());
+    event["content_hash"] = json!(format!("{digest:x}"));
+    // The hash uses a UTC wall-clock value. Give PostgreSQL an explicit zone on input.
+    event["occurred_at"] = json!(format!("{timestamp}Z"));
+    sqlx::query(
+        "INSERT INTO auth_events SELECT * FROM jsonb_populate_record(NULL::auth_events, $1)",
+    )
+    .bind(event)
+    .execute(executor)
+    .await?;
+    Ok(())
 }

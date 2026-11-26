@@ -32,6 +32,7 @@ pub enum Refusal {
     InvalidTarget,
     InvalidProof,
     UserUnavailable,
+    ResourceRemoved,
 }
 
 pub struct ClaimedGrant {
@@ -100,6 +101,16 @@ pub async fn redeem(
     session: Uuid,
     now: DateTime<Utc>,
 ) -> Result<Exchange, sqlx::Error> {
+    redeem_with_subject(tx, req, session, now, &mut None).await
+}
+
+pub(crate) async fn redeem_with_subject(
+    tx: &mut Transaction<'_, Postgres>,
+    req: &ExchangeRequest<'_>,
+    session: Uuid,
+    now: DateTime<Utc>,
+    subject: &mut Option<Uuid>,
+) -> Result<Exchange, sqlx::Error> {
     if let Some(reason) =
         crate::client_auth::check_client(tx, req.client_id, req.client_secret, now).await?
     {
@@ -114,6 +125,7 @@ pub async fn redeem(
     let Some(stored) = find(tx, req.code, req.client_id).await? else {
         return Ok(Exchange::Refused(Refusal::UnknownCode));
     };
+    *subject = Some(stored.grant.user_id);
     if stored.consumed_at.is_some() {
         return replay(tx, stored.session_id, now).await;
     }
