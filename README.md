@@ -42,3 +42,5 @@ The [health probes](openspec/specs/health/spec.md) and [issuer discovery](opensp
 ## Comparing running services
 
 Use `just compare <reference-url> <pyloros-url>` with two deployments configured for the same public issuer, key, scopes and feature flags. The Python 3 development tool checks status, JSON bodies and seven response headers on the five foundation routes. Pass `--oidc-disabled` for disabled discovery or `--not-ready` when both databases are unavailable or incompatible. A difference exits nonzero and identifies the affected field or header.
+
+The [authorization-code storage contract](openspec/specs/authorization-code-storage/spec.md) defines how pending grants survive an issuer upgrade. The Rust storage adapter supports code issuance, client-bound lookup, and a single transactional claim. HTTP code exchange remains under development.

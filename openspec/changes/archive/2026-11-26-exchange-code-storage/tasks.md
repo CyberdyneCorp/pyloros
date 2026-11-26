@@ -1,0 +1,2 @@
+- [x] 1. Implement code persistence and atomic claim.
+- [x] 2. Verify round-trip interoperability, rollback and competing claims.
