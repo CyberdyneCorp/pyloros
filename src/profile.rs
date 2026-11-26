@@ -130,6 +130,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     };
     Ok(Router::new()
         .route("/api/v1/users/me", any(current))
+        .route("/api/v1/users/me/entitlements", any(entitlements))
         .with_state(Arc::new(state)))
 }
 
@@ -159,19 +160,36 @@ fn unauthorized() -> Response {
         Json(json!({"type":"about:blank","status":401,"title":"Not authenticated","detail":"Not authenticated"}))).into_response()
 }
 
+enum View {
+    Profile,
+    Entitlements,
+}
+
 async fn current(
     State(state): State<Arc<Profile>>,
     method: Method,
     headers: HeaderMap,
 ) -> Response {
+    serve(&state, method, &headers, View::Profile).await
+}
+
+async fn entitlements(
+    State(state): State<Arc<Profile>>,
+    method: Method,
+    headers: HeaderMap,
+) -> Response {
+    serve(&state, method, &headers, View::Entitlements).await
+}
+
+async fn serve(state: &Profile, method: Method, headers: &HeaderMap, view: View) -> Response {
     if method != Method::GET {
         return (StatusCode::METHOD_NOT_ALLOWED, [(header::ALLOW,"GET")],
             Json(json!({"type":"about:blank","title":"Method Not Allowed","detail":"Method Not Allowed","status":405}))).into_response();
     }
-    let Some(id) = credential(&headers).and_then(|raw| state.verify.as_ref()?.read(raw)) else {
+    let Some(id) = credential(headers).and_then(|raw| state.verify.as_ref()?.read(raw)) else {
         return unauthorized();
     };
-    match load(&state, &id).await {
+    match load(state, &id, view).await {
         Ok(result) => result,
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -181,15 +199,29 @@ async fn current(
     }
 }
 
-async fn load(state: &Profile, id: &Identity) -> Result<Response, sqlx::Error> {
+async fn load(state: &Profile, id: &Identity, view: View) -> Result<Response, sqlx::Error> {
     let mut tx = state.pool.begin().await?;
     if state.enforce && revoked(&mut tx, id).await? {
         return Ok(unauthorized());
     }
-    let row = sqlx::query_as::<_, (Value, DateTime<Utc>)>(include_str!("profile.sql"))
-        .bind(id.user)
-        .fetch_optional(&mut *tx)
-        .await?;
+    if matches!(view, View::Entitlements) {
+        let tokens =
+            sqlx::query_scalar::<_, Vec<String>>(include_str!("effective_entitlements.sql"))
+                .bind(id.user)
+                .fetch_one(&mut *tx)
+                .await?;
+        tx.commit().await?;
+        return Ok(Json(json!({"entitlements":tokens})).into_response());
+    }
+    let row = sqlx::query_as::<_, (Value, DateTime<Utc>)>(concat!(
+        "WITH effective AS (",
+        include_str!("effective_entitlements.sql"),
+        ") ",
+        include_str!("profile.sql")
+    ))
+    .bind(id.user)
+    .fetch_optional(&mut *tx)
+    .await?;
     let Some((mut doc, created)) = row else {
         return Ok((StatusCode::NOT_FOUND,Json(json!({"type":"about:blank","status":404,"title":"User not found","detail":"User not found"}))).into_response());
     };
@@ -216,6 +248,65 @@ async fn load(state: &Profile, id: &Identity) -> Result<Response, sqlx::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL; run just test-db"]
+    async fn effective_grants_follow_the_active_primary_organization() {
+        let pool = PgPool::connect(&env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE users (id uuid, organization_id uuid);
+             CREATE TEMP TABLE organizations (id uuid, is_active boolean);
+             CREATE TEMP TABLE entitlements (user_id uuid, organization_id uuid, product_key text,
+                 plan text, status text, expires_at timestamptz);",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let user = Uuid::new_v4();
+        let org = Uuid::new_v4();
+        sqlx::query("INSERT INTO users VALUES ($1,$2)")
+            .bind(user)
+            .bind(org)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO organizations VALUES ($1,true)")
+            .bind(org)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO entitlements VALUES
+            ($1,NULL,'docs','pro','active',NULL),(NULL,$2,'docs','pro','active',NULL),
+            (NULL,$2,'mail',NULL,'active',NULL),($1,NULL,'old',NULL,'active',now()),
+            ($1,NULL,'removed',NULL,'revoked',NULL)",
+        )
+        .bind(user)
+        .bind(org)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let query = include_str!("effective_entitlements.sql");
+        let tokens = sqlx::query_scalar::<_, Vec<String>>(query)
+            .bind(user)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(tokens, ["docs:pro", "mail"]);
+        sqlx::query("UPDATE organizations SET is_active=false")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let tokens = sqlx::query_scalar::<_, Vec<String>>(query)
+            .bind(user)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(tokens, ["docs:pro"]);
+    }
 
     #[test]
     fn only_trusted_user_access_credentials_identify_the_profile() {

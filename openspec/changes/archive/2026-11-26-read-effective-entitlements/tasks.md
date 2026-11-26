@@ -1,0 +1,2 @@
+- [x] Implement the authenticated product grant list.
+- [x] Verify inherited grants, expiry, duplicate handling and authentication against the reference.

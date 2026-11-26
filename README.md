@@ -43,7 +43,7 @@ Set `OIDC_SCOPES` to the issuer's space-separated base scope catalog. Discovery 
 
 ## Current user profile
 
-The shared frontend checks its session with `GET /api/v1/users/me`. The endpoint supports the access cookie and bearer access tokens, including tokens from admin-registered OAuth clients. It reads the current account, primary organization, entitlements and roles from PostgreSQL. Set `ENFORCE_TOKEN_REVOCATION=true` to check the token denylist, revoked sessions and account issuance cutoff.
+The shared frontend checks its session with `GET /api/v1/users/me`. The endpoint supports the access cookie and bearer access tokens, including tokens from admin-registered OAuth clients. It reads the current account, primary organization, entitlements and roles from PostgreSQL. Applications can read the same sorted product and plan tokens directly with `GET /api/v1/users/me/entitlements`. Set `ENFORCE_TOKEN_REVOCATION=true` to check the token denylist, revoked sessions and account issuance cutoff.
 
 Configure `JWT_ALGORITHM` and the same issuer and verification key as the issuing service. For HS256, provide `JWT_SECRET_KEY`. For RS256, provide `JWT_PUBLIC_KEY_PATH` or `JWT_PUBLIC_KEY`. A deployment without a verification key returns an authentication challenge.
 
