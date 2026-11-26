@@ -38,7 +38,7 @@ pub async fn routes(
         .with_state(Arc::new(runtime)))
 }
 
-fn header<'a>(headers: &'a HeaderMap, key: &str) -> Option<&'a str> {
+pub(crate) fn header<'a>(headers: &'a HeaderMap, key: &str) -> Option<&'a str> {
     headers.get(key)?.to_str().ok()
 }
 
@@ -52,7 +52,7 @@ fn basic(headers: &HeaderMap) -> Option<(String, String)> {
     Some((id.into(), secret.into()))
 }
 
-fn client_ip(headers: &HeaderMap, peer: IpAddr, proxies: usize) -> Option<IpAddr> {
+pub(crate) fn client_ip(headers: &HeaderMap, peer: IpAddr, proxies: usize) -> Option<IpAddr> {
     if proxies > 0
         && let Some(xff) = header(headers, "x-forwarded-for")
     {

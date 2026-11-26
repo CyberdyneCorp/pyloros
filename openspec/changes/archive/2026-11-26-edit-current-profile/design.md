@@ -1,0 +1,1 @@
+Use the existing profile credential verifier and distinguish first-party sessions from client-issued credentials. Lock the user before comparing phone values. Write the update and its audit event in one transaction. Reuse the profile projection and leave the role fields null in mutation responses.

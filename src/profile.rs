@@ -1,5 +1,7 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
+mod edit;
 use crate::{config, token_authorization};
+use axum::extract::{ConnectInfo, Request};
 use axum::{
     Json, Router,
     extract::State,
@@ -12,6 +14,7 @@ use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, Transaction};
+use std::net::SocketAddr;
 use std::{env, error::Error, sync::Arc};
 use uuid::Uuid;
 
@@ -72,7 +75,12 @@ impl Verifier {
         let claims = decode::<Claims>(raw, &self.key, &self.validation)
             .ok()?
             .claims;
-        if claims.kind != "access" || claims.client_id.is_some_and(|id| id.starts_with("dcr_")) {
+        if claims.kind != "access"
+            || claims
+                .client_id
+                .as_ref()
+                .is_some_and(|id| id.starts_with("dcr_"))
+        {
             return None;
         }
         Some(Identity {
@@ -83,6 +91,7 @@ impl Verifier {
                 None => None,
             },
             iat: claims.iat,
+            client_bound: claims.client_id.is_some(),
         })
     }
 }
@@ -98,6 +107,7 @@ struct Claims {
     kind: String,
 }
 struct Identity {
+    client_bound: bool,
     user: Uuid,
     jti: Uuid,
     sid: Option<Uuid>,
@@ -113,6 +123,7 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
 }
 
 struct Profile {
+    proxies: usize,
     pool: PgPool,
     verify: Option<Verifier>,
     enforce: bool,
@@ -122,6 +133,9 @@ struct Profile {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        proxies: env::var("TRUSTED_PROXY_COUNT")
+            .unwrap_or_else(|_| "0".into())
+            .parse()?,
         pool,
         verify: Verifier::configured(production)?,
         enforce: config::flag("ENFORCE_TOKEN_REVOCATION")?,
@@ -150,10 +164,13 @@ enum View {
 
 async fn current(
     State(state): State<Arc<Profile>>,
-    method: Method,
-    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
 ) -> Response {
-    serve(&state, method, &headers, View::Profile).await
+    if req.method() == Method::PATCH {
+        return edit::handle(&state, peer.ip(), req).await;
+    }
+    serve(&state, req.method().clone(), req.headers(), View::Profile).await
 }
 
 async fn entitlements(
@@ -174,12 +191,16 @@ async fn serve(state: &Profile, method: Method, headers: &HeaderMap, view: View)
     };
     match load(state, &id, view).await {
         Ok(result) => result,
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
-        )
-            .into_response(),
+        Err(_) => internal(),
     }
+}
+
+fn internal() -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
+    )
+        .into_response()
 }
 
 async fn load(state: &Profile, id: &Identity, view: View) -> Result<Response, sqlx::Error> {
@@ -196,14 +217,25 @@ async fn load(state: &Profile, id: &Identity, view: View) -> Result<Response, sq
         tx.commit().await?;
         return Ok(Json(json!({"entitlements":tokens})).into_response());
     }
+    let result = project(state, &mut tx, id.user, true).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+async fn project(
+    state: &Profile,
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    with_roles: bool,
+) -> Result<Response, sqlx::Error> {
     let row = sqlx::query_as::<_, (Value, DateTime<Utc>)>(concat!(
         "WITH effective AS (",
         include_str!("effective_entitlements.sql"),
         ") ",
         include_str!("profile.sql")
     ))
-    .bind(id.user)
-    .fetch_optional(&mut *tx)
+    .bind(user)
+    .fetch_optional(&mut **tx)
     .await?;
     let Some((mut doc, created)) = row else {
         return Ok((StatusCode::NOT_FOUND,Json(json!({"type":"about:blank","status":404,"title":"User not found","detail":"User not found"}))).into_response());
@@ -221,10 +253,13 @@ async fn load(state: &Profile, id: &Identity, view: View) -> Result<Response, sq
         state.production,
         &state.admins
     ));
-    let roles = token_authorization::profile_roles(&mut tx, id.user).await?;
+    let roles = if with_roles {
+        token_authorization::profile_roles(tx, user).await?
+    } else {
+        None
+    };
     doc["roles"] = json!(roles.as_ref().map(|r| &r.global));
     doc["org_roles"] = json!(roles.as_ref().map(|r| &r.organizations));
-    tx.commit().await?;
     Ok(Json(doc).into_response())
 }
 

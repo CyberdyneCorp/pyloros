@@ -51,13 +51,6 @@ impl GrantSessionIssuer {
         .bind(user)
         .fetch_one(&mut **tx)
         .await?;
-        let email = email.filter(|s| !s.is_empty()).map(|s| {
-            s.trim()
-                .to_lowercase()
-                .chars()
-                .take(320)
-                .collect::<String>()
-        });
         write_event(
             &mut **tx,
             GrantEvent {
@@ -101,6 +94,82 @@ pub(crate) async fn write_event<'e>(
         reason,
         details,
     } = event;
+    write_activity(
+        executor,
+        AuditActivity::Grant {
+            client,
+            reason,
+            details,
+        },
+        AuditSubject {
+            user,
+            email,
+            organization,
+        },
+        origin,
+        request_id,
+        now,
+    )
+    .await
+}
+
+pub(crate) struct AuditSubject {
+    pub user: Option<Uuid>,
+    pub email: Option<String>,
+    pub organization: Option<Uuid>,
+}
+
+pub(crate) enum AuditActivity<'a> {
+    Grant {
+        client: &'a str,
+        reason: Option<&'static str>,
+        details: Value,
+    },
+    PhoneEdit,
+}
+
+pub(crate) async fn write_activity<'e>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
+    activity: AuditActivity<'_>,
+    subject: AuditSubject,
+    origin: SessionOrigin<'_>,
+    request_id: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    let AuditSubject {
+        user,
+        email,
+        organization,
+    } = subject;
+    let (class, activity, protocol, client, reason, details) = match activity {
+        AuditActivity::Grant {
+            client,
+            reason,
+            details,
+        } => (
+            "authorization",
+            "token_grant",
+            Some("oidc"),
+            client,
+            reason,
+            details,
+        ),
+        AuditActivity::PhoneEdit => (
+            "account_lifecycle",
+            "subject_rectification",
+            None,
+            "",
+            None,
+            json!({"fields":["phone"]}),
+        ),
+    };
+    let email = email.filter(|s| !s.is_empty()).map(|s| {
+        s.trim()
+            .to_lowercase()
+            .chars()
+            .take(320)
+            .collect::<String>()
+    });
     let subject = user.map(|id| id.to_string());
     let subject_format = if email.is_some() {
         Some("email")
@@ -112,11 +181,11 @@ pub(crate) async fn write_event<'e>(
         "id": Uuid::new_v4().to_string(),
         "occurred_at": timestamp,
         "schema_version": 1,
-        "event_class": "authorization",
-        "activity": "token_grant",
+        "event_class": class,
+        "activity": activity,
         "outcome": if reason.is_some() { "failure" } else { "success" },
         "reason_code": reason,
-        "auth_protocol": "oidc",
+        "auth_protocol": protocol,
         "is_mfa": false,
         "subject_format": subject_format,
         "subject_identifier": subject.as_ref().filter(|_| email.is_none()),

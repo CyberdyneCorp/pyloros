@@ -1,0 +1,1 @@
+- [x] Implement and verify first-party profile mutation and audit behavior.
