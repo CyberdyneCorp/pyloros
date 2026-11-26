@@ -1,0 +1,1 @@
+Submit with implicit TLS on port 465 and require STARTTLS on other ports. Use configured relay credentials only after establishing TLS. Build the account link from the explicit account base or the configured login origin. Put the one-time credential in the URL fragment consumed by the shared browser client.
