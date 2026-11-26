@@ -188,7 +188,10 @@ pub async fn evaluate(
         let token = signing.issue_mfa(account.id, Binding::Password, now, challenge_lifetime)?;
         write_activity(
             &mut *tx,
-            AuditActivity::TotpChallenge,
+            AuditActivity::MfaChallenge {
+                method: "totp",
+                delivery_failed: false,
+            },
             subject,
             attempt.origin,
             attempt.request_id,

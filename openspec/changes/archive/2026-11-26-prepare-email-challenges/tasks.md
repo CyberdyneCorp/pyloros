@@ -1,0 +1,1 @@
+- [x] Implement policy evaluation and delivery outcome handling and verify cross-backend challenge completion.

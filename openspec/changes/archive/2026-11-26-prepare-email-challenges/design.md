@@ -1,0 +1,1 @@
+Read the shared PostgreSQL policy and last confirmation time from the authenticated account. Generate separate credentials for the email recipient and the browser. Store only the link digest. Send the email before committing the pending challenge and its audit event. Roll back on delivery failure.

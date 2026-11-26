@@ -7,6 +7,7 @@ pub mod config;
 pub mod cors;
 mod csrf;
 pub mod discovery;
+pub mod email_challenge;
 pub mod first_party;
 mod grant_audit;
 pub mod grant_response;

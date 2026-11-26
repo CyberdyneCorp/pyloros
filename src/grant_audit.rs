@@ -127,7 +127,10 @@ pub(crate) enum AuditActivity<'a> {
     },
     PhoneEdit,
     PasswordRefused(&'static str),
-    TotpChallenge,
+    MfaChallenge {
+        method: &'static str,
+        delivery_failed: bool,
+    },
     LoginRateLimited,
 }
 
@@ -189,14 +192,25 @@ pub(crate) async fn write_activity<'e>(
             Some("rate_limited"),
             json!({}),
         ),
-        AuditActivity::TotpChallenge => (
+        AuditActivity::MfaChallenge {
+            method,
+            delivery_failed,
+        } => (
             "authentication",
             "mfa_challenge",
             Some("password"),
             "",
-            "success",
-            Some("mfa_required"),
-            json!({"method":"totp"}),
+            if delivery_failed {
+                "failure"
+            } else {
+                "success"
+            },
+            Some(if delivery_failed {
+                "provider_error"
+            } else {
+                "mfa_required"
+            }),
+            json!({"method":method}),
         ),
     };
     let email = email.filter(|s| !s.is_empty()).map(|s| {
