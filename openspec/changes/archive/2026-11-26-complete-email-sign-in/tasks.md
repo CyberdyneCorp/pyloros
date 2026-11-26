@@ -1,0 +1,1 @@
+- [x] Implement completion and compare pending, confirmed, denied and repeated polls to the reference.

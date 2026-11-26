@@ -130,6 +130,8 @@ pub(crate) enum AuditActivity<'a> {
         reason: Option<&'static str>,
     },
     PasswordLogin(Uuid),
+    EmailLogin(Uuid),
+    EmailLoginRefused(&'static str),
     PasswordRefused(&'static str),
     MfaChallenge {
         method: &'static str,
@@ -168,6 +170,24 @@ pub(crate) async fn write_activity<'e>(
             },
             reason,
             details,
+        ),
+        AuditActivity::EmailLogin(session) => (
+            "authentication",
+            "logon",
+            Some("magic_link"),
+            "",
+            "success",
+            None,
+            json!({"session_id":session, "primary":"pwd"}),
+        ),
+        AuditActivity::EmailLoginRefused(reason) => (
+            "authentication",
+            "logon",
+            Some("magic_link"),
+            "",
+            "failure",
+            Some(reason),
+            json!({}),
         ),
         AuditActivity::PasswordLogin(session) => (
             "authentication",

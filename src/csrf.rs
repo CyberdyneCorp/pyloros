@@ -81,6 +81,7 @@ impl Policy {
                     | "/api/v1/auth/magic-link/inspect"
                     | "/api/v1/auth/magic-link/confirm"
                     | "/api/v1/auth/magic-link/deny"
+                    | "/api/v1/auth/magic-link/status"
             )
         {
             return None;

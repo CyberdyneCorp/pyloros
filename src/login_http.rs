@@ -1,6 +1,8 @@
 //! Password login for the PostgreSQL identity backend.
 mod config;
 mod input;
+mod poll;
+use crate::mfa_challenges::ChallengeVerifier;
 use crate::{
     email_challenge::{self, ConfirmationDecision, ConfirmationError, ConfirmationPolicy},
     email_delivery::ConfirmationMailer,
@@ -43,12 +45,15 @@ struct Login {
     hooks: bool,
     proxies: usize,
     throttle: LoginThrottle,
+    poll_quota: LoginThrottle,
+    verifier: ChallengeVerifier,
 }
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let login = Login::configured(pool, production)?.map(Arc::new);
     Ok(Router::new()
         .route("/api/v1/auth/login", any(handle))
+        .route("/api/v1/auth/magic-link/status", any(poll::handle))
         .with_state(login))
 }
 
@@ -142,7 +147,7 @@ impl Login {
             .await
         {
             Ok(ConfirmationDecision::Continue(tx)) => {
-                self.finish(tx, user, origin, request_id).await
+                self.finish(tx, user, origin, request_id, None).await
             }
             Ok(ConfirmationDecision::Pending {
                 mfa_token,
@@ -161,6 +166,7 @@ impl Login {
         user: Uuid,
         origin: SessionOrigin<'_>,
         request_id: Option<&str>,
+        confirmed_at: Option<chrono::DateTime<Utc>>,
     ) -> LoginResult {
         if self.hooks {
             // Keep hook activation ordered with the session commit during coexistence.
@@ -180,8 +186,12 @@ impl Login {
         let now = Utc::now();
         let account = AuthenticatedLogin {
             user,
-            authenticated_at: now,
-            methods: &["pwd"],
+            authenticated_at: confirmed_at.unwrap_or(now),
+            methods: if confirmed_at.is_some() {
+                &["pwd", "mca"]
+            } else {
+                &["pwd"]
+            },
             origin,
         };
         let policy = LoginPolicy {
@@ -201,7 +211,11 @@ impl Login {
         .await?;
         write_activity(
             &mut *tx,
-            AuditActivity::PasswordLogin(pair.session),
+            if confirmed_at.is_some() {
+                AuditActivity::EmailLogin(pair.session)
+            } else {
+                AuditActivity::PasswordLogin(pair.session)
+            },
             AuditSubject {
                 user: Some(user),
                 email,

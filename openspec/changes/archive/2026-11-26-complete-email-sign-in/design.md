@@ -1,0 +1,1 @@
+Verify the MFA credential with the configured issuer and algorithm, then check its user and challenge binding. Serialize completion in PostgreSQL and commit the transition, confirmation timestamp, session, and successful login audit together. Apply the existing hook coexistence gate before releasing credentials.

@@ -54,3 +54,38 @@ fn json_issue(bytes: &[u8], error: serde_json::Error) -> Value {
     };
     json!({"loc":["body",prefix.chars().count()],"type":"json_invalid","msg":"JSON decode error","input":{},"ctx":{"error":message}})
 }
+
+pub(crate) fn token_field(
+    body: Value,
+    field: &str,
+    min: usize,
+    max: usize,
+) -> Result<String, Value> {
+    if body.is_null() {
+        return Err(json!({"loc":["body"],"type":"missing","msg":"Field required","input":null}));
+    }
+    if !body.is_object() {
+        return Err(
+            json!({"loc":["body"],"type":"model_attributes_type","msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
+        );
+    }
+    let Some(value) = body.get(field) else {
+        return Err(
+            json!({"loc":["body",field],"type":"missing","msg":"Field required","input":body}),
+        );
+    };
+    let Some(token) = value.as_str() else {
+        return Err(
+            json!({"loc":["body",field],"type":"string_type","msg":"Input should be a valid string","input":value}),
+        );
+    };
+    match token.chars().count() {
+        n if n < min => Err(
+            json!({"loc":["body",field],"type":"string_too_short","msg":format!("String should have at least {min} character{}", if min == 1 {""} else {"s"}),"input":token,"ctx":{"min_length":min.to_string()}}),
+        ),
+        n if n > max => Err(
+            json!({"loc":["body",field],"type":"string_too_long","msg":format!("String should have at most {max} characters"),"input":token,"ctx":{"max_length":max.to_string()}}),
+        ),
+        _ => Ok(token.into()),
+    }
+}

@@ -56,33 +56,7 @@ pub fn routes(pool: PgPool) -> Result<Router, Box<dyn Error>> {
 }
 
 fn link_token(body: Value) -> Result<String, Value> {
-    if body.is_null() {
-        return Err(json!({"loc":["body"],"type":"missing","msg":"Field required","input":null}));
-    }
-    if !body.is_object() {
-        return Err(
-            json!({"loc":["body"],"type":"model_attributes_type","msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
-        );
-    }
-    let Some(value) = body.get("token") else {
-        return Err(
-            json!({"loc":["body","token"],"type":"missing","msg":"Field required","input":body}),
-        );
-    };
-    let Some(token) = value.as_str() else {
-        return Err(
-            json!({"loc":["body","token"],"type":"string_type","msg":"Input should be a valid string","input":value}),
-        );
-    };
-    match token.chars().count() {
-        0..16 => Err(
-            json!({"loc":["body","token"],"type":"string_too_short","msg":"String should have at least 16 characters","input":token,"ctx":{"min_length":"16"}}),
-        ),
-        129.. => Err(
-            json!({"loc":["body","token"],"type":"string_too_long","msg":"String should have at most 128 characters","input":token,"ctx":{"max_length":"128"}}),
-        ),
-        _ => Ok(token.into()),
-    }
+    crate::request_json::token_field(body, "token", 16, 128)
 }
 
 async fn handle(

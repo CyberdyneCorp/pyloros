@@ -8,7 +8,9 @@ use rsa::{
     traits::PublicKeyParts,
 };
 
-fn identity(production: bool) -> Result<Option<SigningIdentity>, Box<dyn Error>> {
+fn identity(
+    production: bool,
+) -> Result<Option<(SigningIdentity, ChallengeVerifier)>, Box<dyn Error>> {
     let public = crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?;
     let algorithm = env::var("JWT_ALGORITHM")
         .unwrap_or_else(|_| if public.is_some() { "RS256" } else { "HS256" }.into());
@@ -26,7 +28,11 @@ fn identity(production: bool) -> Result<Option<SigningIdentity>, Box<dyn Error>>
             if production && secret.len() < 32 {
                 return Err("invalid production JWT secret".into());
             }
-            Ok(Some(SigningIdentity::hmac(issuer, secret.as_bytes())?))
+            let verifier = ChallengeVerifier::hmac(&issuer, secret.as_bytes())?;
+            Ok(Some((
+                SigningIdentity::hmac(issuer, secret.as_bytes())?,
+                verifier,
+            )))
         }
         "RS256" => {
             let Some(private) = crate::config::pem("JWT_PRIVATE_KEY_PATH", "JWT_PRIVATE_KEY")?
@@ -36,8 +42,9 @@ fn identity(production: bool) -> Result<Option<SigningIdentity>, Box<dyn Error>>
             let key = RsaPrivateKey::from_pkcs8_pem(&private)
                 .or_else(|_| RsaPrivateKey::from_pkcs1_pem(&private))?
                 .to_public_key();
-            let public =
-                RsaPublicKey::from_public_key_pem(&public.ok_or("missing JWT public key")?)?;
+            let pem = public.ok_or("missing JWT public key")?;
+            let verifier = ChallengeVerifier::rsa(&issuer, pem.as_bytes())?;
+            let public = RsaPublicKey::from_public_key_pem(&pem)?;
             if public != key {
                 return Err("JWT public and private keys do not match".into());
             }
@@ -50,7 +57,10 @@ fn identity(production: bool) -> Result<Option<SigningIdentity>, Box<dyn Error>>
                         &URL_SAFE_NO_PAD.encode(key.e().to_bytes_be()),
                     )
                 });
-            Ok(Some(SigningIdentity::rsa(issuer, kid, private.as_bytes())?))
+            Ok(Some((
+                SigningIdentity::rsa(issuer, kid, private.as_bytes())?,
+                verifier,
+            )))
         }
         _ => Err("unsupported login signing algorithm".into()),
     }
@@ -61,7 +71,7 @@ impl Login {
         pool: PgPool,
         production: bool,
     ) -> Result<Option<Self>, Box<dyn Error>> {
-        let Some(signing) = identity(production)? else {
+        let Some((signing, verifier)) = identity(production)? else {
             return Ok(None);
         };
         let refresh = lifetime("JWT_REFRESH_TOKEN_TTL_DAYS", 30, 86400)?;
@@ -69,6 +79,12 @@ impl Login {
             pool,
             issuer: GrantSessionIssuer::with_identity(signing.clone(), refresh)?,
             signing,
+            verifier,
+            poll_quota: LoginThrottle::new(if number("RATELIMIT_LOGIN_PER_MIN", 10)? > 0 {
+                120
+            } else {
+                0
+            }),
             challenge: lifetime("MFA_CHALLENGE_TTL_MINUTES", 5, 60)?,
             access: lifetime("JWT_ACCESS_TOKEN_TTL_MINUTES", 15, 60)?,
             refresh,

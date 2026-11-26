@@ -48,3 +48,18 @@ The inspect, confirm and deny endpoints under /api/v1/auth/magic-link SHALL auth
 #### Scenario: Used or expired link
 - **WHEN** the supplied token has expired or already received a decision
 - **THEN** inspection and decision return the invalid-link error without revealing the original challenge
+
+### Requirement: Email challenge completion
+The initiating browser SHALL present a signed MFA credential bound to the same user and email challenge. Pending and successful responses SHALL disable caching. Polls SHALL use a separate source quota.
+
+#### Scenario: Awaiting approval
+- **WHEN** a valid credential identifies an unexpired pending challenge
+- **THEN** return 202 with pending status.
+
+#### Scenario: Confirmed sign-in
+- **WHEN** an active user’s approved challenge is consumed
+- **THEN** issue the session once with both authentication methods and the confirmation time, set browser cookies and record the login.
+
+#### Scenario: Refused completion
+- **WHEN** the challenge expired, was denied, was consumed, or does not match the credential
+- **THEN** refuse completion and record the failure.
