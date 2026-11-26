@@ -154,4 +154,50 @@ async fn grant_access_claims() {
     ] {
         assert!(payload.get(missing).is_none());
     }
+
+    // With IAM unavailable, the assembled response still carries the session's access credential.
+    sqlx::raw_sql("CREATE TEMP TABLE iam_identities(incompatible_column uuid);
+        CREATE TEMP TABLE sessions(id uuid,user_id uuid,refresh_token_hash text,user_agent text,ip_address inet,
+            expires_at timestamptz,auth_time timestamptz,amr text,created_at timestamptz,last_used_at timestamptz);
+        CREATE TEMP TABLE refresh_tokens(jti uuid,session_id uuid,user_id uuid,issued_at timestamptz,
+            expires_at timestamptz,scopes text,client_id text,resource text)")
+        .execute(&mut *tx).await.unwrap();
+    let settings = pyloros::grant_response::GrantSettings {
+        access_lifetime: ttl,
+        id_lifetime: Duration::minutes(10),
+        admin_emails: policy.admin_emails,
+        require_verified_admin_email: true,
+        resources: policy.resources,
+    };
+    claimed.grant.scopes.clear();
+    let response = issuer
+        .issue_grant_response(
+            &mut tx,
+            &claimed,
+            &settings,
+            pyloros::grant_response::SessionOrigin {
+                user_agent: None,
+                ip: None,
+            },
+            now,
+        )
+        .await
+        .unwrap();
+    let body = serde_json::to_value(response).unwrap();
+    assert_eq!(body.as_object().unwrap().len(), 3);
+    assert_eq!(body["token_type"], "Bearer");
+    assert_eq!(body["expires_in"], 900);
+    let signed = decode::<Value>(body["access_token"].as_str().unwrap(), &verify, &validation)
+        .unwrap()
+        .claims;
+    assert_eq!(signed["sid"], claimed.session_id.to_string());
+    assert!(signed.get("roles").is_none());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM refresh_tokens WHERE session_id=$1")
+            .bind(claimed.session_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap(),
+        1
+    );
 }

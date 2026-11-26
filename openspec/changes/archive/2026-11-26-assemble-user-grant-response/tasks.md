@@ -1,0 +1,2 @@
+- [x] Assemble session and scoped tokens from the same grant and authorization snapshot.
+- [x] Verify serialized responses and mixed-issuer compatibility.

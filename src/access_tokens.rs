@@ -28,6 +28,21 @@ impl GrantSessionIssuer {
         now: DateTime<Utc>,
         lifetime: TimeDelta,
     ) -> Result<String, SessionError> {
+        let mut claims = self
+            .access_claims(tx, claimed, policy, now, lifetime)
+            .await?;
+        authorization_fields(&mut claims, policy.authorization);
+        self.sign(&claims)
+    }
+
+    pub(crate) async fn access_claims(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        claimed: &ClaimedGrant,
+        policy: &AccessPolicy<'_>,
+        now: DateTime<Utc>,
+        lifetime: TimeDelta,
+    ) -> Result<Value, SessionError> {
         if lifetime.num_seconds() < 1 {
             return Err(SessionError::InvalidLifetime);
         }
@@ -81,15 +96,18 @@ impl GrantSessionIssuer {
         if let Some(aud) = audience {
             doc["aud"] = json!(aud);
         }
-        if let Some(auth) = policy.authorization {
-            doc["roles"] = json!(auth.roles.global);
-            doc["org_roles"] = json!(auth.roles.organizations);
-            if let Some(perms) = &auth.permissions {
-                doc["permissions"] = json!(perms.global);
-                doc["org_permissions"] = json!(perms.organizations);
-            }
-        }
         authentication_fields(&mut doc, grant);
-        self.sign(&doc)
+        Ok(doc)
+    }
+}
+
+pub(crate) fn authorization_fields(doc: &mut Value, authorization: Option<&AuthorizationClaims>) {
+    if let Some(auth) = authorization {
+        doc["roles"] = json!(auth.roles.global);
+        doc["org_roles"] = json!(auth.roles.organizations);
+        if let Some(perms) = &auth.permissions {
+            doc["permissions"] = json!(perms.global);
+            doc["org_permissions"] = json!(perms.organizations);
+        }
     }
 }

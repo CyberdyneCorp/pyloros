@@ -1,0 +1,1 @@
+Load the subject and effective audience once. Pass the resulting audience to the PostgreSQL authorization resolver and share its snapshot between signers. Return the response to the transaction owner for delivery after commit. Keep grant redemption and event recording in that transaction.
