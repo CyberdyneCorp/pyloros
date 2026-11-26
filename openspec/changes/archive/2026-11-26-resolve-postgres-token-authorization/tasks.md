@@ -1,0 +1,2 @@
+- [x] Resolve and filter PostgreSQL role assignments.
+- [x] Expand eligible permission mappings and verify isolation and unavailable IAM behavior.

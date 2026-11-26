@@ -1,0 +1,1 @@
+Read group membership inside a savepoint so a failed IAM read can leave authorization claims unresolved while preserving the outer transaction. Filter organization-bound roles using active memberships. Expand the roles through the permission catalogs selected by the calling client and effective token audience.

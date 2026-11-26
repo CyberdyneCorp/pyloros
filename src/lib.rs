@@ -7,6 +7,7 @@ pub mod discovery;
 pub mod grant_sessions;
 pub mod headers;
 pub mod id_tokens;
+pub mod token_authorization;
 
 use std::time::Duration;
 
