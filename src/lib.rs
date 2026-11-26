@@ -1,4 +1,5 @@
 pub mod authorization_codes;
+pub mod code_exchange;
 pub mod config;
 pub mod discovery;
 pub mod headers;

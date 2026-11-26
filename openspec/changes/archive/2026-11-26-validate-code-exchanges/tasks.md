@@ -1,0 +1,2 @@
+- [x] 1. Add checked redemption and transactional replay revocation.
+- [x] 2. Exercise binding failures, inactive subjects and replay effects against PostgreSQL.
