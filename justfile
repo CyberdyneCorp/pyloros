@@ -44,7 +44,7 @@ test:
 
 # Exercise readiness with real PostgreSQL using connection-local temporary tables.
 test-db:
-    cargo test --locked --test health postgres_readiness -- --ignored --exact
+    cargo test --locked --tests -- --ignored
 
 # Run the usual pre-commit checks.
 check: lint test

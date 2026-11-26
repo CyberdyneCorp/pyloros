@@ -1,0 +1,2 @@
+- [x] 1. Implement startup and periodic refresh with a bounded database wait.
+- [x] 2. Exercise scope addition, deactivation and refresh failure against PostgreSQL.

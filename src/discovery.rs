@@ -1,5 +1,5 @@
 //! Read-only provider metadata for a configured issuer.
-use std::{collections::BTreeSet, env, error::Error, fs, sync::Arc};
+use std::{collections::BTreeSet, env, error::Error, fs, sync::Arc, time::Duration};
 
 use crate::config::flag;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
@@ -15,6 +15,7 @@ type Document = Result<Json<Value>, (StatusCode, Json<Value>)>;
 pub struct Provider {
     metadata: Value,
     keys: Value,
+    scopes: tokio::sync::watch::Receiver<BTreeSet<String>>,
 }
 
 impl Provider {
@@ -82,7 +83,6 @@ impl Provider {
             "authorization_endpoint":format!("{oauth}/authorize"),"token_endpoint":format!("{oauth}/token"),
             "introspection_endpoint":format!("{base}/introspect"),"revocation_endpoint":format!("{oauth}/revoke"),
             "userinfo_endpoint":format!("{oauth}/userinfo"),"end_session_endpoint":format!("{oauth}/logout"),
-            "scopes_supported":scopes.split_ascii_whitespace().collect::<BTreeSet<_>>(),
             "response_types_supported":["code"],"grant_types_supported":grants,
             "id_token_signing_alg_values_supported":["RS256"],"subject_types_supported":["public"],
             "code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":methods,
@@ -96,7 +96,51 @@ impl Provider {
         if registration {
             metadata["registration_endpoint"] = json!(format!("{oauth}/register"));
         }
-        Ok(Self { metadata, keys })
+        let scopes = tokio::sync::watch::channel(
+            scopes.split_ascii_whitespace().map(str::to_owned).collect(),
+        )
+        .1;
+        Ok(Self {
+            metadata,
+            keys,
+            scopes,
+        })
+    }
+
+    pub async fn refresh_scopes(&mut self, pool: sqlx::PgPool, interval: Duration) {
+        if interval.is_zero() {
+            return;
+        }
+        let base = self.scopes.borrow().clone();
+        let (updates, snapshot) = tokio::sync::watch::channel(base.clone());
+        self.scopes = snapshot;
+        load_scopes(&pool, &base, &updates).await;
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = updates.closed() => break,
+                    _ = tokio::time::sleep(interval) => load_scopes(&pool, &base, &updates).await,
+                }
+            }
+        });
+    }
+}
+
+async fn load_scopes(
+    pool: &sqlx::PgPool,
+    base: &BTreeSet<String>,
+    updates: &tokio::sync::watch::Sender<BTreeSet<String>>,
+) {
+    let read = sqlx::query_scalar::<_, String>("SELECT name FROM oauth_scopes WHERE active")
+        .fetch_all(pool);
+    match tokio::time::timeout(Duration::from_secs(3), read).await {
+        Ok(Ok(rows)) => {
+            let mut effective = base.clone();
+            effective.extend(rows);
+            updates.send_replace(effective);
+        }
+        Ok(Err(error)) => eprintln!("Scope catalog refresh failed: {error}"),
+        Err(_) => eprintln!("Scope catalog refresh timed out"),
     }
 }
 
@@ -112,7 +156,10 @@ fn enabled(provider: &ProviderState) -> Result<&Provider, (StatusCode, Json<Valu
 }
 
 async fn metadata(State(provider): State<ProviderState>) -> Document {
-    Ok(Json(enabled(&provider)?.metadata.clone()))
+    let issuer = enabled(&provider)?;
+    let mut document = issuer.metadata.clone();
+    document["scopes_supported"] = json!(*issuer.scopes.borrow());
+    Ok(Json(document))
 }
 
 async fn keys(State(provider): State<ProviderState>) -> Document {

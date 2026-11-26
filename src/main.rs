@@ -17,10 +17,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cookie_secure = pyloros::config::flag("COOKIE_SECURE")?;
     let force_secure = pyloros::config::flag("FORCE_SECURE_COOKIES")?;
     let secure_transport = environment == "production" || cookie_secure || force_secure;
+    let mut provider = pyloros::discovery::Provider::from_env()?;
+    if let Some(issuer) = &mut provider {
+        let seconds: u64 = env::var("OAUTH_REGISTRY_REFRESH_SECONDS")
+            .unwrap_or_else(|_| "30".into())
+            .parse()?;
+        issuer
+            .refresh_scopes(pool.clone(), Duration::from_secs(seconds))
+            .await;
+    }
     let app = pyloros::router(environment, pool);
-    let app = app.merge(pyloros::discovery::routes(
-        pyloros::discovery::Provider::from_env()?,
-    ));
+    let app = app.merge(pyloros::discovery::routes(provider));
     axum::serve(listener, pyloros::headers::apply(app, secure_transport))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

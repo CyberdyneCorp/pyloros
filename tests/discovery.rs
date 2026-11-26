@@ -74,3 +74,53 @@ async fn issuer_scopes_and_optional_grants_follow_configuration() {
         assert_eq!(key.as_object().unwrap().len(), 6);
     }
 }
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL; run just test-db"]
+async fn postgres_scope_refresh() {
+    use sqlx::postgres::PgPoolOptions;
+    use std::time::Duration;
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&std::env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    sqlx::query("CREATE TEMP TABLE oauth_scopes(name text, active boolean)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO oauth_scopes VALUES ('openid',true),('extra',true),('hidden',false)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut provider =
+        Provider::new("https://auth.example", PEM, None, "openid", false, false).unwrap();
+    provider
+        .refresh_scopes(pool.clone(), Duration::from_millis(25))
+        .await;
+    let app = routes(Some(provider));
+    assert_eq!(
+        get(&app, OIDC).await.1["scopes_supported"],
+        json!(["extra", "openid"])
+    );
+    sqlx::query("UPDATE oauth_scopes SET active = NOT active")
+        .execute(&pool)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if get(&app, OAUTH).await.1["scopes_supported"] == json!(["hidden", "openid"]) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    pool.close().await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        get(&app, OIDC).await.1["scopes_supported"],
+        json!(["hidden", "openid"])
+    );
+}
