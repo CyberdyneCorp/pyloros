@@ -1,33 +1,19 @@
 //! Client authentication for the authorization-code exchange.
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use crate::passwords::{matches_argon2, verify_on_worker};
 use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Row, Transaction};
-use tokio::sync::Semaphore;
 
 use crate::code_exchange::Refusal;
-
-// Each stored hash selects its own memory cost. Bound aggregate work per process.
-static HASH_JOBS: Semaphore = Semaphore::const_new(2);
-
-fn matches(secret: &[u8], encoded: &str) -> bool {
-    PasswordHash::new(encoded)
-        .is_ok_and(|hash| Argon2::default().verify_password(secret, &hash).is_ok())
-}
 
 async fn verify_secret(
     secret: &str,
     current: String,
     previous: Option<String>,
 ) -> Result<bool, sqlx::Error> {
-    let permit = HASH_JOBS
-        .acquire()
-        .await
-        .expect("process-wide semaphore stays open");
     let secret = secret.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        matches(secret.as_bytes(), &current)
-            || previous.is_some_and(|hash| matches(secret.as_bytes(), &hash))
+    verify_on_worker(move || {
+        matches_argon2(secret.as_bytes(), &current)
+            || previous.is_some_and(|hash| matches_argon2(secret.as_bytes(), &hash))
     })
     .await
     .map_err(|_| sqlx::Error::WorkerCrashed)

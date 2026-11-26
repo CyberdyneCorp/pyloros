@@ -1,0 +1,1 @@
+- [x] Implement verification and compare stored password fixtures.
