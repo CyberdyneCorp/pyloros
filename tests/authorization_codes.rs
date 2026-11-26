@@ -1,6 +1,8 @@
 use chrono::{Duration, Utc};
-use pyloros::authorization_codes::{Grant, claim, find, issue};
+use pyloros::authorization_codes::{Grant, find, issue};
 use pyloros::code_exchange::{Exchange, ExchangeRequest, Refusal, redeem};
+use pyloros::grant_sessions::GrantSessionIssuer;
+use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -59,8 +61,8 @@ async fn competing_exchanges_and_rollback() {
                    INSERT INTO oauth_clients(client_id, client_type, grant_types, active)
                    VALUES ('web','public','authorization_code',true),('other','public','authorization_code',true);
                    CREATE TABLE users(id uuid PRIMARY KEY, is_active boolean);
-                   CREATE TABLE sessions(id uuid PRIMARY KEY, revoked_at timestamptz);
-                   CREATE TABLE refresh_tokens(session_id uuid, revoked_at timestamptz)",
+                   CREATE TABLE sessions(id uuid PRIMARY KEY, revoked_at timestamptz, user_id uuid, refresh_token_hash text, user_agent text, ip_address inet, expires_at timestamptz, auth_time timestamptz, amr text, created_at timestamptz, last_used_at timestamptz);
+                   CREATE TABLE refresh_tokens(session_id uuid, revoked_at timestamptz, user_id uuid, jti uuid, issued_at timestamptz, expires_at timestamptz, scopes text, client_id text, resource text)",
     )
     .execute(&mut *tx)
     .await
@@ -161,12 +163,67 @@ async fn competing_exchanges_and_rollback() {
         .unwrap();
     tx.commit().await.unwrap();
 
+    let key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
+    let pem = key.to_pkcs8_pem(Default::default()).unwrap();
+    let issuer = GrantSessionIssuer::new(
+        "https://issuer.example".into(),
+        "test".into(),
+        pem.as_bytes(),
+        Duration::days(30),
+    )
+    .unwrap();
     let mut aborted = transaction(&pool, &namespace).await;
+    let Exchange::Granted(attempt) = redeem(&mut aborted, &request, session, now).await.unwrap()
+    else {
+        panic!("valid grant refused")
+    };
     assert!(
-        claim(&mut aborted, stored.id, Uuid::new_v4())
+        issuer
+            .create(&mut aborted, &attempt, now, None, None)
             .await
             .unwrap()
+            .is_none()
     );
+    let offline_session = Uuid::new_v4();
+    let offline_grant = Grant {
+        scopes: "openid offline_access".into(),
+        ..attempt.grant
+    };
+    let offline_code = issue(&mut aborted, &offline_grant).await.unwrap();
+    let offline_request = ExchangeRequest {
+        code: &offline_code,
+        ..request
+    };
+    let Exchange::Granted(offline) = redeem(&mut aborted, &offline_request, offline_session, now)
+        .await
+        .unwrap()
+    else {
+        panic!("offline grant refused")
+    };
+    let token = issuer
+        .create(&mut aborted, &offline, now, None, None)
+        .await
+        .unwrap()
+        .unwrap();
+    let public_pem = key
+        .to_public_key()
+        .to_public_key_pem(Default::default())
+        .unwrap();
+    let verify_key = jsonwebtoken::DecodingKey::from_rsa_pem(public_pem.as_bytes()).unwrap();
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_issuer(&["https://issuer.example"]);
+    let signed =
+        jsonwebtoken::decode::<serde_json::Value>(&token, &verify_key, &validation).unwrap();
+    assert_eq!(signed.header.kid.as_deref(), Some("test"));
+    assert_eq!(signed.claims["sid"], offline_session.to_string());
+    assert_eq!(signed.claims["type"], "refresh");
+    let jti: Uuid = signed.claims["jti"].as_str().unwrap().parse().unwrap();
+    let scopes: String = sqlx::query_scalar("SELECT scopes FROM refresh_tokens WHERE jti=$1")
+        .bind(jti)
+        .fetch_one(&mut *aborted)
+        .await
+        .unwrap();
+    assert_eq!(scopes, "offline_access openid");
     aborted.rollback().await.unwrap();
 
     let mut winner = transaction(&pool, &namespace).await;
@@ -180,14 +237,28 @@ async fn competing_exchanges_and_rollback() {
     else {
         panic!("valid grant refused")
     };
-    assert_eq!(actual.user_id, grant.user_id);
-    sqlx::query("INSERT INTO sessions VALUES ($1,NULL)")
+    assert_eq!(actual.grant.user_id, grant.user_id);
+    assert!(
+        issuer
+            .create(
+                &mut winner,
+                &actual,
+                now,
+                Some("test-agent"),
+                Some("::1".parse().unwrap())
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM refresh_tokens WHERE session_id=$1")
         .bind(session)
-        .execute(&mut *winner)
+        .fetch_one(&mut *winner)
         .await
         .unwrap();
+    assert_eq!(count, 1);
     let other_session = Uuid::new_v4();
-    sqlx::query("INSERT INTO refresh_tokens VALUES ($1,NULL),($1,NULL),($2,NULL)")
+    sqlx::query("INSERT INTO refresh_tokens(session_id) VALUES ($1),($2)")
         .bind(session)
         .bind(other_session)
         .execute(&mut *winner)

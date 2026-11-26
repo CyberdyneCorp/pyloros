@@ -1,0 +1,2 @@
+- [x] 1. Persist session and refresh state and sign the corresponding refresh JWT.
+- [x] 2. Verify reference interoperability, rollback and offline access behavior.

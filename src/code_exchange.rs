@@ -34,8 +34,13 @@ pub enum Refusal {
     UserUnavailable,
 }
 
+pub struct ClaimedGrant {
+    pub grant: Grant,
+    pub session_id: Uuid,
+}
+
 pub enum Exchange {
-    Granted(Box<Grant>),
+    Granted(Box<ClaimedGrant>),
     Refused(Refusal),
 }
 
@@ -123,7 +128,10 @@ pub async fn redeem(
         return Ok(Exchange::Refused(Refusal::UserUnavailable));
     }
     if claim(tx, stored.id, session).await? {
-        return Ok(Exchange::Granted(Box::new(stored.grant)));
+        return Ok(Exchange::Granted(Box::new(ClaimedGrant {
+            grant: stored.grant,
+            session_id: session,
+        })));
     }
     let winner = find(tx, req.code, req.client_id).await?;
     replay(tx, winner.and_then(|row| row.session_id), now).await

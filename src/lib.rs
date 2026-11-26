@@ -3,6 +3,7 @@ mod client_auth;
 pub mod code_exchange;
 pub mod config;
 pub mod discovery;
+pub mod grant_sessions;
 pub mod headers;
 
 use std::time::Duration;
