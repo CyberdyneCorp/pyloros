@@ -1,0 +1,1 @@
+Keep a process-local token bucket for each resolved client IP and a shared bucket for unresolved clients. Use a monotonic clock and refill continuously over one minute. Serialize quota consumption, release the lock before writing the audit event, and remove idle buckets once they have regained full capacity.

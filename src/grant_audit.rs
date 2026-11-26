@@ -128,6 +128,7 @@ pub(crate) enum AuditActivity<'a> {
     PhoneEdit,
     PasswordRefused(&'static str),
     TotpChallenge,
+    LoginRateLimited,
 }
 
 pub(crate) async fn write_activity<'e>(
@@ -177,6 +178,15 @@ pub(crate) async fn write_activity<'e>(
             "",
             "failure",
             Some(reason),
+            json!({}),
+        ),
+        AuditActivity::LoginRateLimited => (
+            "authentication",
+            "logon",
+            None,
+            "",
+            "failure",
+            Some("rate_limited"),
             json!({}),
         ),
         AuditActivity::TotpChallenge => (

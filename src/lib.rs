@@ -14,6 +14,7 @@ pub mod grant_sessions;
 pub mod headers;
 pub mod id_tokens;
 pub mod login_methods;
+pub mod login_throttle;
 pub mod mfa_challenges;
 pub mod password_login;
 pub mod passwords;
