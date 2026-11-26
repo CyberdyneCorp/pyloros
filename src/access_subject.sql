@@ -16,6 +16,6 @@ SELECT u.primary_email, u.is_admin, u.is_email_verified, c.access_token_audience
              AND e.status = 'active' AND (e.expires_at IS NULL OR e.expires_at > $3)
            ORDER BY 1
        ) AS entitlements
-FROM users u JOIN oauth_clients c ON c.client_id = $2 AND c.active
+FROM users u LEFT JOIN oauth_clients c ON c.client_id = $2 AND c.active
 LEFT JOIN organizations primary_org ON primary_org.id = u.organization_id AND primary_org.is_active
-WHERE u.id = $1 AND u.is_active
+WHERE u.id = $1 AND u.is_active AND ($2::text IS NULL OR c.client_id IS NOT NULL)

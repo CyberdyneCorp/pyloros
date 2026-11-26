@@ -227,4 +227,75 @@ async fn grant_access_claims() {
     .await
     .unwrap();
     assert_eq!(counts, (0, 0, 0));
+    // A client registration is required only when issuing a client-bound credential.
+    sqlx::query("UPDATE oauth_clients SET active=false")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    assert!(matches!(
+        issuer
+            .issue_access_token(&mut tx, &claimed, &policy, now, ttl)
+            .await,
+        Err(SessionError::Storage(sqlx::Error::RowNotFound))
+    ));
+    check_first_party_session(&mut tx, &issuer, user, &verify).await;
+}
+
+async fn check_first_party_session(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    issuer: &GrantSessionIssuer,
+    user: Uuid,
+    verify: &DecodingKey,
+) {
+    use pyloros::{
+        first_party::{AuthenticatedLogin, LoginPolicy},
+        grant_response::SessionOrigin,
+    };
+    let now = Utc::now();
+    let login = AuthenticatedLogin {
+        user,
+        authenticated_at: now - Duration::minutes(1),
+        methods: &["pwd"],
+        origin: SessionOrigin {
+            ip: None,
+            user_agent: None,
+        },
+    };
+    let policy = LoginPolicy {
+        access_lifetime: Duration::minutes(15),
+        admin_emails: &[],
+        require_verified_admin_email: true,
+    };
+    let pair = issuer
+        .issue_first_party(tx, login, &policy, now)
+        .await
+        .unwrap();
+    let claims = decode::<Value>(
+        &pair.access_token,
+        verify,
+        &Validation::new(Algorithm::RS256),
+    )
+    .unwrap()
+    .claims;
+    assert_eq!(claims["sid"], json!(pair.session));
+    assert_eq!(claims["amr"], json!(["pwd"]));
+    for key in [
+        "aud",
+        "client_id",
+        "scope",
+        "permissions",
+        "org_permissions",
+    ] {
+        assert!(claims.get(key).is_none());
+    }
+    assert!(
+        sqlx::query_scalar::<_, bool>(
+            "SELECT client_id IS NULL AND scopes IS NULL AND resource IS NULL
+        FROM refresh_tokens WHERE session_id=$1"
+        )
+        .bind(pair.session)
+        .fetch_one(&mut **tx)
+        .await
+        .unwrap()
+    );
 }

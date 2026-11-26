@@ -43,18 +43,21 @@ impl GrantSessionIssuer {
         now: DateTime<Utc>,
         lifetime: TimeDelta,
     ) -> Result<Value, SessionError> {
-        if lifetime.num_seconds() < 1 {
-            return Err(SessionError::InvalidLifetime);
-        }
-        let expires = now
-            .checked_add_signed(lifetime)
-            .ok_or(SessionError::InvalidLifetime)?;
         let grant = &claimed.grant;
-        let account = sqlx::query(include_str!("access_subject.sql"))
-            .bind(grant.user_id)
-            .bind(&grant.client_id)
-            .bind(now)
-            .fetch_one(&mut **tx)
+        let subject = Subject {
+            user: grant.user_id,
+            session: claimed.session_id,
+            client: Some(&grant.client_id),
+        };
+        let (mut doc, default_audience) = self
+            .account_claims(
+                tx,
+                subject,
+                policy.admin_emails,
+                policy.require_verified_admin_email,
+                now,
+                lifetime,
+            )
             .await?;
         let audience = match &grant.resource {
             Some(resource) => Some(
@@ -66,15 +69,8 @@ impl GrantSessionIssuer {
                     .filter(|a| !a.is_empty())
                     .unwrap_or(resource),
             ),
-            None => account.try_get::<Option<&str>, _>("default_audience")?,
+            None => default_audience.as_deref(),
         };
-        let admin = crate::config::effective_admin(
-            account.try_get("is_admin")?,
-            account.try_get("primary_email")?,
-            account.try_get("is_email_verified")?,
-            policy.require_verified_admin_email,
-            policy.admin_emails,
-        );
         let scopes = grant
             .scopes
             .split_ascii_whitespace()
@@ -82,17 +78,49 @@ impl GrantSessionIssuer {
             .into_iter()
             .collect::<Vec<_>>()
             .join(" ");
-        let mut doc = json!({"iss":self.issuer(),"sub":grant.user_id.to_string(),"jti":Uuid::new_v4().to_string(),"sid":claimed.session_id.to_string(),
-            "iat":now.timestamp(),"exp":expires.timestamp(),"type":"access","client_id":grant.client_id,"scope":scopes,"is_admin":admin,
-            "entitlements":account.try_get::<Vec<String>,_>("entitlements")?,"orgs":account.try_get::<Value,_>("memberships")?});
-        if let Some(org) = account.try_get::<Option<Value>, _>("primary_org")? {
-            doc["org"] = org;
-        }
+        doc["client_id"] = json!(grant.client_id);
+        doc["scope"] = json!(scopes);
         if let Some(aud) = audience {
             doc["aud"] = json!(aud);
         }
         authentication_fields(&mut doc, grant);
         Ok(doc)
+    }
+    pub(crate) async fn account_claims(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        subject: Subject<'_>,
+        admins: &[String],
+        require_verified: bool,
+        now: DateTime<Utc>,
+        lifetime: TimeDelta,
+    ) -> Result<(Value, Option<String>), SessionError> {
+        if lifetime.num_seconds() < 1 {
+            return Err(SessionError::InvalidLifetime);
+        }
+        let expires = now
+            .checked_add_signed(lifetime)
+            .ok_or(SessionError::InvalidLifetime)?;
+        let account = sqlx::query(include_str!("access_subject.sql"))
+            .bind(subject.user)
+            .bind(subject.client)
+            .bind(now)
+            .fetch_one(&mut **tx)
+            .await?;
+        let admin = crate::config::effective_admin(
+            account.try_get("is_admin")?,
+            account.try_get("primary_email")?,
+            account.try_get("is_email_verified")?,
+            require_verified,
+            admins,
+        );
+        let mut doc = json!({"iss":self.issuer(),"sub":subject.user,"jti":Uuid::new_v4(),"sid":subject.session,
+            "iat":now.timestamp(),"exp":expires.timestamp(),"type":"access","is_admin":admin,
+            "entitlements":account.try_get::<Vec<String>,_>("entitlements")?,"orgs":account.try_get::<Value,_>("memberships")?});
+        if let Some(org) = account.try_get::<Option<Value>, _>("primary_org")? {
+            doc["org"] = org;
+        }
+        Ok((doc, account.try_get("default_audience")?))
     }
 }
 
@@ -105,4 +133,10 @@ pub(crate) fn authorization_fields(doc: &mut Value, authorization: Option<&Autho
             doc["org_permissions"] = json!(perms.organizations);
         }
     }
+}
+
+pub(crate) struct Subject<'a> {
+    pub user: Uuid,
+    pub session: Uuid,
+    pub client: Option<&'a str>,
 }

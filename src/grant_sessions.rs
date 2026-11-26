@@ -7,7 +7,17 @@ use sqlx::{Postgres, Transaction};
 use std::{collections::BTreeSet, net::IpAddr};
 use uuid::Uuid;
 
-use crate::code_exchange::ClaimedGrant;
+use crate::{code_exchange::ClaimedGrant, grant_response::SessionOrigin};
+
+pub(crate) struct SessionRecord<'a> {
+    pub user: Uuid,
+    pub session: Uuid,
+    pub auth_time: Option<DateTime<Utc>>,
+    pub amr: Option<&'a str>,
+    pub client: Option<&'a str>,
+    pub scopes: Option<&'a str>,
+    pub resource: Option<&'a str>,
+}
 
 pub struct GrantSessionIssuer {
     signing: SigningIdentity,
@@ -33,11 +43,21 @@ impl GrantSessionIssuer {
         private_pem: &[u8],
         refresh_lifetime: TimeDelta,
     ) -> Result<Self, SessionError> {
+        Self::with_identity(
+            SigningIdentity::rsa(issuer, key_id, private_pem)?,
+            refresh_lifetime,
+        )
+    }
+
+    pub fn with_identity(
+        signing: SigningIdentity,
+        refresh_lifetime: TimeDelta,
+    ) -> Result<Self, SessionError> {
         if refresh_lifetime.num_seconds() < 1 {
             return Err(SessionError::InvalidLifetime);
         }
         Ok(Self {
-            signing: SigningIdentity::rsa(issuer, key_id, private_pem)?,
+            signing,
             refresh_lifetime,
         })
     }
@@ -60,12 +80,37 @@ impl GrantSessionIssuer {
         ip: Option<IpAddr>,
     ) -> Result<Option<String>, SessionError> {
         let grant = &claimed.grant;
+        let scopes: BTreeSet<_> = grant.scopes.split_ascii_whitespace().collect();
+        let consent =
+            (!scopes.is_empty()).then(|| scopes.iter().copied().collect::<Vec<_>>().join(" "));
+        let record = SessionRecord {
+            user: grant.user_id,
+            session: claimed.session_id,
+            auth_time: grant.auth_time,
+            amr: grant.amr.as_deref(),
+            client: Some(&grant.client_id),
+            scopes: consent.as_deref(),
+            resource: grant.resource.as_deref(),
+        };
+        let token = self
+            .store_session(tx, record, SessionOrigin { user_agent, ip }, now)
+            .await?;
+        Ok(scopes.contains("offline_access").then_some(token))
+    }
+
+    pub(crate) async fn store_session(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        record: SessionRecord<'_>,
+        origin: SessionOrigin<'_>,
+        now: DateTime<Utc>,
+    ) -> Result<String, SessionError> {
         let expires = now
             .checked_add_signed(self.refresh_lifetime)
             .ok_or(SessionError::InvalidLifetime)?;
         let jti = Uuid::new_v4();
         let token = self.sign(&json!({
-            "iss":self.issuer(),"sub":grant.user_id.to_string(),"sid":claimed.session_id.to_string(),
+            "iss":self.issuer(),"sub":record.user.to_string(),"sid":record.session.to_string(),
             "jti":jti.to_string(),"type":"refresh","iat":now.timestamp(),"exp":expires.timestamp()
         }))?;
         let digest = format!("{:x}", Sha256::digest(token.as_bytes()));
@@ -74,35 +119,32 @@ impl GrantSessionIssuer {
             expires_at,auth_time,amr,created_at,last_used_at)
             VALUES ($1,$2,$3,$4,$5::text::inet,$6,$7,$8,$9,$9)",
         )
-        .bind(claimed.session_id)
-        .bind(grant.user_id)
+        .bind(record.session)
+        .bind(record.user)
         .bind(digest)
-        .bind(user_agent)
-        .bind(ip.map(|address| address.to_string()))
+        .bind(origin.user_agent)
+        .bind(origin.ip.map(|address| address.to_string()))
         .bind(expires)
-        .bind(grant.auth_time)
-        .bind(&grant.amr)
+        .bind(record.auth_time)
+        .bind(record.amr)
         .bind(now)
         .execute(&mut **tx)
         .await?;
-        let scopes: BTreeSet<_> = grant.scopes.split_ascii_whitespace().collect();
-        let consent =
-            (!scopes.is_empty()).then(|| scopes.iter().copied().collect::<Vec<_>>().join(" "));
         sqlx::query(
             "INSERT INTO refresh_tokens
             (jti,session_id,user_id,issued_at,expires_at,scopes,client_id,resource)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
         )
         .bind(jti)
-        .bind(claimed.session_id)
-        .bind(grant.user_id)
+        .bind(record.session)
+        .bind(record.user)
         .bind(now)
         .bind(expires)
-        .bind(consent)
-        .bind(&grant.client_id)
-        .bind(&grant.resource)
+        .bind(record.scopes)
+        .bind(record.client)
+        .bind(record.resource)
         .execute(&mut **tx)
         .await?;
-        Ok(scopes.contains("offline_access").then_some(token))
+        Ok(token)
     }
 }

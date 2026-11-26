@@ -1,0 +1,1 @@
+Share account projection and refresh persistence with authorization-code issuance. Accept an authenticated user and factor context from the calling workflow. First-party refresh records have no client or resource binding. The caller owns the transaction and releases tokens after commit.
