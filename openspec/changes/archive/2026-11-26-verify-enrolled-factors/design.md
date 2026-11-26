@@ -1,0 +1,1 @@
+Read the current enrollment under a PostgreSQL row lock. Authenticate and decrypt the stored seed before comparing the six-digit authenticator value. Claim the matching time step or an unused recovery record inside the session issuer’s transaction. Rolling back session creation releases the claim. Distinguish a corrupt seed from an incorrect code.

@@ -1,0 +1,1 @@
+- [x] Compare enrolled factors with reference-generated encrypted records, verify drift, replay and recovery behavior and exercise transactional rollback.

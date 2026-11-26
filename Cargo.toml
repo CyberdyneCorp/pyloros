@@ -23,6 +23,9 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 bcrypt = "0.19"
 lettre = { version = "0.11.24", default-features = false, features = ["smtp-transport", "builder", "tokio1-rustls", "ring", "rustls-native-certs"] }
+ring = "0.17"
+data-encoding = "2"
+zeroize = "1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
