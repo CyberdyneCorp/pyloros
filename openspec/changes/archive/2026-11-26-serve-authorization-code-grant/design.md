@@ -1,0 +1,1 @@
+Use the published RSA key identifier for signing and verify that the private key matches discovery. Decode form and Basic credentials, retain repeated resource indicators, and pass the committed exchange decision to the HTTP response. Merge configured audiences over active database registrations.

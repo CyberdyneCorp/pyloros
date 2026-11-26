@@ -1,5 +1,5 @@
 //! Read-only provider metadata for a configured issuer.
-use std::{collections::BTreeSet, env, error::Error, fs, sync::Arc, time::Duration};
+use std::{collections::BTreeSet, env, error::Error, sync::Arc, time::Duration};
 
 use crate::config::flag;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
@@ -23,11 +23,8 @@ impl Provider {
         if !flag("OIDC_ENABLED")? {
             return Ok(None);
         }
-        let pem = match env::var("JWT_PUBLIC_KEY_PATH") {
-            Ok(path) => fs::read_to_string(path)?,
-            Err(env::VarError::NotPresent) => env::var("JWT_PUBLIC_KEY")?,
-            Err(err) => return Err(err.into()),
-        };
+        let pem = crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?
+            .ok_or("OIDC discovery requires an RSA public key")?;
         let issuer = env::var("OIDC_ISSUER")?;
         let scopes = env::var("OIDC_SCOPES")
             .unwrap_or_else(|_| "openid profile email offline_access".into());
@@ -105,6 +102,19 @@ impl Provider {
             keys,
             scopes,
         })
+    }
+
+    pub(crate) fn signing_identity(&self, key: &RsaPublicKey) -> Result<(&str, &str), ConfigError> {
+        let jwk = &self.keys["keys"][0];
+        if jwk["n"] != URL_SAFE_NO_PAD.encode(key.n().to_bytes_be())
+            || jwk["e"] != URL_SAFE_NO_PAD.encode(key.e().to_bytes_be())
+        {
+            return Err("private signing key does not match discovery public key".into());
+        }
+        Ok((
+            self.metadata["issuer"].as_str().expect("configured issuer"),
+            jwk["kid"].as_str().expect("configured key identifier"),
+        ))
     }
 
     pub async fn refresh_scopes(&mut self, pool: sqlx::PgPool, interval: Duration) {

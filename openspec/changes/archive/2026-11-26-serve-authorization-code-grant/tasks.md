@@ -1,0 +1,3 @@
+- [x] Configure a signing issuer and effective resource audiences.
+- [x] Serve code exchanges with client credentials and request attribution.
+- [x] Compare HTTP successes and refusals with the reference endpoint.
