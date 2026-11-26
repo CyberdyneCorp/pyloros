@@ -1,6 +1,7 @@
 //! Read-only provider metadata for a configured issuer.
 use std::{collections::BTreeSet, env, error::Error, fs, sync::Arc};
 
+use crate::config::flag;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rsa::{RsaPublicKey, pkcs8::DecodePublicKey, traits::PublicKeyParts};
@@ -14,14 +15,6 @@ type Document = Result<Json<Value>, (StatusCode, Json<Value>)>;
 pub struct Provider {
     metadata: Value,
     keys: Value,
-}
-
-fn flag(name: &str) -> Result<bool, ConfigError> {
-    match env::var(name).as_deref() {
-        Err(env::VarError::NotPresent) | Ok("0" | "false") => Ok(false),
-        Ok("1" | "true") => Ok(true),
-        _ => Err(format!("{name} must be true, false, 1, or 0").into()),
-    }
 }
 
 impl Provider {

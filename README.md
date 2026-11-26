@@ -37,4 +37,4 @@ Set `OIDC_SCOPES` to the issuer's effective space-separated scope catalog. The c
 
 ## Specifications
 
-The [health probes](openspec/specs/health/spec.md) and [issuer discovery](openspec/specs/issuer-discovery/spec.md) specifications describe the five implemented HTTP routes. With the OpenSpec CLI installed, run `just spec-check` to validate the specifications.
+The [health probes](openspec/specs/health/spec.md) and [issuer discovery](openspec/specs/issuer-discovery/spec.md) specifications describe the five implemented HTTP routes. The [HTTP response spec](openspec/specs/http-responses/spec.md) covers shared browser security headers. With the OpenSpec CLI installed, run `just spec-check` to validate the specifications.

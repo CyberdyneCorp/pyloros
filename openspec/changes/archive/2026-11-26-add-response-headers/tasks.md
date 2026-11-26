@@ -1,0 +1,2 @@
+- [x] 1. Apply headers to the assembled router.
+- [x] 2. Check successful and unsuccessful responses and transport-policy modes.
