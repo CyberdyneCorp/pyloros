@@ -1,6 +1,8 @@
 //! Password login for the PostgreSQL identity backend.
 mod config;
 mod input;
+mod mfa;
+use crate::enrolled_factor::FactorVerifier;
 mod poll;
 use crate::mfa_challenges::ChallengeVerifier;
 use crate::{
@@ -46,6 +48,8 @@ struct Login {
     proxies: usize,
     throttle: LoginThrottle,
     poll_quota: LoginThrottle,
+    mfa_quota: LoginThrottle,
+    factor: Option<FactorVerifier>,
     verifier: ChallengeVerifier,
 }
 
@@ -53,6 +57,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     let login = Login::configured(pool, production)?.map(Arc::new);
     Ok(Router::new()
         .route("/api/v1/auth/login", any(handle))
+        .route("/api/v1/auth/mfa/verify", any(mfa::handle))
         .route("/api/v1/auth/magic-link/status", any(poll::handle))
         .with_state(login))
 }
@@ -79,7 +84,7 @@ async fn handle(
         return problem(StatusCode::SERVICE_UNAVAILABLE, "Login signing unavailable");
     };
     let (parts, body) = req.into_parts();
-    let (email, password) = match input::read(&parts.headers, body).await {
+    let (email, password) = match input::read(&parts.headers, body, input::credentials).await {
         Ok(v) => v,
         Err(r) => return r,
     };
@@ -108,6 +113,13 @@ async fn handle(
 fn challenge(method: &str, token: String, code: Option<String>) -> Response {
     Json(json!({"mfa_required":true,"mfa_token":token,"mfa_method":method,"match_code":code}))
         .into_response()
+}
+
+enum LoginMethod {
+    Password,
+    Email(chrono::DateTime<Utc>),
+    Totp,
+    Recovery,
 }
 
 type LoginResult = Result<Response, Box<dyn Error + Send + Sync>>;
@@ -147,7 +159,8 @@ impl Login {
             .await
         {
             Ok(ConfirmationDecision::Continue(tx)) => {
-                self.finish(tx, user, origin, request_id, None).await
+                self.finish(tx, user, origin, request_id, LoginMethod::Password)
+                    .await
             }
             Ok(ConfirmationDecision::Pending {
                 mfa_token,
@@ -166,7 +179,7 @@ impl Login {
         user: Uuid,
         origin: SessionOrigin<'_>,
         request_id: Option<&str>,
-        confirmed_at: Option<chrono::DateTime<Utc>>,
+        method: LoginMethod,
     ) -> LoginResult {
         if self.hooks {
             // Keep hook activation ordered with the session commit during coexistence.
@@ -186,11 +199,15 @@ impl Login {
         let now = Utc::now();
         let account = AuthenticatedLogin {
             user,
-            authenticated_at: confirmed_at.unwrap_or(now),
-            methods: if confirmed_at.is_some() {
-                &["pwd", "mca"]
-            } else {
-                &["pwd"]
+            authenticated_at: match method {
+                LoginMethod::Email(at) => at,
+                _ => now,
+            },
+            methods: match method {
+                LoginMethod::Password => &["pwd"],
+                LoginMethod::Email(_) => &["pwd", "mca"],
+                LoginMethod::Totp => &["pwd", "otp", "mfa"],
+                LoginMethod::Recovery => &["pwd", "mfa"],
             },
             origin,
         };
@@ -211,10 +228,11 @@ impl Login {
         .await?;
         write_activity(
             &mut *tx,
-            if confirmed_at.is_some() {
-                AuditActivity::EmailLogin(pair.session)
-            } else {
-                AuditActivity::PasswordLogin(pair.session)
+            match method {
+                LoginMethod::Password => AuditActivity::PasswordLogin(pair.session),
+                LoginMethod::Email(_) => AuditActivity::EmailLogin(pair.session),
+                LoginMethod::Totp => AuditActivity::FactorLogin(pair.session, "totp"),
+                LoginMethod::Recovery => AuditActivity::FactorLogin(pair.session, "recovery_code"),
             },
             AuditSubject {
                 user: Some(user),

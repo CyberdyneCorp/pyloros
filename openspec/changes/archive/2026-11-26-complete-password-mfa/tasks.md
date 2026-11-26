@@ -1,0 +1,1 @@
+- [x] Verify endpoint responses, session and audit effects, replay handling and the existing browser login.

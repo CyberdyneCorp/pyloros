@@ -129,7 +129,7 @@ impl Login {
             .execute(&mut *tx)
             .await?;
         let mut response = self
-            .finish(tx, user, origin, request, Some(confirmed))
+            .finish(tx, user, origin, request, LoginMethod::Email(confirmed))
             .await?;
         if response.status().is_success() {
             response

@@ -1,0 +1,1 @@
+Authenticate a password-bound challenge, then verify the enrolled factor in the session transaction. Publish cookies only after commit. Use the configured master key to open the existing enrollment. Passkey-bound challenges need their originating ceremony and stay on the existing handler during coexistence.

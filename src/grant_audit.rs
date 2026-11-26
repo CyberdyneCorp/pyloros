@@ -130,6 +130,8 @@ pub(crate) enum AuditActivity<'a> {
         reason: Option<&'static str>,
     },
     PasswordLogin(Uuid),
+    FactorLogin(Uuid, &'static str),
+    FactorRefused(&'static str),
     EmailLogin(Uuid),
     EmailLoginRefused(&'static str),
     PasswordRefused(&'static str),
@@ -138,6 +140,10 @@ pub(crate) enum AuditActivity<'a> {
         delivery_failed: bool,
     },
     LoginRateLimited,
+}
+
+fn outcome(failed: bool) -> &'static str {
+    if failed { "failure" } else { "success" }
 }
 
 pub(crate) async fn write_activity<'e>(
@@ -153,6 +159,7 @@ pub(crate) async fn write_activity<'e>(
         email,
         organization,
     } = subject;
+    let is_mfa = matches!(activity, AuditActivity::FactorLogin(_, _));
     let (class, activity, protocol, client, outcome, reason, details) = match activity {
         AuditActivity::Grant {
             client,
@@ -163,11 +170,7 @@ pub(crate) async fn write_activity<'e>(
             "token_grant",
             Some("oidc"),
             client,
-            if reason.is_some() {
-                "failure"
-            } else {
-                "success"
-            },
+            outcome(reason.is_some()),
             reason,
             details,
         ),
@@ -189,6 +192,28 @@ pub(crate) async fn write_activity<'e>(
             Some(reason),
             json!({}),
         ),
+        AuditActivity::FactorLogin(session, method) => (
+            "authentication",
+            "mfa_verify",
+            Some(method),
+            "",
+            "success",
+            None,
+            json!({"session_id":session,"primary":"pwd"}),
+        ),
+        AuditActivity::FactorRefused(reason) => (
+            "authentication",
+            "mfa_verify",
+            None,
+            "",
+            "failure",
+            Some(reason),
+            if reason == "mfa_failed" {
+                json!({"primary":"pwd"})
+            } else {
+                json!({})
+            },
+        ),
         AuditActivity::PasswordLogin(session) => (
             "authentication",
             "logon",
@@ -207,11 +232,7 @@ pub(crate) async fn write_activity<'e>(
                 Some("magic_link")
             },
             "",
-            if reason.is_some() {
-                "failure"
-            } else {
-                "success"
-            },
+            outcome(reason.is_some()),
             reason,
             json!({}),
         ),
@@ -250,11 +271,7 @@ pub(crate) async fn write_activity<'e>(
             "mfa_challenge",
             Some("password"),
             "",
-            if delivery_failed {
-                "failure"
-            } else {
-                "success"
-            },
+            outcome(delivery_failed),
             Some(if delivery_failed {
                 "provider_error"
             } else {
@@ -286,7 +303,7 @@ pub(crate) async fn write_activity<'e>(
         "outcome": outcome,
         "reason_code": reason,
         "auth_protocol": protocol,
-        "is_mfa": false,
+        "is_mfa": is_mfa,
         "subject_format": subject_format,
         "subject_identifier": subject.as_ref().filter(|_| email.is_none()),
         "subject_user_id": subject,

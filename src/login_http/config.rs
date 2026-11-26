@@ -98,6 +98,11 @@ impl Login {
             proxies: number("TRUSTED_PROXY_COUNT", 0)?.try_into()?,
             hooks: env::var_os("HOOKS_ENABLED").is_none() || crate::config::flag("HOOKS_ENABLED")?,
             throttle: LoginThrottle::configured()?,
+            mfa_quota: LoginThrottle::configured()?,
+            factor: env::var("MASTER_KEY")
+                .ok()
+                .map(|key| FactorVerifier::new(&key))
+                .transpose()?,
         }))
     }
 }

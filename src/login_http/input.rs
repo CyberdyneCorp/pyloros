@@ -63,17 +63,7 @@ fn address(raw: &str) -> Result<String, &'static str> {
     Ok(format!("{}@{domain}", mailbox.email.user()))
 }
 
-fn credentials(body: &Value) -> Result<(String, String), Vec<Value>> {
-    if body.is_null() {
-        return Err(vec![
-            json!({"loc":["body"],"type":"missing","msg":"Field required","input":null}),
-        ]);
-    }
-    if !body.is_object() {
-        return Err(vec![
-            json!({"loc":["body"],"type":"model_attributes_type","msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
-        ]);
-    }
+pub(super) fn credentials(body: &Value) -> Result<(String, String), Vec<Value>> {
     let mut errors = Vec::new();
     let raw = string(body, "email", &mut errors);
     let email = raw.map(address).transpose();
@@ -94,13 +84,51 @@ fn credentials(body: &Value) -> Result<(String, String), Vec<Value>> {
     }
 }
 
-pub(super) async fn read(headers: &HeaderMap, body: Body) -> Result<(String, String), Response> {
+pub(super) fn factor(body: &Value) -> Result<(String, String), Vec<Value>> {
+    let mut errors = Vec::new();
+    let token = string(body, "mfa_token", &mut errors);
+    let code = string(body, "code", &mut errors);
+    if let Some(code) = code {
+        let length = code.chars().count();
+        if length == 0 {
+            errors.push(json!({"loc":["body","code"],"type":"string_too_short","msg":"String should have at least 1 character","input":code,"ctx":{"min_length":"1"}}));
+        } else if length > 32 {
+            errors.push(json!({"loc":["body","code"],"type":"string_too_long","msg":"String should have at most 32 characters","input":code,"ctx":{"max_length":"32"}}));
+        }
+    }
+    match (token, code) {
+        (Some(token), Some(code)) if errors.is_empty() => Ok((token.into(), code.into())),
+        _ => Err(errors),
+    }
+}
+
+type Inputs = Result<(String, String), Vec<Value>>;
+
+fn fields(body: &Value, parse: fn(&Value) -> Inputs) -> Inputs {
+    if body.is_null() {
+        return Err(vec![
+            json!({"loc":["body"],"type":"missing","msg":"Field required","input":null}),
+        ]);
+    }
+    if !body.is_object() {
+        return Err(vec![
+            json!({"loc":["body"],"type":"model_attributes_type","msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
+        ]);
+    }
+    parse(body)
+}
+
+pub(super) async fn read(
+    headers: &HeaderMap,
+    body: Body,
+    parse: fn(&Value) -> Inputs,
+) -> Result<(String, String), Response> {
     let bytes = to_bytes(body, 2 * 1024 * 1024)
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE.into_response())?;
     crate::request_json::parse_body(headers, &bytes)
         .map_err(|e| vec![e])
-        .and_then(|b| credentials(&b))
+        .and_then(|b| fields(&b, parse))
         .map_err(|issues| {
             (
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -129,5 +157,16 @@ mod tests {
                 .len(),
             2
         );
+    }
+
+    #[test]
+    fn mfa_fields_report_individual_errors_and_preserve_submitted_codes() {
+        let issues = fields(&json!({"mfa_token":false, "code":""}), factor).unwrap_err();
+        assert_eq!(issues.len(), 2);
+        assert_eq!(issues[0]["loc"], json!(["body", "mfa_token"]));
+        assert_eq!(issues[1]["type"], "string_too_short");
+        let (_, code) =
+            fields(&json!({"mfa_token":"challenge","code":" 012345 "}), factor).unwrap();
+        assert_eq!(code, " 012345 ");
     }
 }
