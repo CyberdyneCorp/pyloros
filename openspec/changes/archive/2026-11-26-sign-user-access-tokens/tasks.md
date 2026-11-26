@@ -1,0 +1,2 @@
+- [x] 1. Implement token issuance and effective account claims.
+- [x] 2. Check signed tokens and authorization edge cases.

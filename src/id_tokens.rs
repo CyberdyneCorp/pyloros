@@ -58,6 +58,20 @@ fn has_value(value: &Value) -> bool {
     }
 }
 
+pub(crate) fn authentication_fields(doc: &mut Value, grant: &crate::authorization_codes::Grant) {
+    if let Some(time) = grant.auth_time {
+        doc["auth_time"] = json!(time.timestamp());
+        doc["amr"] = json!(
+            grant
+                .amr
+                .as_deref()
+                .unwrap_or_default()
+                .split_ascii_whitespace()
+                .collect::<BTreeSet<_>>()
+        );
+    }
+}
+
 impl GrantSessionIssuer {
     pub async fn issue_id_token(
         &self,
@@ -83,17 +97,7 @@ impl GrantSessionIssuer {
         if let Some(nonce) = grant.nonce.as_deref().filter(|n| !n.is_empty()) {
             doc["nonce"] = json!(nonce);
         }
-        if let Some(time) = grant.auth_time {
-            doc["auth_time"] = json!(time.timestamp());
-            doc["amr"] = json!(
-                grant
-                    .amr
-                    .as_deref()
-                    .unwrap_or_default()
-                    .split_ascii_whitespace()
-                    .collect::<BTreeSet<_>>()
-            );
-        }
+        authentication_fields(&mut doc, grant);
         if scopes.contains("email") || scopes.contains("profile") {
             let row = sqlx::query(
                 "SELECT primary_email, is_email_verified, extra_metadata FROM users WHERE id=$1",

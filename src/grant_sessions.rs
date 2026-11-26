@@ -20,6 +20,8 @@ pub struct GrantSessionIssuer {
 pub enum SessionError {
     #[error("invalid token lifetime")]
     InvalidLifetime,
+    #[error("the grant resource is no longer available")]
+    UnknownResource,
     #[error("token signing failed")]
     Signing(#[from] jsonwebtoken::errors::Error),
     #[error("session persistence failed")]
