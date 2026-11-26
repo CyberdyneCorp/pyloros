@@ -135,24 +135,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
 }
 
 fn credential(headers: &HeaderMap) -> Option<&str> {
-    if let Some((scheme, token)) = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split_once(' '))
-        && scheme.eq_ignore_ascii_case("bearer")
-        && !token.is_empty()
-    {
-        return Some(token);
-    }
-    headers
-        .get_all(header::COOKIE)
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|s| s.split(';'))
-        .filter_map(|entry| entry.trim().split_once('='))
-        .filter(|(key, _)| *key == "access_token")
-        .map(|(_, v)| v.trim_matches('"'))
-        .next_back()
+    crate::csrf::bearer(headers).or_else(|| crate::csrf::cookie(headers, "access_token"))
 }
 
 fn unauthorized() -> Response {

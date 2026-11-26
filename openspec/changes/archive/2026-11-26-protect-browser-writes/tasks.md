@@ -1,0 +1,2 @@
+- [x] Apply the cookie and origin checks to browser mutations.
+- [x] Compare refusal responses and verify allowed requests reach the handler.

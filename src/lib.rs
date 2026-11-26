@@ -5,6 +5,7 @@ pub mod code_decision;
 pub mod code_exchange;
 pub mod config;
 pub mod cors;
+mod csrf;
 pub mod discovery;
 mod grant_audit;
 pub mod grant_response;

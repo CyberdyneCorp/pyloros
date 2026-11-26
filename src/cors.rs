@@ -40,7 +40,11 @@ pub async fn apply(
             }
         });
     }
-    Ok(router.layer(middleware::from_fn_with_state(state, policy)))
+    let cookie = env::var("CSRF_COOKIE_NAME").unwrap_or_else(|_| "csrf".into());
+    let csrf = crate::csrf::Policy::new(state.clone(), cookie);
+    Ok(router
+        .layer(middleware::from_fn_with_state(state, policy))
+        .layer(middleware::from_fn_with_state(csrf, crate::csrf::check)))
 }
 
 async fn refresh(pool: &PgPool, base: &Origins, updates: &watch::Sender<Origins>) {

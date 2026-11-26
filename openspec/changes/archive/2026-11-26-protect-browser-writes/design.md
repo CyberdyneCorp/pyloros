@@ -1,0 +1,1 @@
+Check cookie-authenticated POST, PUT, PATCH and DELETE requests before dispatch. Share credential extraction with the profile endpoint so that a request classified as bearer-authenticated cannot fall back to an ambient cookie. Exempt the token exchange by exact path because it authenticates the client and grant independently of the browser session.
