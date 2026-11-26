@@ -1,0 +1,2 @@
+- [x] Serve credentialed browser responses and preflights.
+- [x] Verify browser access from the shared frontend and compare the policy against the reference.

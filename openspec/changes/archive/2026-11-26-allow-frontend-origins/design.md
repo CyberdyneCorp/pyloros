@@ -1,0 +1,1 @@
+Check origins by exact value against configured entries and active PostgreSQL CORS registrations. Keep the most recent successful registry snapshot between refreshes. Process preflights before dispatching to the application.

@@ -18,10 +18,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let force_secure = pyloros::config::flag("FORCE_SECURE_COOKIES")?;
     let secure_transport = environment == "production" || cookie_secure || force_secure;
     let mut provider = pyloros::discovery::Provider::from_env()?;
+    let seconds: u64 = env::var("OAUTH_REGISTRY_REFRESH_SECONDS")
+        .unwrap_or_else(|_| "30".into())
+        .parse()?;
     if let Some(issuer) = &mut provider {
-        let seconds: u64 = env::var("OAUTH_REGISTRY_REFRESH_SECONDS")
-            .unwrap_or_else(|_| "30".into())
-            .parse()?;
         issuer
             .refresh_scopes(pool.clone(), Duration::from_secs(seconds))
             .await;
@@ -29,8 +29,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let token =
         pyloros::token_http::routes(provider.as_ref(), pool.clone(), environment == "production")
             .await?;
-    let app = pyloros::router(environment, pool).merge(token);
+    let app = pyloros::router(environment, pool.clone()).merge(token);
     let app = app.merge(pyloros::discovery::routes(provider));
+    let app = pyloros::cors::apply(app, pool, Duration::from_secs(seconds)).await?;
     axum::serve(
         listener,
         pyloros::headers::apply(app, secure_transport)

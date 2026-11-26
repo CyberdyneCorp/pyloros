@@ -12,6 +12,8 @@ Relationship-based access control (ReBAC) will let an application grant access t
 
 Pyloros will use the existing frontend source and build. For compatibility testing, run the same frontend artifact against both backends and switch the API destination through deployment routing. Browser workflows must pass with the existing client code.
 
+Set `CORS_ALLOWED_ORIGINS` to the frontend origins that may make credentialed requests, as a comma-separated list or JSON array. The default is `http://localhost:3001`. Active PostgreSQL web origins enabled for CORS also take effect on the registry refresh interval. Responses to allowed origins expose `X-CSRF-Token`.
+
 ## Compatibility goals
 
 The design starts from the experience of application developers, users and operators. Priorities include interoperable sign-in and token handling, account and session management, administrative tools, auditability, and reliable integration events. Compatibility will be assessed through observable behavior and migration tests as the service develops.
