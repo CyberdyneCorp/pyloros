@@ -59,3 +59,8 @@ health:
 # Validate the project specifications with the OpenSpec CLI.
 spec-check:
     openspec validate --all --strict
+
+# Compare the five foundation routes on two running services.
+[positional-arguments]
+compare reference candidate *flags:
+    python3 scripts/compare_foundation.py "$@"
