@@ -1,7 +1,7 @@
 //! Bind a signed refresh credential to a successfully claimed user grant.
 use chrono::{DateTime, TimeDelta, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
-use serde_json::json;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 use std::{collections::BTreeSet, net::IpAddr};
@@ -18,9 +18,9 @@ pub struct GrantSessionIssuer {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
-    #[error("invalid refresh token lifetime")]
+    #[error("invalid token lifetime")]
     InvalidLifetime,
-    #[error("refresh token signing failed")]
+    #[error("token signing failed")]
     Signing(#[from] jsonwebtoken::errors::Error),
     #[error("session persistence failed")]
     Storage(#[from] sqlx::Error),
@@ -46,6 +46,14 @@ impl GrantSessionIssuer {
         })
     }
 
+    pub(crate) fn issuer(&self) -> &str {
+        &self.issuer
+    }
+
+    pub(crate) fn sign(&self, claims: &Value) -> Result<String, SessionError> {
+        Ok(encode(&self.header, claims, &self.key)?)
+    }
+
     /// Call in the same transaction as redemption. Release the returned credential only after commit.
     pub async fn create(
         &self,
@@ -60,14 +68,10 @@ impl GrantSessionIssuer {
             .checked_add_signed(self.refresh_lifetime)
             .ok_or(SessionError::InvalidLifetime)?;
         let jti = Uuid::new_v4();
-        let token = encode(
-            &self.header,
-            &json!({
-                "iss":self.issuer,"sub":grant.user_id.to_string(),"sid":claimed.session_id.to_string(),
-                "jti":jti.to_string(),"type":"refresh","iat":now.timestamp(),"exp":expires.timestamp()
-            }),
-            &self.key,
-        )?;
+        let token = self.sign(&json!({
+            "iss":self.issuer,"sub":grant.user_id.to_string(),"sid":claimed.session_id.to_string(),
+            "jti":jti.to_string(),"type":"refresh","iat":now.timestamp(),"exp":expires.timestamp()
+        }))?;
         let digest = format!("{:x}", Sha256::digest(token.as_bytes()));
         sqlx::query(
             "INSERT INTO sessions (id,user_id,refresh_token_hash,user_agent,ip_address,

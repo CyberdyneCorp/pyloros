@@ -1,0 +1,2 @@
+- [x] 1. Implement scoped ID token issuance with the issuer signing key.
+- [x] 2. Verify signed claims, omitted claims and cross-issuer compatibility.

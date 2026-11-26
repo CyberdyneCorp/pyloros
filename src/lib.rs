@@ -5,6 +5,7 @@ pub mod config;
 pub mod discovery;
 pub mod grant_sessions;
 pub mod headers;
+pub mod id_tokens;
 
 use std::time::Duration;
 
