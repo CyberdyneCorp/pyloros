@@ -14,6 +14,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await?;
     eprintln!("Pyloros listening on {}", listener.local_addr()?);
     let app = pyloros::router(env::var("APP_ENV").unwrap_or_else(|_| "dev".into()), pool);
+    let app = app.merge(pyloros::discovery::routes(
+        pyloros::discovery::Provider::from_env()?,
+    ));
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

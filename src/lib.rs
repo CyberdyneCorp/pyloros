@@ -1,3 +1,5 @@
+pub mod discovery;
+
 use std::time::Duration;
 
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};

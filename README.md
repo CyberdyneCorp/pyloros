@@ -28,3 +28,9 @@ Install stable Rust with rustfmt and Clippy, just, and Docker Compose. Run `just
 - `just db-down` stops local PostgreSQL and retains its volume.
 
 For an existing PostgreSQL instance, set `DATABASE_URL` and use `just run`. Set `BIND_ADDR` to change the listen address, `PYLOROS_URL` for the probe recipe, or `PYLOROS_PG_PORT` to choose a different local database port.
+
+## Discovery during migration
+
+The three well-known endpoints serve OpenID Connect discovery, OAuth authorization-server metadata, and a public JWKS. They default to disabled. To publish metadata for an existing issuer, set `OIDC_ENABLED=true`, `OIDC_ISSUER`, and `JWT_PUBLIC_KEY_PATH` (an RSA public key in SPKI PEM format). An inline `JWT_PUBLIC_KEY` also works. The default key ID is the public JWK thumbprint; set `JWT_KEY_ID` when matching an existing signing key ID.
+
+Set `OIDC_SCOPES` to the issuer's effective space-separated scope catalog. The current slice loads it at startup. Set `OAUTH_DCR_ENABLED` and `OAUTH_DEVICE_GRANT_ENABLED` to match the issuer. Point only the well-known and health paths at this service during coexistence. Token, registration and device flows still run on the existing backend.

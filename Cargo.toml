@@ -5,11 +5,15 @@ edition = "2024"
 publish = false
 
 [dependencies]
+base64 = "0.22"
+rsa = "0.9"
+sha2 = "0.10"
+serde_json = "1"
+url = "2"
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 
 [dev-dependencies]
-serde_json = "1"
 tower = { version = "0.5", features = ["util"] }
