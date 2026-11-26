@@ -1,0 +1,226 @@
+//! Password login for the PostgreSQL identity backend.
+mod config;
+mod input;
+use crate::{
+    email_challenge::{self, ConfirmationDecision, ConfirmationError, ConfirmationPolicy},
+    email_delivery::ConfirmationMailer,
+    first_party::{AuthenticatedLogin, LoginPolicy},
+    grant_audit::{AuditActivity, AuditSubject, write_activity},
+    grant_response::SessionOrigin,
+    grant_sessions::GrantSessionIssuer,
+    login_throttle::LoginThrottle,
+    password_login::{self, PasswordAttempt, PasswordDecision},
+    passwords::PasswordScheme,
+    session_cookies::SessionCookies,
+    signing::SigningIdentity,
+    token_http::{client_ip, header},
+};
+use axum::{
+    Json, Router,
+    extract::{ConnectInfo, Request, State},
+    http::{StatusCode, header as h},
+    response::{IntoResponse, Response},
+    routing::any,
+};
+use chrono::{TimeDelta, Utc};
+use serde_json::json;
+use sqlx::{PgPool, Postgres, Transaction};
+use std::{env, error::Error, net::SocketAddr, sync::Arc};
+use uuid::Uuid;
+
+struct Login {
+    pool: PgPool,
+    signing: SigningIdentity,
+    issuer: GrantSessionIssuer,
+    mail: ConfirmationMailer,
+    cookies: SessionCookies,
+    access: TimeDelta,
+    refresh: TimeDelta,
+    challenge: TimeDelta,
+    scheme: PasswordScheme,
+    admins: Vec<String>,
+    production: bool,
+    hooks: bool,
+    proxies: usize,
+    throttle: LoginThrottle,
+}
+
+pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
+    let login = Login::configured(pool, production)?.map(Arc::new);
+    Ok(Router::new()
+        .route("/api/v1/auth/login", any(handle))
+        .with_state(login))
+}
+
+fn problem(status: StatusCode, title: &str) -> Response {
+    (
+        status,
+        Json(json!({"type":"about:blank","title":title,"status":status.as_u16(),"detail":title})),
+    )
+        .into_response()
+}
+
+async fn handle(
+    State(state): State<Option<Arc<Login>>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
+) -> Response {
+    if req.method() != axum::http::Method::POST {
+        let mut res = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+        res.headers_mut().insert(h::ALLOW, "POST".parse().unwrap());
+        return res;
+    }
+    let Some(login) = state else {
+        return problem(StatusCode::SERVICE_UNAVAILABLE, "Login signing unavailable");
+    };
+    let (parts, body) = req.into_parts();
+    let (email, password) = match input::read(&parts.headers, body).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let origin = SessionOrigin {
+        ip: client_ip(&parts.headers, peer.ip(), login.proxies),
+        user_agent: header(&parts.headers, "user-agent"),
+    };
+    let id = header(&parts.headers, "x-request-id");
+    login
+        .run(PasswordAttempt {
+            email: &email,
+            password,
+            origin,
+            request_id: id,
+        })
+        .await
+        .unwrap_or_else(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
+            )
+                .into_response()
+        })
+}
+
+fn challenge(method: &str, token: String, code: Option<String>) -> Response {
+    Json(json!({"mfa_required":true,"mfa_token":token,"mfa_method":method,"match_code":code}))
+        .into_response()
+}
+
+type LoginResult = Result<Response, Box<dyn Error + Send + Sync>>;
+
+impl Login {
+    async fn run(&self, attempt: PasswordAttempt<'_>) -> LoginResult {
+        if let Err(limit) = self.throttle.admit(&self.pool, &attempt).await {
+            return Ok(limit.into_response());
+        }
+        let origin = attempt.origin;
+        let request_id = attempt.request_id;
+        let (user, tx) = match password_login::evaluate(
+            &self.pool,
+            self.scheme,
+            &self.signing,
+            self.challenge,
+            attempt,
+        )
+        .await?
+        {
+            PasswordDecision::InvalidCredentials => {
+                return Ok(problem(StatusCode::UNAUTHORIZED, "Invalid credentials"));
+            }
+            PasswordDecision::Inactive => {
+                return Ok(problem(StatusCode::FORBIDDEN, "User is inactive"));
+            }
+            PasswordDecision::Totp { token } => return Ok(challenge("totp", token, None)),
+            PasswordDecision::Continue { user, transaction } => (user, transaction),
+        };
+        let policy = ConfirmationPolicy {
+            signer: &self.signing,
+            lifetime: self.challenge,
+            origin,
+            request_id,
+        };
+        match email_challenge::require_if_due(&self.pool, tx, user, policy, |m| self.mail.send(m))
+            .await
+        {
+            Ok(ConfirmationDecision::Continue(tx)) => {
+                self.finish(tx, user, origin, request_id).await
+            }
+            Ok(ConfirmationDecision::Pending {
+                mfa_token,
+                match_code,
+            }) => Ok(challenge("magic_link", mfa_token, Some(match_code))),
+            Err(ConfirmationError::Delivery) => Ok(problem(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Could not send the confirmation email",
+            )),
+            Err(e) => Err(e.into()),
+        }
+    }
+    async fn finish(
+        &self,
+        mut tx: Transaction<'_, Postgres>,
+        user: Uuid,
+        origin: SessionOrigin<'_>,
+        request_id: Option<&str>,
+    ) -> LoginResult {
+        if self.hooks {
+            // Keep hook activation ordered with the session commit during coexistence.
+            sqlx::query("LOCK TABLE hooks IN SHARE MODE")
+                .execute(&mut *tx)
+                .await?;
+            let subscribed = sqlx::query_scalar::<_,bool>(
+                "SELECT EXISTS(SELECT 1 FROM hooks WHERE is_active AND event_type='user_logged_in')"
+            ).fetch_one(&mut *tx).await?;
+            if subscribed {
+                return Ok(problem(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Login hook dispatcher unavailable",
+                ));
+            }
+        }
+        let now = Utc::now();
+        let account = AuthenticatedLogin {
+            user,
+            authenticated_at: now,
+            methods: &["pwd"],
+            origin,
+        };
+        let policy = LoginPolicy {
+            access_lifetime: self.access,
+            admin_emails: &self.admins,
+            require_verified_admin_email: self.production,
+        };
+        let pair = self
+            .issuer
+            .issue_first_party(&mut tx, account, &policy, now)
+            .await?;
+        let (email, organization) = sqlx::query_as::<_, (Option<String>, Option<Uuid>)>(
+            "SELECT primary_email,organization_id FROM users WHERE id=$1",
+        )
+        .bind(user)
+        .fetch_one(&mut *tx)
+        .await?;
+        write_activity(
+            &mut *tx,
+            AuditActivity::PasswordLogin(pair.session),
+            AuditSubject {
+                user: Some(user),
+                email,
+                organization,
+            },
+            origin,
+            request_id,
+            now,
+        )
+        .await?;
+        let mut res=Json(json!({"access_token":pair.access_token,"refresh_token":pair.refresh_token,"token_type":"Bearer"})).into_response();
+        self.cookies.set(
+            res.headers_mut(),
+            &pair.access_token,
+            &pair.refresh_token,
+            self.access.num_seconds() as u64,
+            self.refresh.num_seconds() as u64,
+        )?;
+        tx.commit().await?;
+        Ok(res)
+    }
+}

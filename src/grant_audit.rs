@@ -126,6 +126,7 @@ pub(crate) enum AuditActivity<'a> {
         details: Value,
     },
     PhoneEdit,
+    PasswordLogin(Uuid),
     PasswordRefused(&'static str),
     MfaChallenge {
         method: &'static str,
@@ -164,6 +165,15 @@ pub(crate) async fn write_activity<'e>(
             },
             reason,
             details,
+        ),
+        AuditActivity::PasswordLogin(session) => (
+            "authentication",
+            "logon",
+            Some("password"),
+            "",
+            "success",
+            None,
+            json!({"session_id":session}),
         ),
         AuditActivity::PhoneEdit => (
             "account_lifecycle",

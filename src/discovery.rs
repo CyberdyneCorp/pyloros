@@ -18,6 +18,11 @@ pub struct Provider {
     scopes: tokio::sync::watch::Receiver<BTreeSet<String>>,
 }
 
+pub(crate) fn rsa_kid(n: &str, e: &str) -> String {
+    let canonical = format!(r#"{{"e":"{e}","kty":"RSA","n":"{n}"}}"#);
+    URL_SAFE_NO_PAD.encode(Sha256::digest(canonical.as_bytes()))
+}
+
 impl Provider {
     pub fn from_env() -> Result<Option<Self>, ConfigError> {
         if !flag("OIDC_ENABLED")? {
@@ -64,9 +69,7 @@ impl Provider {
         let public = RsaPublicKey::from_public_key_pem(pem)?;
         let n = URL_SAFE_NO_PAD.encode(public.n().to_bytes_be());
         let e = URL_SAFE_NO_PAD.encode(public.e().to_bytes_be());
-        let canonical = format!(r#"{{"e":"{e}","kty":"RSA","n":"{n}"}}"#);
-        let kid =
-            key_id.unwrap_or_else(|| URL_SAFE_NO_PAD.encode(Sha256::digest(canonical.as_bytes())));
+        let kid = key_id.unwrap_or_else(|| rsa_kid(&n, &e));
         let keys = json!({"keys":[{"alg":"RS256","use":"sig","kty":"RSA","kid":kid,"n":n,"e":e}]});
         let base = format!("{issuer}/api/v1/auth");
         let oauth = format!("{base}/oauth2");

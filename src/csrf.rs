@@ -74,7 +74,10 @@ impl Policy {
         if !writes
             || cookie(headers, crate::session_cookies::ACCESS).is_none()
             || bearer(headers).is_some()
-            || req.uri().path() == "/api/v1/auth/oauth2/token"
+            || matches!(
+                req.uri().path(),
+                "/api/v1/auth/login" | "/api/v1/auth/oauth2/token"
+            )
         {
             return None;
         }
@@ -139,9 +142,18 @@ mod tests {
     }
 
     #[test]
-    fn token_exchange_exception_matches_one_path() {
+    fn credential_endpoints_match_only_the_exact_paths() {
         let policy = Policy::new(watch::channel(BTreeSet::new()).1, "csrf".into());
         let origin = "http://api.example.test";
+        assert_eq!(
+            policy.refusal(&request("/api/v1/auth/login", origin, "")),
+            None
+        );
+        assert!(
+            policy
+                .refusal(&request("/api/v1/auth/login/other", origin, ""))
+                .is_some()
+        );
         assert_eq!(
             policy.refusal(&request("/api/v1/auth/oauth2/token", origin, "")),
             None

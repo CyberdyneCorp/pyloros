@@ -1,0 +1,1 @@
+Use the configured signer for both session and challenge credentials. Build the response cookies before committing the successful session and logon event. During coexistence, deployments with active legacy login hooks must route login to the reference service. If such a request reaches Rust, refuse session creation while its dispatcher is unavailable.

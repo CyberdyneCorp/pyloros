@@ -1,0 +1,1 @@
+- [x] Implement the endpoint and verify browser sign-in and failure behavior.

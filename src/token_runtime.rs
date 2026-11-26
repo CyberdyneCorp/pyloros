@@ -18,11 +18,15 @@ pub(crate) struct Runtime {
     pub audiences: watch::Receiver<Arc<Audiences>>,
 }
 
-fn number(name: &str, default: i64) -> Result<i64, Box<dyn Error>> {
+pub(crate) fn number(name: &str, default: i64) -> Result<i64, Box<dyn Error>> {
     Ok(env::var(name).map_or(Ok(default), |s| s.parse())?)
 }
 
-fn lifetime(name: &str, default: i64, seconds: i64) -> Result<TimeDelta, Box<dyn Error>> {
+pub(crate) fn lifetime(
+    name: &str,
+    default: i64,
+    seconds: i64,
+) -> Result<TimeDelta, Box<dyn Error>> {
     number(name, default)?
         .checked_mul(seconds)
         .filter(|v| *v > 0)

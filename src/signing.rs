@@ -2,6 +2,7 @@
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use serde::Serialize;
 
+#[derive(Clone)]
 pub struct SigningIdentity {
     issuer: String,
     header: Header,
