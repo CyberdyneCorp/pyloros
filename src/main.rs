@@ -34,6 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .merge(token)
         .merge(login_methods)
         .merge(password_login)
+        .merge(pyloros::email_link_http::routes(pool.clone())?)
         .merge(profile);
     let app = app.merge(pyloros::discovery::routes(provider));
     let app = pyloros::cors::apply(app, pool, Duration::from_secs(seconds)).await?;

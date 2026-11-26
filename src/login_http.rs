@@ -52,7 +52,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         .with_state(login))
 }
 
-fn problem(status: StatusCode, title: &str) -> Response {
+pub(crate) fn problem(status: StatusCode, title: &str) -> Response {
     (
         status,
         Json(json!({"type":"about:blank","title":title,"status":status.as_u16(),"detail":title})),

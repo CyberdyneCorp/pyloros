@@ -70,7 +70,7 @@ impl LoginThrottle {
         pool: &PgPool,
         attempt: &PasswordAttempt<'_>,
     ) -> Result<(), RateLimited> {
-        if self.consume(attempt.origin.ip, Instant::now) {
+        if self.allow(attempt.origin.ip) {
             return Ok(());
         }
         let subject = AuditSubject {
@@ -92,6 +92,10 @@ impl LoginThrottle {
             eprintln!("could not record throttled password login");
         }
         Err(RateLimited)
+    }
+
+    pub(crate) fn allow(&self, ip: Option<IpAddr>) -> bool {
+        self.consume(ip, Instant::now)
     }
 
     fn consume(&self, ip: Option<IpAddr>, clock: impl FnOnce() -> Instant) -> bool {

@@ -9,6 +9,7 @@ mod csrf;
 pub mod discovery;
 pub mod email_challenge;
 pub mod email_delivery;
+pub mod email_link_http;
 pub mod first_party;
 mod grant_audit;
 pub mod grant_response;

@@ -1,0 +1,1 @@
+Find the pending challenge by the digest of the submitted token. Inspect without mutation. Use a conditional update to permit at most one decision before expiry. Commit approval with its audit event and retain refusals in the audit trail.

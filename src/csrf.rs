@@ -76,7 +76,11 @@ impl Policy {
             || bearer(headers).is_some()
             || matches!(
                 req.uri().path(),
-                "/api/v1/auth/login" | "/api/v1/auth/oauth2/token"
+                "/api/v1/auth/login"
+                    | "/api/v1/auth/oauth2/token"
+                    | "/api/v1/auth/magic-link/inspect"
+                    | "/api/v1/auth/magic-link/confirm"
+                    | "/api/v1/auth/magic-link/deny"
             )
         {
             return None;

@@ -126,6 +126,9 @@ pub(crate) enum AuditActivity<'a> {
         details: Value,
     },
     PhoneEdit,
+    EmailDecision {
+        reason: Option<&'static str>,
+    },
     PasswordLogin(Uuid),
     PasswordRefused(&'static str),
     MfaChallenge {
@@ -174,6 +177,23 @@ pub(crate) async fn write_activity<'e>(
             "success",
             None,
             json!({"session_id":session}),
+        ),
+        AuditActivity::EmailDecision { reason } => (
+            "authentication",
+            "magic_link_decision",
+            if reason == Some("invalid_token") {
+                None
+            } else {
+                Some("magic_link")
+            },
+            "",
+            if reason.is_some() {
+                "failure"
+            } else {
+                "success"
+            },
+            reason,
+            json!({}),
         ),
         AuditActivity::PhoneEdit => (
             "account_lifecycle",

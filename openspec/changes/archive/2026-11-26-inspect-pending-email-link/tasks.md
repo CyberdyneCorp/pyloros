@@ -1,0 +1,1 @@
+- [x] Implement and compare inspection and both decisions, including concurrent claims.
