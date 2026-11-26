@@ -16,6 +16,7 @@ pub mod login_methods;
 pub mod mfa_challenges;
 pub mod passwords;
 pub mod profile;
+pub mod session_cookies;
 pub mod signing;
 pub mod token_authorization;
 pub mod token_http;

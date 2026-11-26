@@ -14,9 +14,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await?;
     eprintln!("Pyloros listening on {}", listener.local_addr()?);
     let environment = env::var("APP_ENV").unwrap_or_else(|_| "dev".into());
-    let cookie_secure = pyloros::config::flag("COOKIE_SECURE")?;
-    let force_secure = pyloros::config::flag("FORCE_SECURE_COOKIES")?;
-    let secure_transport = environment == "production" || cookie_secure || force_secure;
+    let secure_transport = pyloros::session_cookies::secure_transport(environment == "production")?;
     let mut provider = pyloros::discovery::Provider::from_env()?;
     let seconds: u64 = env::var("OAUTH_REGISTRY_REFRESH_SECONDS")
         .unwrap_or_else(|_| "30".into())

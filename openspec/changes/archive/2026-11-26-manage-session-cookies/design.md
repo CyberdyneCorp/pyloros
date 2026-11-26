@@ -1,0 +1,1 @@
+Append three separate Set-Cookie headers after successful authentication. Use the token lifetimes for Max-Age. Generate the CSRF value from 32 random bytes on each issuance. Preserve cookie names, domain and paths when clearing a session. Construct the complete set before updating the response headers.

@@ -72,7 +72,7 @@ impl Policy {
         );
         let headers = req.headers();
         if !writes
-            || cookie(headers, "access_token").is_none()
+            || cookie(headers, crate::session_cookies::ACCESS).is_none()
             || bearer(headers).is_some()
             || req.uri().path() == "/api/v1/auth/oauth2/token"
         {

@@ -149,7 +149,8 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
 }
 
 fn credential(headers: &HeaderMap) -> Option<&str> {
-    crate::csrf::bearer(headers).or_else(|| crate::csrf::cookie(headers, "access_token"))
+    crate::csrf::bearer(headers)
+        .or_else(|| crate::csrf::cookie(headers, crate::session_cookies::ACCESS))
 }
 
 fn unauthorized() -> Response {
