@@ -24,6 +24,7 @@ pub(super) mod binding;
 pub(super) mod delivery;
 pub use delivery::worker::ComponentHookWorker;
 mod dry_run;
+pub(super) mod manual;
 mod source;
 pub(super) use dry_run::dry_run;
 pub(super) use source::{inspect_source, validate_source};

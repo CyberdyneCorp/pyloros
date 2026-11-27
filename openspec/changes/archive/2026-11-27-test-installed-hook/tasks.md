@@ -1,0 +1,3 @@
+- [x] Parse the identifier and context and resolve the selected artifact.
+- [x] Execute through the isolated worker and record the operator audit entry.
+- [x] Verify successful, failed, unavailable and audited runs through HTTP and the existing clients.

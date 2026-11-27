@@ -252,6 +252,14 @@ Build both release binaries with `just build-release`. Deploy the matching
 UTF-16 and UTF-32 requests. It sends the full decoded module to the worker. A missing or busy worker returns HTTP 503.
 For local inspection, run `pyloros-hook-worker --parse-hook-source < hook.py`.
 
+Administrators can test an installed definition with
+`POST /api/v1/admin/hooks/{hook_id}/test` or `cyberauth hooks test`.
+Select the hook's compiled component first. The test accepts a JSON object
+with optional `context`, works on disabled definitions, and reports output,
+error, success and elapsed milliseconds. The component worker accepts up to
+64 KiB of context. A completed test writes an operator audit entry.
+The automated delivery history contains only dispatched events.
+
 ### Validate a WebAssembly hook
 
 Administrators can submit a binary WebAssembly component to

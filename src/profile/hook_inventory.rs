@@ -18,6 +18,10 @@ pub(super) fn routes() -> Router<Arc<Profile>> {
             "/api/v1/admin/hooks/{hook_id}",
             any(detail).put(author::update).delete(removal::remove),
         )
+        .route(
+            "/api/v1/admin/hooks/{hook_id}/test",
+            any(|| async { passkeys::post_required() }).post(wasm_hooks::manual::test),
+        )
         .layer(DefaultBodyLimit::disable())
         .route("/api/v1/admin/hooks/{hook_id}/executions", any(history))
 }

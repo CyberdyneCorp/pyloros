@@ -1,0 +1,1 @@
+Resolve the hook timeout and immutable component bytes together in PostgreSQL. Execute through the isolated worker used for staged dry runs. The manual test may run an inactive hook. Include context only in the worker request. Audit the hook identifier and success flag. Keep the caller waiting only for the configured deadline.
