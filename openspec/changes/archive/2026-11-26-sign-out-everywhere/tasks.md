@@ -1,0 +1,1 @@
+- [x] Validate account isolation, authorization, cutoff, session count, cookie removal and the unchanged preferences screen.

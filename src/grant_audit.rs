@@ -130,6 +130,7 @@ pub(crate) enum AuditActivity<'a> {
         reason: Option<&'static str>,
     },
     PasswordLogin(Uuid),
+    LogoffAll(u64),
     Logoff {
         reason: Option<&'static str>,
         details: Value,
@@ -221,6 +222,15 @@ pub(crate) async fn write_activity<'e>(
             } else {
                 json!({})
             },
+        ),
+        AuditActivity::LogoffAll(count) => (
+            "session",
+            "logoff_all",
+            None,
+            "",
+            "success",
+            None,
+            json!({"sessions_revoked":count}),
         ),
         AuditActivity::Logoff { reason, details } => (
             "session",

@@ -1,5 +1,6 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
 mod edit;
+mod logout_all;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
 use axum::{
@@ -123,6 +124,7 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
 }
 
 struct Profile {
+    cookies: crate::session_cookies::SessionCookies,
     proxies: usize,
     pool: PgPool,
     verify: Option<Verifier>,
@@ -133,6 +135,7 @@ struct Profile {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        cookies: crate::session_cookies::SessionCookies::configured(production)?,
         proxies: env::var("TRUSTED_PROXY_COUNT")
             .unwrap_or_else(|_| "0".into())
             .parse()?,
@@ -144,6 +147,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     };
     Ok(Router::new()
         .route("/api/v1/users/me", any(current))
+        .route("/api/v1/auth/logout-all", any(logout_all::handle))
         .route("/api/v1/users/me/entitlements", any(entitlements))
         .with_state(Arc::new(state)))
 }
