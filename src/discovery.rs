@@ -114,6 +114,10 @@ impl Provider {
         self.scopes.clone()
     }
 
+    pub(crate) fn dynamic_registration_enabled(&self) -> bool {
+        self.metadata.get("registration_endpoint").is_some()
+    }
+
     pub(crate) fn device_authorization_enabled(&self) -> bool {
         self.metadata.get("device_authorization_endpoint").is_some()
     }

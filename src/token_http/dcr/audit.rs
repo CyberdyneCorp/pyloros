@@ -1,0 +1,78 @@
+//! Append the public registration event to the existing administrative hash chain.
+use crate::grant_response::SessionOrigin;
+use chrono::Utc;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use sqlx::{Postgres, Transaction};
+use std::fmt::Write;
+use uuid::Uuid;
+
+fn canonical_digest(mut fields: Value) -> String {
+    fields.sort_all_objects();
+    let mut ascii = String::new();
+    for c in fields.to_string().chars() {
+        if c < '\u{7f}' {
+            ascii.push(c);
+        } else {
+            for unit in c.encode_utf16(&mut [0; 2]) {
+                write!(ascii, "\\u{unit:04x}").expect("write to string");
+            }
+        }
+    }
+    format!("{:x}", Sha256::digest(ascii.as_bytes()))
+}
+
+pub(super) async fn append(
+    tx: &mut Transaction<'_, Postgres>,
+    target: &str,
+    meta: Value,
+    origin: SessionOrigin<'_>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO audit_chain_head (id,head_hash) VALUES (1,repeat('0',64)) ON CONFLICT(id) DO NOTHING")
+        .execute(&mut **tx).await?;
+    let previous = sqlx::query_scalar::<_, String>(
+        "SELECT head_hash FROM audit_chain_head WHERE id=1 FOR UPDATE",
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    let now = Utc::now();
+    let id = Uuid::new_v4();
+    let ip = origin.ip.map(|v| v.to_string());
+    let digest = canonical_digest(
+        json!({"action":"oauth_client.dynamic_register","actor_email":null,"actor_user_id":null,
+        "target_id":target,"target_type":"oauth_client","id":id,"metadata":meta,"ip_address":ip,"user_agent":origin.user_agent,
+        "prev_hash":previous,"created_at":now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()}),
+    );
+    sqlx::query(
+        "INSERT INTO admin_action_logs (id,action,target_type,target_id,extra_metadata,ip_address,user_agent,created_at,prev_hash,row_hash)
+         VALUES ($1,'oauth_client.dynamic_register','oauth_client',$2,$3,$4::text::inet,$5,$6,$7,$8)",
+    )
+    .bind(id)
+    .bind(target)
+    .bind(meta)
+    .bind(ip)
+    .bind(origin.user_agent)
+    .bind(now)
+    .bind(previous)
+    .bind(&digest)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query("UPDATE audit_chain_head SET head_hash=$1 WHERE id=1")
+        .bind(digest)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unicode_registration_metadata_preserves_the_chain_digest() {
+        let content = json!({"nested":{"z":1,"a":2},"label":"Δ 🏛"});
+        assert_eq!(
+            canonical_digest(content),
+            "edb09f4a065cf69cda395d3cecfd5ef4323c799de7a5ad53ee579cc4da25c2f0"
+        );
+    }
+}

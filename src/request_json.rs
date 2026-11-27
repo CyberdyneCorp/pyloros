@@ -2,10 +2,7 @@ use crate::token_http::header;
 use axum::http::HeaderMap;
 use serde_json::{Value, json};
 
-pub(crate) fn parse_body(headers: &HeaderMap, bytes: &[u8]) -> Result<Value, Value> {
-    if bytes.is_empty() {
-        return Ok(Value::Null);
-    }
+pub(crate) fn is_json(headers: &HeaderMap) -> bool {
     let mime = header(headers, "content-type")
         .unwrap_or("")
         .split(';')
@@ -13,10 +10,15 @@ pub(crate) fn parse_body(headers: &HeaderMap, bytes: &[u8]) -> Result<Value, Val
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
-    if !mime
-        .strip_prefix("application/")
+    mime.strip_prefix("application/")
         .is_some_and(|s| s == "json" || s.ends_with("+json"))
-    {
+}
+
+pub(crate) fn parse_body(headers: &HeaderMap, bytes: &[u8]) -> Result<Value, Value> {
+    if bytes.is_empty() {
+        return Ok(Value::Null);
+    }
+    if !is_json(headers) {
         return Ok(Value::String(String::from_utf8_lossy(bytes).into_owned()));
     }
     serde_json::from_slice(bytes).map_err(|error| json_issue(bytes, error))

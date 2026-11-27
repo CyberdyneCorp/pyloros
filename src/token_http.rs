@@ -1,4 +1,5 @@
 //! OAuth token endpoint for service and authorization-code grants.
+mod dcr;
 mod device;
 mod device_browser;
 mod device_poll;
@@ -33,9 +34,12 @@ pub async fn routes(
     pool: PgPool,
     production: bool,
 ) -> Result<Router, Box<dyn Error>> {
-    let configured = ResourceRegistry::from_env()?;
+    let mut configured = ResourceRegistry::from_env()?;
+    if provider.is_some_and(Provider::dynamic_registration_enabled) {
+        configured.registration_origins = Some(dcr::configured_origins()?);
+    }
     let code = match provider {
-        Some(provider) => Runtime::load(provider, pool.clone(), production, configured)
+        Some(provider) => Runtime::load(provider, pool.clone(), production, configured.clone())
             .await?
             .map(Arc::new),
         None => None,
@@ -43,6 +47,7 @@ pub async fn routes(
     let proxies = crate::token_runtime::number("TRUSTED_PROXY_COUNT", 0)?.try_into()?;
     let device = device::routes(provider, pool.clone(), proxies)?;
     let browser = device_browser::routes(provider, code.clone(), proxies)?;
+    let registration = dcr::routes(configured, code.as_deref(), pool.clone(), proxies).await?;
     let state = Endpoint {
         service: service::Issuer::configured(pool, production)?,
         code: code.clone(),
@@ -54,7 +59,8 @@ pub async fn routes(
         .route("/api/v1/auth/oauth2/token", post(exchange))
         .with_state(Arc::new(state))
         .merge(device)
-        .merge(browser);
+        .merge(browser)
+        .merge(registration);
     if let Some(runtime) = code {
         return Ok(token
             .merge(

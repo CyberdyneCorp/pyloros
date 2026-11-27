@@ -70,7 +70,7 @@ fn matches_callback(registered: &str, requested: &str, public: bool) -> bool {
 
 // URL normalization can collapse distinct paths and numeric host spellings.
 // Compare the original path and query and parse only the host and port.
-fn loopback(uri: &str) -> Option<(&'static str, &str, &str)> {
+pub(crate) fn loopback(uri: &str) -> Option<(&'static str, &str, &str)> {
     if uri.contains(['#', '\\']) || uri.bytes().any(|b| b.is_ascii_control() || b == b' ') {
         return None;
     }

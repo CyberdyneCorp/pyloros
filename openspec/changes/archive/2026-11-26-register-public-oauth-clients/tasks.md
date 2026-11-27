@@ -1,0 +1,3 @@
+- [x] Capture reference HTTP responses, client records and administrative audit behavior.
+- [x] Implement validation, quotas, redirect and scope policy, and transactional registration.
+- [x] Compare registration and subsequent client use in both backend directions, including audit rollback and feature switches.

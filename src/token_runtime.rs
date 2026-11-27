@@ -17,6 +17,7 @@ type Audiences = BTreeMap<String, Option<String>>;
 pub(crate) struct ResourceRegistry {
     pub scopes: ResourceScopes,
     pub audiences: Audiences,
+    pub registration_origins: Option<std::collections::BTreeSet<String>>,
 }
 
 pub(crate) struct Runtime {
@@ -114,10 +115,14 @@ async fn load_resources(
     pool: &PgPool,
     base: &ResourceRegistry,
 ) -> Result<ResourceRegistry, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await?;
     let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
         "SELECT resource, scopes, audience FROM oauth_protected_resources WHERE active",
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *tx)
     .await?;
     let mut registry = base.clone();
     for (uri, scopes, audience) in rows {
@@ -129,10 +134,20 @@ async fn load_resources(
             registry.audiences.insert(uri, audience);
         }
     }
+    if let Some(origins) = &mut registry.registration_origins {
+        origins.extend(
+            sqlx::query_scalar::<_, String>(
+                "SELECT origin FROM oauth_web_origins WHERE active AND dcr_redirect",
+            )
+            .fetch_all(&mut *tx)
+            .await?,
+        );
+    }
+    tx.commit().await?;
     Ok(registry)
 }
 
-async fn resource_registry(
+pub(crate) async fn resource_registry(
     pool: PgPool,
     base: ResourceRegistry,
     seconds: u64,
