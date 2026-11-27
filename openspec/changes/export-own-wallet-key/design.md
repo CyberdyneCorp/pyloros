@@ -1,0 +1,1 @@
+Authenticate the bearer or session cookie and apply configured revocation checks before consulting the deployment switch. Charge enabled reads to the authenticated account before loading wallet material. Read the encrypted key and stored address for that account from PostgreSQL, then decrypt with the deployment key. Keep decryption failures and key material out of diagnostics.

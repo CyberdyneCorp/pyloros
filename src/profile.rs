@@ -35,6 +35,7 @@ mod totp;
 mod update_input;
 mod userinfo;
 mod wallet_challenge;
+mod wallet_export;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
 use axum::{
@@ -256,6 +257,7 @@ struct Profile {
     oidc_enabled: bool,
     provisioning: provisioning::Settings,
     registration: registration::Settings,
+    wallet_export: wallet_export::Settings,
     wallet_challenges: wallet_challenge::issue::Settings,
     erasure: erasure::Settings,
     account_mail: crate::email_delivery::ConfirmationMailer,
@@ -359,6 +361,7 @@ fn build_routes(
         oidc_enabled: config::flag("OIDC_ENABLED")?,
         provisioning: provisioning::Settings::configured()?,
         registration: registration::Settings::configured()?,
+        wallet_export: wallet_export::Settings::configured()?,
         wallet_challenges: wallet_challenge::issue::Settings::configured()?,
         erasure: erasure::Settings::configured()?,
         account_mail: crate::email_delivery::ConfirmationMailer::configured()?,
@@ -756,6 +759,7 @@ fn build_routes(
         )
         .route("/api/v1/auth/password/change", any(password_change::handle))
         .route("/api/v1/auth/logout-all", any(logout_all::handle))
+        .route("/api/v1/users/me/private-key", any(wallet_export::handle))
         .route("/api/v1/users/me/entitlements", any(entitlements))
         .with_state(Arc::new(state)))
 }

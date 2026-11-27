@@ -235,6 +235,7 @@ mod tests {
             provisioning: provisioning::Settings::configured().unwrap(),
             wallet_challenges: wallet_challenge::issue::Settings::configured().unwrap(),
             registration: registration::Settings::configured().unwrap(),
+            wallet_export: wallet_export::Settings::configured().unwrap(),
             erasure: erasure::Settings::configured().unwrap(),
             account_mail: crate::email_delivery::ConfirmationMailer::mock(),
             reset_quota: crate::login_throttle::LoginThrottle::new(0),

@@ -1,0 +1,3 @@
+- [x] Add the opt-in route, account quota and wallet lookup.
+- [x] Compare enabled and disabled deployments, authentication, quotas and stored wallet formats.
+- [ ] Resolve migration signoff for development deployments without an explicit encryption key.
