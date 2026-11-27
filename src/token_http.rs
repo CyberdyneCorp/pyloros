@@ -4,7 +4,7 @@ use crate::{
     code_exchange::ExchangeRequest,
     discovery::Provider,
     grant_response::{GrantSettings, SessionOrigin},
-    token_runtime::Runtime,
+    token_runtime::{ResourceRegistry, Runtime},
 };
 use axum::{
     Json, Router,
@@ -27,10 +27,11 @@ pub async fn routes(
     pool: PgPool,
     production: bool,
 ) -> Result<Router, Box<dyn Error>> {
+    let configured = ResourceRegistry::from_env()?;
     let Some(provider) = provider else {
         return Ok(Router::new());
     };
-    let Some(runtime) = Runtime::load(provider, pool, production).await? else {
+    let Some(runtime) = Runtime::load(provider, pool, production, configured).await? else {
         return Ok(Router::new());
     };
     Ok(Router::new()

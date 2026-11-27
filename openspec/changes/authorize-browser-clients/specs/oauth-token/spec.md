@@ -26,3 +26,7 @@ The service SHALL validate the registered client and callback, browser authentic
 #### Scenario: Resource policy refresh
 - **WHEN** a protected resource is configured both locally and in PostgreSQL
 - **THEN** use the local scope ceiling and audience together. For database-only resources, publish the active scope ceiling and audience from the same refresh.
+
+#### Scenario: Unknown configured resource scope
+- **WHEN** an environment-defined protected resource names a scope outside the deployment's recognized catalog
+- **THEN** reject the configuration at startup, including when OIDC is disabled.

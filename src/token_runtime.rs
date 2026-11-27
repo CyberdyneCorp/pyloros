@@ -56,11 +56,28 @@ struct ResourceOptions {
     audience: Option<String>,
 }
 
-fn configured_resources(raw: &str) -> Result<ResourceRegistry, Box<dyn Error>> {
+impl ResourceRegistry {
+    pub(crate) fn from_env() -> Result<Self, Box<dyn Error>> {
+        configured_resources(
+            &env::var("OAUTH_PROTECTED_RESOURCES").unwrap_or_default(),
+            &env::var("PYLOROS_RESOURCE_SCOPE_CATALOG").unwrap_or_default(),
+        )
+    }
+}
+
+fn configured_resources(
+    raw: &str,
+    application_scopes: &str,
+) -> Result<ResourceRegistry, Box<dyn Error>> {
     let mut registry = ResourceRegistry::default();
     if raw.trim().is_empty() {
         return Ok(registry);
     }
+    let known: std::collections::BTreeSet<_> =
+        ["openid", "profile", "email", "offline_access", "roles"]
+            .into_iter()
+            .chain(application_scopes.split_whitespace())
+            .collect();
     for (uri, entry) in serde_json::from_str::<BTreeMap<String, Resource>>(raw)? {
         let url = url::Url::parse(&uri)?;
         if url.scheme() != "https" || url.host().is_none() || url.fragment().is_some() {
@@ -72,6 +89,9 @@ fn configured_resources(raw: &str) -> Result<ResourceRegistry, Box<dyn Error>> {
         };
         if audience.as_ref().is_some_and(|s| s.trim().is_empty()) {
             return Err("empty protected resource audience".into());
+        }
+        if let Some(unknown) = scopes.iter().find(|name| !known.contains(name.as_str())) {
+            return Err(format!("unknown scope {unknown:?} for protected resource {uri:?}").into());
         }
         registry
             .scopes
@@ -141,6 +161,7 @@ impl Runtime {
         provider: &Provider,
         pool: PgPool,
         production: bool,
+        configured: ResourceRegistry,
     ) -> Result<Option<Self>, Box<dyn Error>> {
         let Some(pem) = crate::config::pem("JWT_PRIVATE_KEY_PATH", "JWT_PRIVATE_KEY")? else {
             return Ok(None);
@@ -166,7 +187,7 @@ impl Runtime {
             trusted_proxies: number("TRUSTED_PROXY_COUNT", 0)?.try_into()?,
             resources: resource_registry(
                 pool.clone(),
-                configured_resources(&env::var("OAUTH_PROTECTED_RESOURCES").unwrap_or_default())?,
+                configured,
                 number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)?.try_into()?,
             )
             .await,
@@ -179,6 +200,17 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_both_resource_configurations_against_the_deployment_catalog() {
+        for raw in [
+            r#"{"https://service.example":["openid","orders:read"]}"#,
+            r#"{"https://service.example":{"scopes":["orders:read"],"audience":"orders"}}"#,
+        ] {
+            assert!(configured_resources(raw, "orders:read orders:write").is_ok());
+            assert!(configured_resources(raw, "orders:reader").is_err());
+        }
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]
@@ -198,7 +230,7 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        let base = configured_resources(r#"{"https://fixed.example":["roles"],"https://other.example":{"scopes":[],"audience":"other"}}"#).unwrap();
+        let base = configured_resources(r#"{"https://fixed.example":["roles"],"https://other.example":{"scopes":[],"audience":"other"}}"#, "").unwrap();
         let snapshot = load_resources(&pool, &base).await.unwrap();
         assert_eq!(snapshot.scopes.len(), 3);
         assert_eq!(

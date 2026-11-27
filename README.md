@@ -59,6 +59,9 @@ Set `JWT_ALGORITHM=RS256` and supply `JWT_PRIVATE_KEY_PATH` or an inline `JWT_PR
 
 The [token endpoint](openspec/specs/oauth-token/spec.md) accepts the authorization-code grant with form or HTTP Basic credentials. Configure the access and ID lifetimes with `JWT_ACCESS_TOKEN_TTL_MINUTES` and `OIDC_ID_TOKEN_TTL_MINUTES` (both default to 15), and the refresh lifetime with `JWT_REFRESH_TOKEN_TTL_DAYS` (default 30). Set `OAUTH_PROTECTED_RESOURCES` to a JSON object mapping HTTPS resource URLs to scope lists or objects with scopes and an audience override. Configured audiences take precedence over active PostgreSQL registrations. The registry refresh interval also applies to resource audiences.
 
+Pyloros validates environment-defined resource scopes at startup, including when OIDC is disabled. The default catalog includes `openid`, `profile`, `email`, `offline_access` and `roles`. Supply additional recognized names in the space-separated `PYLOROS_RESOURCE_SCOPE_CATALOG` deployment setting. For migration, supply the reference deployment’s complete application scope catalog. This setting controls configuration validation independently of discovery and client grants.
+
+
 During coexistence, direct code exchanges to Pyloros for clients using PostgreSQL IAM that do not depend on login hooks. Keep refresh, client-credentials and device grants on the existing token handler. Moving the whole token path requires those grants and post-commit hook support.
 
 ## Specifications
