@@ -38,3 +38,17 @@ The service SHALL derive user role claims from groups reported by the active IAM
 
 - **WHEN** a subsequent lookup succeeds and reports no memberships
 - **THEN** role-bearing responses return empty global and organization assignments for the user
+
+### Requirement: Administrative visibility of the chain configuration
+
+The service SHALL allow a current administrator to inspect the process-local chain configuration. A read SHALL report the enablement flag, endpoint, contract addresses, signer address, key presence and configuration completeness. Signing credentials SHALL remain private.
+
+#### Scenario: Fresh process
+
+- **WHEN** an administrator reads the chain settings before a runtime update
+- **THEN** the configuration is disabled with no key or addresses set
+
+#### Scenario: Replaced signer
+
+- **WHEN** an operator replaces the signing key with a nonempty unparseable key
+- **THEN** subsequent settings reads report key presence and a null signer address

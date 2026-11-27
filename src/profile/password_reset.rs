@@ -292,6 +292,7 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
+            blockchain: Default::default(),
             builtin_scopes: Default::default(),
             configured_resources: Default::default(),
             configured_origins: Default::default(),

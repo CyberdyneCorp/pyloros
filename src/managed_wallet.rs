@@ -20,14 +20,18 @@ impl ManagedWallet {
     fn from_secret(secret: &SecretKey, key: &KeyEncryptionKey) -> Result<Self, EncryptionError> {
         let point = secret.public_key().to_encoded_point(false);
         let public = point.as_bytes();
-        let digest = Keccak256::digest(&public[1..]);
         let bytes = Zeroizing::new(secret.to_bytes());
         Ok(Self {
             public_key: format!("0x{}", HEXLOWER.encode(public)),
-            address: checksummed(&digest[12..]),
+            address: ethereum_address(public),
             encrypted_private_key: key.encrypt(bytes.as_slice())?,
         })
     }
+}
+
+pub(crate) fn ethereum_address(uncompressed: &[u8]) -> String {
+    let digest = Keccak256::digest(&uncompressed[1..]);
+    checksummed(&digest[12..])
 }
 
 fn checksummed(bytes: &[u8]) -> String {

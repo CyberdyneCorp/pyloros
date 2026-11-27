@@ -8,6 +8,7 @@ mod admin_sessions;
 mod admin_users;
 mod administrator;
 mod auth_policy;
+mod blockchain;
 mod edit;
 mod email_verification;
 mod erasure;
@@ -230,6 +231,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    blockchain: crate::chain_settings::ChainSettings,
     configured_origins: Vec<Value>,
     configured_resources: crate::token_runtime::ResourceRegistry,
     builtin_scopes: std::collections::BTreeMap<String, String>,
@@ -322,6 +324,7 @@ fn build_routes(
     client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeRegistry>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        blockchain: Default::default(),
         configured_origins: registries::origins::configured()?,
         configured_resources: crate::token_runtime::ResourceRegistry::from_env()?,
         builtin_scopes,
@@ -356,6 +359,7 @@ fn build_routes(
         production,
     };
     Ok(Router::new()
+        .route("/api/v1/admin/settings/blockchain", any(blockchain::get))
         .route(
             "/api/v1/admin/settings/auth-policy",
             any(auth_policy::get).put(auth_policy::update),

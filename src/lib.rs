@@ -4,6 +4,7 @@ pub mod browser_client;
 mod browser_http;
 mod browser_policy;
 pub mod browser_prompt;
+pub mod chain_settings;
 mod client_auth;
 pub mod code_decision;
 pub mod code_exchange;
