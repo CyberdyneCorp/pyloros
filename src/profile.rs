@@ -481,6 +481,12 @@ fn build_routes(
                 .delete(admin_inventory::boundary::clear)
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
+        .route(
+            "/api/v1/admin/iam/evaluate",
+            any(crate::token_http::post_only)
+                .post(admin_inventory::evaluation::evaluate)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route("/api/v1/admin/roles", any(admin_inventory::roles))
         .route(
             "/api/v1/admin/groups",

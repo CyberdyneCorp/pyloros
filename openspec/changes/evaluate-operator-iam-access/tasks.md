@@ -1,4 +1,0 @@
-- [x] Implement action and resource pattern matching and compare wildcard and Unicode behavior.
-- [x] Implement context matching and verify condition behavior.
-- [ ] Load effective PostgreSQL policies and return the decision, reason and matched statements.
-- [ ] Verify chain provider behavior, the existing clients and decisions following committed mutations.

@@ -4,6 +4,7 @@ use crate::request_json::fields::{FieldIssue, field_issue, finite_error_input, o
 use serde_json::value::RawValue;
 
 enum Shape {
+    Context,
     Identifier,
     String,
     Object(&'static [Field]),
@@ -12,6 +13,7 @@ enum Shape {
 struct Field(&'static str, &'static Shape, Presence);
 use Presence::{DefaultList, Nullable, Required};
 enum Presence {
+    DefaultObject,
     Required,
     Nullable,
     DefaultList,
@@ -126,8 +128,23 @@ impl<'a> Errors<'a> {
                 }
                 Ok(Value::Array(values))
             }
+            Shape::Context => self.context(raw, loc),
             Object(fields) => self.object(raw, loc, fields),
         }
+    }
+    fn context(&mut self, raw: &'a RawValue, loc: &mut Vec<Value>) -> Result<Value, Box<Response>> {
+        if !raw.get().starts_with('{') {
+            return self.reject(raw, loc, "dict_type", "Input should be a valid dictionary");
+        }
+        let entries: indexmap::IndexMap<String, &RawValue> =
+            serde_json::from_str(raw.get()).map_err(|_| Box::new(internal()))?;
+        let mut context = serde_json::Map::new();
+        for (key, value) in entries {
+            loc.push(json!(key));
+            context.insert(key, self.project(value, loc, &Text)?);
+            loc.pop();
+        }
+        Ok(Value::Object(context))
     }
     fn object(
         &mut self,
@@ -149,6 +166,7 @@ impl<'a> Errors<'a> {
             loc.push(json!(key));
             let value = match (source.get(*key), presence) {
                 (None, Required) => self.reject(raw, loc, "missing", "Field required")?,
+                (None, Presence::DefaultObject) => json!({}),
                 (None, DefaultList) => json!([]),
                 (None, Nullable) => Value::Null,
                 (Some(v), Nullable) if v.get() == "null" => Value::Null,
@@ -174,6 +192,17 @@ pub(super) fn relation_ids(
         parent.expect("parent path supplied"),
         serde_json::from_value(body[child].clone()).expect("validated identifier"),
     ))
+}
+
+pub(super) fn evaluation(raw: &RawValue) -> Result<super::evaluation::Request, Box<Response>> {
+    const REQUEST: Shape = Object(&[
+        Field("identity_id", &Shape::Identifier, Required),
+        Field("action", &Text, Required),
+        Field("resource", &Text, Required),
+        Field("context", &Shape::Context, Presence::DefaultObject),
+    ]);
+    let (_, doc) = project(raw, &REQUEST, None)?;
+    serde_json::from_value(doc).map_err(|_| Box::new(internal()))
 }
 
 pub(super) fn group(raw: &RawValue) -> Result<Value, Box<Response>> {
