@@ -1,4 +1,5 @@
 //! Validate registration against a claimed challenge and project the attested key into shared storage.
+mod android;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
 use serde_cbor_2::Value as Cbor;
@@ -74,9 +75,8 @@ fn verify_at(
     }
     let attestation: Attestation = serde_cbor_2::from_slice(&proof.response.attestation_object)
         .map_err(|_| InvalidRegistration)?;
-    // These formats need vendor trust anchors that the generic attestation verifier
-    // does not enforce when constructed without an attestation CA list.
-    if matches!(attestation.fmt, "android-key" | "android-safetynet") {
+    // SafetyNet has a separate signed response and trust path.
+    if attestation.fmt == "android-safetynet" {
         return Err(InvalidRegistration);
     }
     if attestation.fmt == "none"
@@ -103,8 +103,17 @@ fn verify_at(
     let verified = verifier
         .register_credential(&proof, &state, None)
         .map_err(|_| InvalidRegistration)?;
-    if attestation.fmt == "apple" {
-        verify_attestation_ca_chain(&verified.attestation.data, &APPLE_ROOT, now)
+    let android_root;
+    let root = match attestation.fmt {
+        "apple" => Some(&*APPLE_ROOT),
+        "android-key" => {
+            android_root = android::hardware_root(&attestation.att_stmt)?;
+            Some(&android_root)
+        }
+        _ => None,
+    };
+    if let Some(root) = root {
+        verify_attestation_ca_chain(&verified.attestation.data, root, now)
             .map_err(|_| InvalidRegistration)?
             .ok_or(InvalidRegistration)?;
     }
@@ -133,6 +142,57 @@ fn verify_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pixel_registration_requires_a_valid_hardware_chain() {
+        let proof: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/android-pixel-8a.json")).unwrap();
+        let challenge = URL_SAFE_NO_PAD
+            .decode("t4LWI0iYJSTWPl9WXUdNhdHAnrPDLF9eWAP9lHgmHP8")
+            .unwrap();
+        let captured = SystemTime::UNIX_EPOCH + Duration::from_secs(1736294400);
+        let verify = |time, value| {
+            verify_at(
+                "localhost",
+                "http://localhost:8000",
+                &challenge,
+                value,
+                time,
+            )
+        };
+        let enrolled = verify(captured, proof.clone()).unwrap();
+        assert_eq!(enrolled.credential_id, proof["id"]);
+        assert_eq!(enrolled.algorithm, -7);
+        assert_eq!(
+            enrolled.aaguid,
+            Uuid::parse_str("b93fd961-f2e6-462f-b122-82002247de78").unwrap()
+        );
+        assert_eq!(enrolled.counter, 0);
+        assert_eq!(
+            URL_SAFE_NO_PAD.encode(enrolled.cose_key),
+            "pQECAyYgASFYINdWLf6f6sGys_cDg-P0_x7o82Hd410Lfw9oWIJnIxZ1IlggRUDo9sTr3zk9JQMNyeTcqeenJzron8cU67-B66qJa0A"
+        );
+        for remove in [1, 4] {
+            let mut changed = proof.clone();
+            let object = &mut changed["response"]["attestationObject"];
+            let bytes = URL_SAFE_NO_PAD.decode(object.as_str().unwrap()).unwrap();
+            let mut fields: std::collections::BTreeMap<String, Cbor> =
+                serde_cbor_2::from_slice(&bytes).unwrap();
+            let Some(Cbor::Map(statement)) = fields.get_mut("attStmt") else {
+                panic!("expected statement")
+            };
+            let Some(Cbor::Array(chain)) = statement.get_mut(&Cbor::Text("x5c".into())) else {
+                panic!("expected chain")
+            };
+            assert_eq!(chain.len(), 5);
+            chain.remove(remove);
+            *object = URL_SAFE_NO_PAD
+                .encode(serde_cbor_2::to_vec(&fields).unwrap())
+                .into();
+            assert!(verify(captured, changed).is_err());
+        }
+        assert!(verify(captured + Duration::from_secs(86400 * 365), proof).is_err());
+    }
 
     #[test]
     fn touch_id_requires_a_valid_apple_certificate_at_registration_time() {

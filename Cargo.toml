@@ -35,6 +35,9 @@ minijinja = { version = "2", default-features = false, features = ["loader", "se
 ipnet = "2"
 webauthn-rs-core = "=0.6.2"
 serde_cbor_2 = "0.13"
+x509-parser = "0.18.1"
+der-parser = "10.0.0"
+pem = "3.0.6"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

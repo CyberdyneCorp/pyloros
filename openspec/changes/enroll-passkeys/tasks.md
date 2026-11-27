@@ -4,4 +4,5 @@
 - [x] Verify browser and native enrollment proofs and persist the credential with its audit event.
 - [x] Verify both directions of a backend switch, single-use claims, rejected proofs and frontend enrollment.
 - [x] Validate Apple anonymous attestation against its pinned root and compare a recorded Touch ID registration with the reference.
-- [ ] Match the remaining vendor-specific attestation trust chains and validate hardware-backed formats against reference fixtures.
+- [x] Verify Android Key enrollment with a Pixel 8a capture, a pinned Google hardware root, and device-enforced signing authorization.
+- [ ] Compare StrongBox devices and match the remaining vendor-specific attestation trust chains and validate hardware-backed formats against reference fixtures.

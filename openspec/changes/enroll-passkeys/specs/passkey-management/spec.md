@@ -28,3 +28,8 @@ The service SHALL let a recently authenticated account enroll a discoverable, us
 
 - **WHEN** a client submits Apple anonymous attestation
 - **THEN** verify its nonce and credential public key and require a certificate path valid at verification time under the Apple WebAuthn root.
+
+#### Scenario: Android Key attestation
+
+- **WHEN** a client presents Android Key attestation
+- **THEN** verify the registration signature, challenge, credential key, and device-enforced signing authorization, and require a valid certificate chain ending in an explicitly trusted Google hardware root.

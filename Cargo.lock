@@ -2261,11 +2261,13 @@ dependencies = [
  "bcrypt",
  "chrono",
  "data-encoding",
+ "der-parser",
  "ipnet",
  "jsonwebtoken",
  "k256",
  "lettre",
  "minijinja",
+ "pem",
  "percent-encoding",
  "qrcode",
  "rand 0.8.8",
@@ -2285,6 +2287,7 @@ dependencies = [
  "url",
  "uuid",
  "webauthn-rs-core",
+ "x509-parser",
  "zeroize",
 ]
 
