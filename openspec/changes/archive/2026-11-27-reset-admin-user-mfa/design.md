@@ -1,0 +1,1 @@
+Authorize the operator and validate the user identifier. Read the previous enrollment state for the activity record. Clear the TOTP enrollment and recovery codes in the same PostgreSQL transaction as both audit writes. An already-disabled account can also have pending setup material.

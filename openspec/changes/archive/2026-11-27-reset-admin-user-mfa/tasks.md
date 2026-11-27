@@ -1,0 +1,3 @@
+- [x] Implement operator reset and audit writes.
+- [x] Compare HTTP behavior, persisted state, retries, races and rollback.
+- [x] Verify the browser and CLI recovery workflow.

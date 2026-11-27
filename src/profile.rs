@@ -1,6 +1,7 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
 mod admin_clients;
 mod admin_fields;
+mod admin_mfa;
 mod admin_sessions;
 mod admin_users;
 mod administrator;
@@ -378,6 +379,7 @@ fn build_routes(
             "/api/v1/admin/users/{user_id}/passkeys/{passkey_id}",
             any(passkeys::admin_revoke),
         )
+        .route("/api/v1/admin/users/{user_id}/mfa", any(admin_mfa::reset))
         .route("/api/v1/admin/sessions", any(admin_sessions::list))
         .route(
             "/api/v1/admin/sessions/{session_id}",
