@@ -1,0 +1,2 @@
+- [x] Implement GET, identifier validation, stored status validation and expiry writeback.
+- [x] Compare responses and PostgreSQL effects with the reference, including rollback and client access.

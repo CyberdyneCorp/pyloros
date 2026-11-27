@@ -31,6 +31,7 @@ pub(crate) use registration::enqueue_webhooks;
 mod totp;
 mod update_input;
 mod userinfo;
+mod wallet_challenge;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
 use axum::{
@@ -702,6 +703,10 @@ fn build_routes(
         .route(
             "/api/v1/auth/password/reset-request",
             any(password_reset::request),
+        )
+        .route(
+            "/api/v1/auth/wallet/challenge/{challenge_id}",
+            any(wallet_challenge::get),
         )
         .route("/api/v1/auth/password/change", any(password_change::handle))
         .route("/api/v1/auth/logout-all", any(logout_all::handle))

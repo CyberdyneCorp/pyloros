@@ -1,0 +1,1 @@
+Read the challenge and persist any transition from pending to expired in one transaction. Use the application clock to calculate remaining seconds and preserve the stored address. Handle malformed records in the same lookup failure response as missing challenges.
