@@ -78,18 +78,7 @@ async fn replay(
     now: DateTime<Utc>,
 ) -> Result<Exchange, sqlx::Error> {
     if let Some(id) = session {
-        sqlx::query("UPDATE sessions SET revoked_at=$2 WHERE id=$1")
-            .bind(id)
-            .bind(now)
-            .execute(&mut **tx)
-            .await?;
-        sqlx::query(
-            "UPDATE refresh_tokens SET revoked_at=$2 WHERE session_id=$1 AND revoked_at IS NULL",
-        )
-        .bind(id)
-        .bind(now)
-        .execute(&mut **tx)
-        .await?;
+        crate::token_revocation::revoke_session(tx, id, now).await?;
     }
     Ok(Exchange::Refused(Refusal::Replayed))
 }

@@ -67,16 +67,14 @@ impl Login {
         if access.is_some() || matches!(identity, Some(Ok(_))) {
             let mut tx = self.pool.begin().await?;
             if let Some(token) = &access {
-                sqlx::query(
-                    "INSERT INTO revoked_tokens(jti,expires_at,revoked_at,client_id,reason)
-                         VALUES ($1,$2,$3,$4,$5) ON CONFLICT(jti) DO NOTHING",
+                crate::token_revocation::deny_token(
+                    &mut tx,
+                    token.jti,
+                    token.expires,
+                    token.client.as_deref(),
+                    if oidc { "end_session" } else { "logout" },
+                    now,
                 )
-                .bind(token.jti)
-                .bind(token.expires)
-                .bind(now)
-                .bind(&token.client)
-                .bind(if oidc { "end_session" } else { "logout" })
-                .execute(&mut *tx)
                 .await?;
             }
             if let Some(Ok(id)) = &identity {

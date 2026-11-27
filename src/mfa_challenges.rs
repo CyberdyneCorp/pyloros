@@ -143,6 +143,13 @@ impl ChallengeVerifier {
         Self { key, validation }
     }
 
+    pub(crate) fn verified_claims(
+        &self,
+        token: &str,
+    ) -> jsonwebtoken::errors::Result<serde_json::Value> {
+        Ok(decode(token, &self.key, &self.validation)?.claims)
+    }
+
     pub(crate) fn logout_client_hint(&self, token: &str) -> Option<String> {
         #[derive(Deserialize)]
         struct Hint {

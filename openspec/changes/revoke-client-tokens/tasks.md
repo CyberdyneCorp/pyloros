@@ -1,3 +1,4 @@
 - [ ] Capture reference response, audit and storage behavior for form inputs, client credentials, quotas, token types and ownership.
-- [ ] Implement the HTTP endpoint, verified token classification, ownership checks and PostgreSQL revocation.
+- [x] Classify signed credentials and implement client ownership checks, per-token denial and session-family revocation in PostgreSQL.
+- [ ] Connect the HTTP endpoint to client authentication, quotas, token classification, storage and audit.
 - [ ] Compare both backend directions for access, service and refresh tokens, session-family revocation, repeated requests and rollback.

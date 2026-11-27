@@ -144,3 +144,4 @@ pub mod enrolled_factor;
 mod passkey_credentials;
 
 pub mod external_oauth;
+pub mod token_revocation;
