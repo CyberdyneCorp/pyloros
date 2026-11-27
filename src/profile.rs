@@ -428,9 +428,15 @@ fn build_routes(
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
+            "/api/v1/admin/users/{user_id}/organization",
+            any(administrator::put_required)
+                .put(admin_organizations::assign)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
             "/api/v1/admin/users/{user_id}/organizations",
             any(admin_organizations::memberships)
-                .post(admin_organizations::add)
+                .post(admin_organizations::assign)
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(

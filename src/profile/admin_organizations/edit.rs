@@ -58,10 +58,7 @@ pub(in crate::profile) async fn deactivate(
         if row.0["is_active"] == true {
             changes.insert("is_active".into(), Value::Bool(false));
         }
-        if !row.1.starts_with('{') {
-            metadata::strings(&row.1).map_err(|e| sqlx::Error::Decode(e.into()))?;
-            let canonical =
-                metadata::stored_object(&row.1).map_err(|e| sqlx::Error::Decode(e.into()))?;
+        if let Some(canonical) = metadata::normalized_storage(&row.1)? {
             changes.insert("extra_metadata".into(), Value::String(canonical));
         }
         if !changes.is_empty() {
@@ -165,9 +162,7 @@ async fn apply(
         if !equal {
             changes.insert("extra_metadata".into(), Value::String(merged.to_string()));
         }
-    } else if !stored_metadata.starts_with('{') {
-        let canonical =
-            metadata::stored_object(&stored_metadata).map_err(|e| sqlx::Error::Decode(e.into()))?;
+    } else if let Some(canonical) = metadata::normalized_storage(&stored_metadata)? {
         changes.insert("extra_metadata".into(), Value::String(canonical));
     }
     let saved = save(&mut tx, id, changes).await?;

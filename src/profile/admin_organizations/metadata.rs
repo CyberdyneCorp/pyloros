@@ -29,11 +29,24 @@ fn invalid_metadata() -> serde_json::Error {
     serde::de::Error::custom("invalid organization metadata")
 }
 
+pub(super) fn normalized_storage(input: &str) -> Result<Option<String>, sqlx::Error> {
+    if input.starts_with('{') {
+        return Ok(None);
+    }
+    stored_object(input)
+        .map(Some)
+        .map_err(|e| sqlx::Error::Decode(e.into()))
+}
+
 // Writing an old list of pairs back to JSONB preserves the value types.
 // Displaying the same map converts values to strings instead.
-pub(super) fn stored_object(input: &str) -> serde_json::Result<String> {
+fn stored_object(input: &str) -> serde_json::Result<String> {
     if !input.starts_with('[') {
-        return Ok("{}".into());
+        return if matches!(input, "null" | "false" | "\"\"") || input.parse::<f64>() == Ok(0.0) {
+            Ok("{}".into())
+        } else {
+            Err(invalid_metadata())
+        };
     }
     let entries = legacy_entries(serde_json::from_str(input)?)?;
     let fields: BTreeMap<_, _> = entries
@@ -197,6 +210,18 @@ fn literal(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn membership_reads_reject_invalid_metadata_and_preserve_legacy_values_on_write() {
+        assert!(normalized_storage("true").is_err());
+        assert!(normalized_storage("[[1]]").is_err());
+        assert_eq!(normalized_storage("null").unwrap().as_deref(), Some("{}"));
+        assert_eq!(normalized_storage(r#"{"tier":3}"#).unwrap(), None);
+        assert_eq!(
+            normalized_storage(r#"[["tier",3]]"#).unwrap().as_deref(),
+            Some(r#"{"tier":3}"#)
+        );
+    }
 
     #[test]
     fn pair_keys_keep_the_first_equivalent_numeric_key_and_the_last_value() {
