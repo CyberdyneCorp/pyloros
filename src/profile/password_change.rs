@@ -10,7 +10,7 @@ use crate::{
 use axum::body::to_bytes;
 use unicode_general_category::{GeneralCategory::*, get_general_category};
 
-fn valid_password(password: &str) -> bool {
+pub(super) fn valid_password(password: &str) -> bool {
     let line = password.strip_suffix('\n').unwrap_or(password);
     !line.contains('\n')
         && line.bytes().any(|b| b.is_ascii_lowercase())

@@ -1,5 +1,6 @@
 //! Public password registration on the shared account schema.
 pub(super) mod admin;
+pub(super) mod bulk;
 use super::*;
 use crate::{
     authorization_codes::digest,

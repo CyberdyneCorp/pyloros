@@ -365,6 +365,10 @@ fn build_routes(
             "/api/v1/admin/users",
             any(admin_users::list).post(registration::admin::create),
         )
+        .route(
+            "/api/v1/admin/users/bulk",
+            any(registration::bulk::handle).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route("/api/v1/admin/users/{user_id}", any(admin_users::detail))
         .route("/api/v1/admin/sessions", any(admin_sessions::list))
         .route(

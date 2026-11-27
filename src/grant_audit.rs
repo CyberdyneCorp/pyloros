@@ -176,7 +176,10 @@ pub(crate) enum AuditActivity<'a> {
     PasskeyRevoked(Uuid),
     PasskeyEnrolled(Uuid),
     LogoffAll(u64),
-    UserCreated(Uuid),
+    UserCreated {
+        operator: Uuid,
+        row: Option<usize>,
+    },
     SessionRevoked {
         operator: Uuid,
         session: Uuid,
@@ -220,14 +223,14 @@ type Classification<'a> = (
 
 fn classify(activity: AuditActivity<'_>) -> Classification<'_> {
     match activity {
-        AuditActivity::UserCreated(_) => (
+        AuditActivity::UserCreated { row, .. } => (
             "account_lifecycle",
             "user_create",
             None,
             "",
             "success",
             None,
-            json!({}),
+            row.map_or_else(|| json!({}), |row| json!({"bulk_row":row})),
         ),
         AuditActivity::SessionRevoked { session, .. } => (
             "session",
@@ -572,9 +575,8 @@ pub(crate) async fn write_activity<'e>(
         organization,
     } = subject;
     let operator = match &activity {
-        AuditActivity::SessionRevoked { operator, .. } | AuditActivity::UserCreated(operator) => {
-            Some(*operator)
-        }
+        AuditActivity::SessionRevoked { operator, .. }
+        | AuditActivity::UserCreated { operator, .. } => Some(*operator),
         _ => None,
     };
     let is_mfa = matches!(

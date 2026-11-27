@@ -37,10 +37,22 @@ pub(crate) async fn append(
     tx: &mut Transaction<'_, Postgres>,
     action: &str,
     actor: Option<(Uuid, Option<&str>)>,
-    (target_type, target): (&str, &str),
+    target: (&str, &str),
     meta: Value,
     origin: SessionOrigin<'_>,
 ) -> Result<(), sqlx::Error> {
+    append_record(tx, action, actor, Some(target), meta, origin).await
+}
+
+pub(crate) async fn append_record(
+    tx: &mut Transaction<'_, Postgres>,
+    action: &str,
+    actor: Option<(Uuid, Option<&str>)>,
+    target: Option<(&str, &str)>,
+    meta: Value,
+    origin: SessionOrigin<'_>,
+) -> Result<(), sqlx::Error> {
+    let (target_type, target) = target.unzip();
     sqlx::query("INSERT INTO audit_chain_head (id,head_hash) VALUES (1,repeat('0',64)) ON CONFLICT(id) DO NOTHING")
         .execute(&mut **tx).await?;
     let previous = sqlx::query_scalar::<_, String>(
