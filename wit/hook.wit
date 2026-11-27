@@ -1,0 +1,10 @@
+package pyloros:hooks@1.0.0;
+
+interface handler {
+    /// Receives the event JSON allowed by the hook's privacy settings.
+    handle: func(event: string) -> result<string, string>;
+}
+
+world hook {
+    export handler;
+}

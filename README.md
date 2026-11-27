@@ -231,3 +231,16 @@ Administrators can erase an account with `DELETE /api/v1/admin/users/{user_id}`.
 Service clients with the `users:provision` scope can invite a person through `POST /api/v1/users/provision`. Send a bearer token and a JSON body containing `email` and optional `name` and `locale`. The service checks the scope against the live client registration. Accepted requests return HTTP 202 with `{"status":"accepted"}`. New accounts receive an activation link. Existing accounts receive a sign-in and reset notice. Set `PROVISION_INVITE_TTL_DAYS` (default 7, range 1–30) and `RATELIMIT_PROVISION_PER_MIN` (default 30 per client). Each process limits email delivery to once per normalized address per day. During coexistence, route provisioning to the reference backend if an active registration hook requires its dispatcher.
 
 A first-party session can edit its phone with `PATCH /api/v1/users/me` or `cyberauth me update --phone`. An empty phone string removes the number. Omitting it or sending null preserves its verification state. The endpoint accepts UTF-8, UTF-16 and UTF-32 JSON. Overlapping requests that each observed a changed number record their own audit events.
+
+### Validate a WebAssembly hook
+
+Administrators can submit a binary WebAssembly component to
+`POST /api/v2/admin/hooks/validate` with `Content-Type: application/wasm`.
+The component must export the synchronous handler in the [hook interface](wit/hook.wit).
+Version 1.0 accepts no host imports. Validation inspects the component without
+executing it or installing a hook.
+
+A successful response includes `valid`, `abi`, `size` in bytes, and the artifact's
+`sha256`. HTTP 422 includes the validation error. Each process accepts two
+concurrent uploads or validations (503 when busy). Uploads have a 4 MiB limit
+(413) and a 30-second deadline (408).

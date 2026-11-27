@@ -51,6 +51,7 @@ mod update_input;
 mod userinfo;
 mod wallet_challenge;
 mod wallet_export;
+mod wasm_hooks;
 mod webhook_history;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
@@ -452,6 +453,7 @@ fn build_routes(
         .merge(subject_export::routes())
         .merge(webhook_history::routes())
         .merge(hook_inventory::routes())
+        .route("/api/v2/admin/hooks/validate", any(wasm_hooks::validate))
         .merge(store_products::routes())
         .route(
             "/api/v1/billing/apple/validate",

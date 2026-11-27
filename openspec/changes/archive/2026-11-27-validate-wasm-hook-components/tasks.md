@@ -1,0 +1,2 @@
+- [x] Publish the WIT world and implement authenticated component validation.
+- [x] Verify binary validation, the entry point, import permissions, request limits and artifact identity.

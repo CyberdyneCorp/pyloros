@@ -58,7 +58,12 @@ alloy-sol-types = { version = "1", default-features = false }
 speedate = "0.18"
 strum = "0.28"
 openssl = "0.10.82"
+wasmparser = { version = "0.263.0", default-features = false, features = ["std", "validate", "component-model", "features", "hash-collections", "simd"] }
+http-body-util = "0.1"
 
 [target.'cfg(unix)'.dependencies]
 dns-lookup = "4"
 libc = "0.2"
+
+[dev-dependencies]
+wat = "1.263.0"
