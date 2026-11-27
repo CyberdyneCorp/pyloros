@@ -1,0 +1,4 @@
+- [ ] Compare callback validation, state lifecycle, provider refusal and audit behavior with the reference.
+- [ ] Implement provider exchange and profile resolution for Google, Microsoft and the development provider.
+- [ ] Implement account linking, managed wallet provisioning and session or CLI code issuance.
+- [ ] Verify mixed-backend browser and CLI flows, concurrent completion, rollback, redirect policy changes and inactive-account handling.
