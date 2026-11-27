@@ -1,4 +1,4 @@
 - [x] Implement device initiation, client authentication, quotas, code allocation and audit. Compare HTTP and persisted results with the reference.
 - [x] Support the existing verification page and user-bound approval and denial flow.
-- [ ] Implement polling, backoff, expiry, one-time consumption, token issuance and replay handling.
-- [ ] Verify mixed-backend handoffs, competing decisions and redemptions, audit behavior and frontend identity.
+- [x] Implement polling, backoff, expiry, one-time consumption, token issuance and replay handling.
+- [x] Verify mixed-backend handoffs, competing decisions and redemptions, audit behavior and frontend identity.

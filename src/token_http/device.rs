@@ -74,7 +74,7 @@ struct Input<'a> {
     resource: bool,
 }
 
-struct Refusal(&'static str, String);
+pub(super) struct Refusal(pub(super) &'static str, pub(super) String);
 
 impl Refusal {
     fn response(&self) -> (StatusCode, Value) {
@@ -137,6 +137,54 @@ async fn start(
     }
 }
 
+pub(super) async fn authenticated_scopes(
+    tx: &mut Transaction<'_, Postgres>,
+    client: &str,
+    secret: Option<&str>,
+    quota: Option<(&LoginThrottle, Option<std::net::IpAddr>)>,
+) -> Result<Result<String, Refusal>, sqlx::Error> {
+    if client.is_empty() {
+        return Ok(Err(Refusal("invalid_client", "missing client_id".into())));
+    }
+    let row = sqlx::query(
+        "SELECT client_type,grant_types,allowed_scopes,registration_source,secret_hash,
+            CASE WHEN previous_secret_expires_at > now() THEN previous_secret_hash END AS grace_hash
+            FROM oauth_clients WHERE client_id=$1 AND active FOR SHARE",
+    )
+    .bind(client)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(row) = row else {
+        return Ok(Err(Refusal("invalid_client", "unknown client".into())));
+    };
+    if quota.is_some_and(|(limit, ip)| !limit.allow_client(Some(client), ip)) {
+        return Ok(Err(Refusal(
+            "rate_limited",
+            "device authorization quota exceeded".into(),
+        )));
+    }
+    if !client_auth::authenticates(&row, secret).await? {
+        return Ok(Err(Refusal("invalid_client", "bad client secret".into())));
+    }
+    if row.try_get::<&str, _>("registration_source")? == "dynamic" {
+        return Ok(Err(Refusal(
+            "unauthorized_client",
+            "dynamically registered clients may not use the device grant".into(),
+        )));
+    }
+    if !row
+        .try_get::<&str, _>("grant_types")?
+        .split_whitespace()
+        .any(|g| g == GRANT)
+    {
+        return Ok(Err(Refusal(
+            "unauthorized_client",
+            "client may not use the device_code grant".into(),
+        )));
+    }
+    Ok(Ok(row.try_get("allowed_scopes")?))
+}
+
 impl Device {
     async fn authorize(
         &self,
@@ -144,52 +192,20 @@ impl Device {
         input: &Input<'_>,
         ip: Option<std::net::IpAddr>,
     ) -> Result<Result<Vec<String>, Refusal>, sqlx::Error> {
-        if input.client.is_empty() {
-            return Ok(Err(Refusal("invalid_client", "missing client_id".into())));
-        }
-        let row = sqlx::query(
-            "SELECT client_type,grant_types,allowed_scopes,registration_source,secret_hash,
-            CASE WHEN previous_secret_expires_at > now() THEN previous_secret_hash END AS grace_hash
-            FROM oauth_clients WHERE client_id=$1 AND active FOR SHARE",
-        )
-        .bind(input.client)
-        .fetch_optional(&mut **tx)
-        .await?;
-        let Some(row) = row else {
-            return Ok(Err(Refusal("invalid_client", "unknown client".into())));
-        };
-        if !self.quota.allow_client(Some(input.client), ip) {
-            return Ok(Err(Refusal(
-                "rate_limited",
-                "device authorization quota exceeded".into(),
-            )));
-        }
-        if !client_auth::authenticates(&row, input.secret).await? {
-            return Ok(Err(Refusal("invalid_client", "bad client secret".into())));
-        }
-        if row.try_get::<&str, _>("registration_source")? == "dynamic" {
-            return Ok(Err(Refusal(
-                "unauthorized_client",
-                "dynamically registered clients may not use the device grant".into(),
-            )));
-        }
-        if !row
-            .try_get::<&str, _>("grant_types")?
-            .split_whitespace()
-            .any(|g| g == GRANT)
-        {
-            return Ok(Err(Refusal(
-                "unauthorized_client",
-                "client may not use the device_code grant".into(),
-            )));
-        }
+        let allowed =
+            match authenticated_scopes(tx, input.client, input.secret, Some((&self.quota, ip)))
+                .await?
+            {
+                Ok(allowed) => allowed,
+                Err(failure) => return Ok(Err(failure)),
+            };
         if input.resource {
             return Ok(Err(Refusal(
                 "invalid_target",
                 "resource indicators are not supported for the device grant".into(),
             )));
         }
-        Ok(scopes(input.scope, row.try_get("allowed_scopes")?))
+        Ok(scopes(input.scope, &allowed))
     }
 
     async fn issue(

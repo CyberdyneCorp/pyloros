@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::{code_exchange::ClaimedGrant, grant_response::SessionOrigin};
 
+#[derive(Clone, Copy)]
 pub(crate) struct SessionRecord<'a> {
     pub user: Uuid,
     pub session: Uuid,

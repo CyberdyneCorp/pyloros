@@ -1,6 +1,7 @@
 //! OAuth token endpoint for service and authorization-code grants.
 mod device;
 mod device_browser;
+mod device_poll;
 mod refresh;
 mod service;
 use crate::{
@@ -46,6 +47,7 @@ pub async fn routes(
         service: service::Issuer::configured(pool, production)?,
         code: code.clone(),
         oidc: provider.is_some(),
+        device: provider.is_some_and(Provider::device_authorization_enabled),
         proxies,
     };
     let token = Router::new()
@@ -82,6 +84,7 @@ struct Endpoint {
     service: Option<service::Issuer>,
     code: Option<Arc<Runtime>>,
     oidc: bool,
+    device: bool,
     proxies: usize,
 }
 
@@ -186,7 +189,8 @@ async fn exchange(
         user_agent: header(&headers, "user-agent"),
         ip: client_ip(&headers, peer.ip(), endpoint.proxies),
     };
-    if !matches!(grant, "authorization_code" | "refresh_token") {
+    let polling = endpoint.device && grant == device::GRANT;
+    if !polling && !matches!(grant, "authorization_code" | "refresh_token") {
         let Some(issuer) = &endpoint.service else {
             return crate::login_http::problem(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -238,7 +242,22 @@ async fn exchange(
     };
     let request_id = header(&headers, "x-request-id");
     let now = chrono::Utc::now();
-    let decision = if grant == "refresh_token" {
+    let decision = if polling {
+        device_poll::exchange(
+            rt,
+            device_poll::Request {
+                client,
+                secret,
+                code: get("device_code"),
+                resource: !resources.is_empty(),
+            },
+            &settings,
+            origin,
+            request_id,
+            now,
+        )
+        .await
+    } else if grant == "refresh_token" {
         refresh::exchange(
             rt,
             refresh::Request {

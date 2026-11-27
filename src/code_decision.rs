@@ -15,7 +15,7 @@ use uuid::Uuid;
 #[derive(Serialize)]
 pub struct OAuthError {
     pub error: &'static str,
-    pub error_description: &'static str,
+    pub error_description: String,
 }
 
 impl OAuthError {
@@ -65,7 +65,7 @@ impl Refusal {
         (
             OAuthError {
                 error,
-                error_description: description,
+                error_description: description.into(),
             },
             reason,
         )

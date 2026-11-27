@@ -1,4 +1,10 @@
-## ADDED Requirements
+# device-authorization Specification
+
+## Purpose
+
+Allow a device client to obtain credentials after its user approves the request in a signed-in browser. Persist authorization and polling state so clients can continue across issuer upgrades.
+
+## Requirements
 
 ### Requirement: Start device authorization
 
@@ -42,3 +48,18 @@ The issuer SHALL accept a signed-in user’s decision and allow the requesting c
 
 - **WHEN** the code has expired, the request already has a decision, or the ticket belongs to a different user
 - **THEN** show the corresponding error page and preserve the existing request and consent state.
+
+#### Scenario: A device polls faster than its advertised interval
+
+- **WHEN** the same pending authorization is polled again before its interval elapses
+- **THEN** extend the persisted interval by five seconds and report the new interval. Pending and backoff responses do not write a token-grant audit event.
+
+#### Scenario: Competing redemptions
+
+- **WHEN** either issuer receives an approved device code that the other has already redeemed
+- **THEN** refuse replay and revoke the session and refresh credentials created by the successful exchange.
+
+#### Scenario: Persistence fails during issuance
+
+- **WHEN** the session, tokens or successful grant audit cannot be persisted together
+- **THEN** roll back issuance and leave the approved code available for retry.

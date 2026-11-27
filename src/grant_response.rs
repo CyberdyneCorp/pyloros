@@ -92,6 +92,31 @@ impl GrantSessionIssuer {
         settings: &GrantSettings<'_>,
         now: DateTime<Utc>,
     ) -> Result<TokenResponse, SessionError> {
+        let record = crate::grant_sessions::SessionRecord {
+            user: rotation.user,
+            session: rotation.session,
+            client: rotation.client.as_deref(),
+            resource: rotation.resource.as_deref(),
+            scopes: Some(&rotation.scopes),
+            auth_time: rotation.auth_time,
+            amr: rotation.amr.as_deref(),
+        };
+        let mut response = self
+            .session_response(tx, record, calling_client, settings, now)
+            .await?;
+        response.refresh_token = Some(rotation.token);
+        Ok(response)
+    }
+
+    pub(crate) async fn session_response(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        record: crate::grant_sessions::SessionRecord<'_>,
+        calling_client: &str,
+        settings: &GrantSettings<'_>,
+        now: DateTime<Utc>,
+    ) -> Result<TokenResponse, SessionError> {
+        let scopes = record.scopes.unwrap_or_default();
         use crate::{
             access_tokens::Subject,
             id_tokens::{AuthorizationClaims, IdentityGrant, authentication_fields},
@@ -99,9 +124,9 @@ impl GrantSessionIssuer {
         use serde_json::json;
 
         let subject = Subject {
-            user: rotation.user,
-            session: rotation.session,
-            client: rotation.client.as_deref(),
+            user: record.user,
+            session: record.session,
+            client: record.client,
         };
         let (mut claims, default_audience) = self
             .account_claims(
@@ -113,11 +138,11 @@ impl GrantSessionIssuer {
                 settings.access_lifetime,
             )
             .await?;
-        claims["scope"] = json!(rotation.scopes);
-        authentication_fields(&mut claims, rotation.auth_time, rotation.amr.as_deref());
-        let auth = if let Some(client) = rotation.client.as_deref() {
+        claims["scope"] = json!(scopes);
+        authentication_fields(&mut claims, record.auth_time, record.amr);
+        let auth = if let Some(client) = record.client {
             claims["client_id"] = json!(client);
-            let audience = match rotation.resource.as_deref() {
+            let audience = match record.resource {
                 Some(resource) => Some(
                     settings
                         .resources
@@ -132,9 +157,9 @@ impl GrantSessionIssuer {
             if let Some(aud) = audience {
                 claims["aud"] = json!(aud);
             }
-            token_authorization::resolve(tx, rotation.user, client, audience).await?
+            token_authorization::resolve(tx, record.user, client, audience).await?
         } else {
-            token_authorization::profile_roles(tx, rotation.user)
+            token_authorization::profile_roles(tx, record.user)
                 .await?
                 .map(|roles| AuthorizationClaims {
                     roles,
@@ -147,12 +172,12 @@ impl GrantSessionIssuer {
             .issue_identity_token(
                 tx,
                 IdentityGrant {
-                    user_id: rotation.user,
+                    user_id: record.user,
                     client_id: calling_client,
-                    scopes: &rotation.scopes,
+                    scopes,
                     nonce: None,
-                    auth_time: rotation.auth_time,
-                    amr: rotation.amr.as_deref(),
+                    auth_time: record.auth_time,
+                    amr: record.amr,
                 },
                 auth.as_ref(),
                 now,
@@ -163,9 +188,9 @@ impl GrantSessionIssuer {
             access_token,
             token_type: "Bearer",
             expires_in: settings.access_lifetime.num_seconds(),
-            scope: rotation.scopes,
+            scope: scopes.to_owned(),
             id_token,
-            refresh_token: Some(rotation.token),
+            refresh_token: None,
         })
     }
 }

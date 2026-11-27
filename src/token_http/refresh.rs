@@ -114,7 +114,7 @@ pub(super) async fn exchange(
             }
             return Ok(CodeDecision::Refused(OAuthError {
                 error,
-                error_description: failure.description,
+                error_description: failure.description.into(),
             }));
         }
     };
