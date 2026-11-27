@@ -1,0 +1,1 @@
+Read the same PostgreSQL records as the authentication and entitlement writers. Count each account once per project, including accounts represented in both data sources. Fetch candidate identifiers before loading grant and usage details to preserve read visibility between statements.

@@ -6,6 +6,8 @@ mod admin_inventory;
 mod admin_mfa;
 mod admin_organizations;
 mod audit_directory;
+mod event_time;
+mod project_usage;
 pub(crate) use admin_organizations::normalized_storage;
 mod admin_password;
 mod admin_permissions;
@@ -396,6 +398,7 @@ fn build_routes(
         .merge(analytics::routes())
         .merge(entitlement_reports::routes())
         .merge(audit_directory::routes())
+        .merge(project_usage::routes())
         .merge(store_products::routes())
         .route("/api/v1/orgs/{org_id}/members", any(org_directory::read))
         .route(

@@ -1,5 +1,6 @@
 //! Decode the full PostgreSQL timestamp range before projecting it into the REST calendar.
 use super::*;
+use sqlx::{Row, postgres::PgRow};
 
 pub(super) struct EventTime {
     pub(super) utc: DateTime<Utc>,
@@ -9,6 +10,10 @@ pub(super) struct EventTime {
 impl EventTime {
     pub(super) fn read(row: &PgRow) -> sqlx::Result<Self> {
         let bytes: &[u8] = row.try_get("event_time")?;
+        Self::decode(bytes)
+    }
+
+    pub(super) fn decode(bytes: &[u8]) -> sqlx::Result<Self> {
         let value = i64::from_be_bytes(
             bytes
                 .try_into()

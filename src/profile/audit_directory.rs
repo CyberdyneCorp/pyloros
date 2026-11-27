@@ -5,10 +5,9 @@ use serde::Serialize;
 use serde_json::value::RawValue;
 use sqlx::{QueryBuilder, Row, postgres::PgRow};
 
-mod event_time;
 mod events;
 mod export;
-use event_time::EventTime;
+use super::event_time::EventTime;
 mod verify;
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
