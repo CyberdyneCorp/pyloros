@@ -7,7 +7,11 @@ use crate::{
     request_json::{parse_body, token_field},
     token_http::{client_ip, header as value},
 };
-use axum::body::to_bytes;
+use axum::{
+    body::{Body, to_bytes},
+    http::request::Parts,
+};
+use serde_json::value::RawValue;
 use unicode_general_category::{GeneralCategory::*, get_general_category};
 
 pub(super) fn valid_password(password: &str) -> bool {
@@ -68,7 +72,7 @@ pub(super) fn invalid(issues: Vec<Value>) -> Response {
         .into_response()
 }
 
-pub(super) async fn read_body(req: Request) -> Result<(HeaderMap, Value), Box<Response>> {
+fn post_parts(req: Request) -> Result<(Parts, Body), Box<Response>> {
     if req.method() != Method::POST {
         let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
         response
@@ -76,7 +80,11 @@ pub(super) async fn read_body(req: Request) -> Result<(HeaderMap, Value), Box<Re
             .insert(header::ALLOW, "POST".parse().unwrap());
         return Err(Box::new(response));
     }
-    let (parts, body) = req.into_parts();
+    Ok(req.into_parts())
+}
+
+pub(super) async fn read_body(req: Request) -> Result<(HeaderMap, Value), Box<Response>> {
+    let (parts, body) = post_parts(req)?;
     let Ok(bytes) = to_bytes(body, 2 * 1024 * 1024).await else {
         return Err(Box::new(StatusCode::PAYLOAD_TOO_LARGE.into_response()));
     };
@@ -92,8 +100,16 @@ pub(super) async fn handle(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
-    let (headers, body) = match read_body(req).await {
+    let (parts, stream) = match post_parts(req) {
         Ok(input) => input,
+        Err(response) => return *response,
+    };
+    let headers = parts.headers;
+    let Ok(bytes) = to_bytes(stream, usize::MAX).await else {
+        return internal();
+    };
+    let body = match crate::request_json::iam_document::document(&headers, &bytes) {
+        Ok(body) => body,
         Err(response) => return *response,
     };
     let Some(id) = credential(&headers).and_then(|t| state.verify.as_ref()?.read(t)) else {
@@ -111,11 +127,19 @@ pub(super) async fn handle(
         .unwrap_or_else(|_| internal())
 }
 
+fn change_fields(body: &RawValue) -> Result<(String, String), Box<Response>> {
+    crate::request_json::fields::validate_scalar_document(
+        body,
+        &["current_password", "new_password"],
+        |fields_value| fields(fields_value, "current_password"),
+    )
+}
+
 type ChangeResult = Result<Response, Box<dyn Error + Send + Sync>>;
 async fn change(
     state: &Profile,
     id: Identity,
-    body: Value,
+    body: Option<Box<RawValue>>,
     origin: SessionOrigin<'_>,
     request: Option<&str>,
 ) -> ChangeResult {
@@ -123,9 +147,12 @@ async fn change(
     if state.enforce && revoked(&mut tx, &id).await? {
         return Ok(unauthorized());
     }
-    let (current, new) = match fields(body, "current_password") {
+    let Some(body) = body else {
+        return Ok(internal());
+    };
+    let (current, new) = match change_fields(&body) {
         Ok(inputs) => inputs,
-        Err(issues) => return Ok(invalid(issues)),
+        Err(response) => return Ok(*response),
     };
     let observed: Option<String> =
         sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
@@ -188,6 +215,19 @@ async fn change(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn password_change_preserves_unicode_passwords_and_ignores_unrelated_numbers() {
+        let body = RawValue::from_string(
+            r#"{"current_password":"古い","new_password":"New-東京123","unused":1e999}"#.into(),
+        )
+        .unwrap();
+        assert_eq!(
+            change_fields(&body).unwrap(),
+            ("古い".into(), "New-東京123".into())
+        );
+    }
+
     #[test]
     fn password_character_classes() {
         assert!(valid_password("Abcdef١!"));
@@ -270,7 +310,12 @@ mod tests {
             change(
                 &state,
                 id,
-                json!({"current_password":"old","new_password":"Fresh-Password1"}),
+                Some(
+                    serde_json::from_str(
+                        r#"{"current_password":"old","new_password":"Fresh-Password1"}"#
+                    )
+                    .unwrap()
+                ),
                 origin,
                 None
             )

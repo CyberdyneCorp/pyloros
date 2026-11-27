@@ -1,0 +1,1 @@
+Reuse the shared credential document decoder and scalar validator. Carry the parsed document through the existing session revocation check before projecting the two password fields. Preserve the existing account and session transaction.

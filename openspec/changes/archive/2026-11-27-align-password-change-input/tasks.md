@@ -1,0 +1,2 @@
+- [x] Compare request and authentication errors across both backends.
+- [x] Implement the shared decoder and verify a successful cross-service password change.

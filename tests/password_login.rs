@@ -96,3 +96,35 @@ async fn enrolled_accounts_receive_only_a_challenge_after_password_validation() 
     .unwrap();
     assert!(matches!(inactive, PasswordDecision::Inactive));
 }
+
+#[tokio::test]
+async fn password_change_decodes_the_envelope_before_challenging_anonymous_callers() {
+    use axum::{
+        body::Body,
+        extract::ConnectInfo,
+        http::{Request, StatusCode},
+    };
+    use std::net::SocketAddr;
+    use tower::ServiceExt;
+
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let router = pyloros::profile::routes(pool, false).unwrap();
+    let wide: Vec<u8> =
+        r#"{"current_password":7}"#.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    for (document, status) in [
+        (wide, StatusCode::UNAUTHORIZED),
+        (vec![0xff, 0xfe, 0x41], StatusCode::BAD_REQUEST),
+    ] {
+        let request = Request::post("/api/v1/auth/password/change")
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .header("content-type", "application/json")
+            .body(Body::from(document))
+            .unwrap();
+        assert_eq!(
+            router.clone().oneshot(request).await.unwrap().status(),
+            status
+        );
+    }
+}
