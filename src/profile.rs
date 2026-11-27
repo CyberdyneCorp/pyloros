@@ -277,6 +277,10 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         production,
     };
     Ok(Router::new()
+        .route(
+            "/api/v1/admin/oauth/clients/{client_id}/rotate-secret",
+            any(admin_clients::rotate),
+        )
         .route("/api/v1/admin/oauth/clients", any(admin_clients::list))
         .route(
             "/api/v1/admin/oauth/clients/{client_id}",

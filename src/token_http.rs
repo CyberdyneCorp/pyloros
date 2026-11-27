@@ -307,7 +307,7 @@ async fn exchange(
     }
 }
 
-async fn post_only() -> Response {
+pub(crate) async fn post_only() -> Response {
     let mut response =
         crate::login_http::problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
     response.headers_mut().insert(

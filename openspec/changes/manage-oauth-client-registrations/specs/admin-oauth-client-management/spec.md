@@ -33,3 +33,13 @@ The issuer SHALL allow an authorized operator to create, update, rotate the secr
 
 - **WHEN** the service cannot record a deactivation in the administrative audit chain
 - **THEN** the request fails and the client retains its previous active state.
+
+#### Scenario: Rotation fails before the audit commits
+
+- **WHEN** recording the operator action fails during a rotation
+- **THEN** return a failure and preserve the current credential, previous credential and grace deadline.
+
+#### Scenario: Rotate twice on Pyloros
+
+- **WHEN** two rotations of the same registration commit on Pyloros
+- **THEN** the second replacement is current, and only the immediately preceding replacement is eligible for its grace period.

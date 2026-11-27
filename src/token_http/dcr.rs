@@ -1,6 +1,7 @@
 //! Public OAuth client registration and its administrative audit record.
 mod input;
 use super::{client_ip, header, internal, post_only};
+use crate::client_auth::opaque;
 use crate::{
     browser_client,
     browser_prompt::quoted_string,
@@ -18,9 +19,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use rand::{RngCore, rngs::OsRng};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::{collections::BTreeSet, env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
@@ -263,12 +262,6 @@ async fn register(
             .into_response(),
         Err(_) => internal(),
     }
-}
-
-fn opaque<const N: usize>() -> String {
-    let mut bytes = [0u8; N];
-    OsRng.fill_bytes(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 async fn persist(

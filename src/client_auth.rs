@@ -4,6 +4,14 @@ use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Row, Transaction};
 
 use crate::code_exchange::Refusal;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use rand::{RngCore, rngs::OsRng};
+
+pub(crate) fn opaque<const N: usize>() -> String {
+    let mut bytes = [0u8; N];
+    OsRng.fill_bytes(&mut bytes);
+    URL_SAFE_NO_PAD.encode(bytes)
+}
 
 pub(crate) async fn verify_secret(
     secret: &str,

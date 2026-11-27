@@ -1,5 +1,6 @@
 //! Administrative access to the OAuth client registry.
 mod page;
+mod rotation;
 use super::*;
 use crate::{
     grant_response::SessionOrigin,
@@ -8,6 +9,7 @@ use crate::{
 };
 use axum::extract::{Path, RawQuery};
 use page::Page;
+pub(super) use rotation::rotate;
 use sqlx::{Row, postgres::PgRow};
 use std::collections::BTreeSet;
 
@@ -65,6 +67,7 @@ enum Operation<'a> {
     Page(&'a str),
     Client(&'a str),
     Deactivate(&'a str, SessionOrigin<'a>),
+    Rotate(&'a str, Option<Value>, SessionOrigin<'a>),
 }
 async fn handle(state: &Profile, headers: &HeaderMap, op: Operation<'_>) -> Response {
     let Some(id) = credential(headers)
@@ -107,6 +110,9 @@ async fn authorized_operation(
         return Ok(problem(StatusCode::FORBIDDEN, "Admin access required"));
     }
     match op {
+        Operation::Rotate(target, body, origin) => {
+            rotation::apply(tx, (id.user, email.as_deref()), target, body, origin).await
+        }
         Operation::Deactivate(target, origin) => {
             deactivate(tx, id.user, email.as_deref(), target, origin).await
         }
