@@ -54,7 +54,7 @@ fn input(path: &str, body: &RawValue) -> Result<(Uuid, Uuid), Box<Response>> {
         detail.push(fields::field_issue(issue, &path));
     }
     if let Err(issue) = org {
-        if !finite_error_input(original) {
+        if !fields::finite_error_input(original) {
             return Err(Box::new(internal()));
         }
         detail.push(fields::field_issue(issue, original));
@@ -62,37 +62,6 @@ fn input(path: &str, body: &RawValue) -> Result<(Uuid, Uuid), Box<Response>> {
     Err(Box::new(
         (StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { detail })).into_response(),
     ))
-}
-
-// The reference error document can echo large integers, but cannot serialize
-// an overflowing floating-point literal, including one inside a container.
-fn finite_error_input(raw: &RawValue) -> bool {
-    let mut text = raw.get();
-    while let Some(byte) = text.as_bytes().first() {
-        match byte {
-            b'"' => {
-                let mut string = serde_json::Deserializer::from_str(text).into_iter::<&RawValue>();
-                if string.next().is_none_or(|v| v.is_err()) {
-                    return false;
-                }
-                text = &text[string.byte_offset()..];
-            }
-            b'-' | b'0'..=b'9' => {
-                let end = text
-                    .find([',', ']', '}', ' ', '\t', '\r', '\n'])
-                    .unwrap_or(text.len());
-                let number = &text[..end];
-                if number.contains(['.', 'e', 'E'])
-                    && number.parse::<f64>().is_ok_and(|n| !n.is_finite())
-                {
-                    return false;
-                }
-                text = &text[end..];
-            }
-            _ => text = &text[1..],
-        }
-    }
-    true
 }
 
 async fn write(
@@ -140,7 +109,7 @@ mod tests {
             (r#"{"ignored":[1e999]}"#, false),
         ] {
             assert_eq!(
-                finite_error_input(serde_json::from_str(json).unwrap()),
+                fields::finite_error_input(serde_json::from_str(json).unwrap()),
                 expected
             );
         }

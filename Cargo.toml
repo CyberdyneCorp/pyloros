@@ -15,6 +15,7 @@ rsa = "0.9"
 sha2 = "0.10"
 subtle = "2"
 thiserror = "2"
+indexmap = { version = "2", features = ["serde"] }
 serde_json = { version = "1", features = ["raw_value"] }
 url = "2"
 axum = { version = "0.8", features = ["multipart"] }

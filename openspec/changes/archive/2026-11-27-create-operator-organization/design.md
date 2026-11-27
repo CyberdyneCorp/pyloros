@@ -1,0 +1,1 @@
+Validate the submitted fields before trimming directory text. Check domain conflicts across organizations and GitHub owner conflicts among active organizations. The database uniqueness constraints arbitrate overlapping inserts. Insert the organization and append the operator audit in one transaction. Return the same directory fields as the individual read.

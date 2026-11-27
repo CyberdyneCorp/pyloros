@@ -95,9 +95,7 @@ fn invalid(issues: Vec<Value>) -> Box<Response> {
     )
 }
 
-pub(super) fn trimmed(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
-}
+pub(super) use crate::profile::admin_fields::trimmed;
 
 impl<'a> Change<'a> {
     fn parse(op: Operation<'a>, body: &Value) -> Result<Self, Box<Response>> {

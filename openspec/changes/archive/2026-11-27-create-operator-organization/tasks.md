@@ -1,0 +1,2 @@
+- [x] Implement request validation, normalized directory storage and the operator audit.
+- [x] Compare error documents, conflicts, concurrent creates, rollback and existing clients against the reference.

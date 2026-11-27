@@ -3,6 +3,10 @@ use super::*;
 use crate::{login_http::problem, request_json};
 use serde_json::Map;
 
+pub(super) fn trimmed(s: &str) -> &str {
+    s.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
+}
+
 pub(super) struct Fields<'a> {
     pub(super) body: &'a Map<String, Value>,
     pub(super) issues: Vec<Value>,

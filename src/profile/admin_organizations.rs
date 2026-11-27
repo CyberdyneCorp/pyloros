@@ -3,9 +3,11 @@ use super::*;
 use axum::extract::Path;
 mod addition;
 mod catalog;
+mod creation;
 mod metadata;
 pub(super) use addition::add;
 pub(super) use catalog::list;
+pub(super) use creation::create;
 
 pub(super) async fn memberships(
     State(state): State<Arc<Profile>>,

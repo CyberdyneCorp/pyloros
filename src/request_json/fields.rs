@@ -55,6 +55,37 @@ pub(crate) fn field_issue(mut attributes: Value, input: &RawValue) -> FieldIssue
     FieldIssue { attributes, input }
 }
 
+// The reference error document can echo large integers, but cannot serialize
+// an overflowing floating-point literal, including one inside a container.
+pub(crate) fn finite_error_input(raw: &RawValue) -> bool {
+    let mut text = raw.get();
+    while let Some(byte) = text.as_bytes().first() {
+        match byte {
+            b'"' => {
+                let mut string = serde_json::Deserializer::from_str(text).into_iter::<&RawValue>();
+                if string.next().is_none_or(|v| v.is_err()) {
+                    return false;
+                }
+                text = &text[string.byte_offset()..];
+            }
+            b'-' | b'0'..=b'9' => {
+                let end = text
+                    .find([',', ']', '}', ' ', '\t', '\r', '\n'])
+                    .unwrap_or(text.len());
+                let number = &text[..end];
+                if number.contains(['.', 'e', 'E'])
+                    && number.parse::<f64>().is_ok_and(|n| !n.is_finite())
+                {
+                    return false;
+                }
+                text = &text[end..];
+            }
+            _ => text = &text[1..],
+        }
+    }
+    true
+}
+
 // Validators need only the submitted field. Large integers may be rejected as
 // the wrong type, but their exact digits must survive in the error response.
 pub(crate) fn validation_input<'a>(
