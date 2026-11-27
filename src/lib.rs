@@ -58,6 +58,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 struct App {
     environment: String,
     pool: PgPool,
+    diagnostics: std::sync::Arc<tokio::sync::Semaphore>,
 }
 
 pub async fn application(
@@ -94,7 +95,11 @@ pub async fn application(
 pub fn router(environment: String, pool: PgPool) -> Router {
     foundation::get_resource("/api/v1/health", liveness)
         .merge(foundation::get_resource("/api/v1/health/ready", readiness))
-        .with_state(App { environment, pool })
+        .with_state(App {
+            environment,
+            pool,
+            diagnostics: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+        })
 }
 
 #[derive(Serialize)]
@@ -122,46 +127,8 @@ struct Readiness {
     detail: Option<String>,
 }
 
-async fn check_revision(pool: &PgPool) -> (bool, Option<String>) {
-    let Ok(mut connection) = pool.acquire().await else {
-        return (false, Some("database unreachable".into()));
-    };
-    if !matches!(
-        tokio::time::timeout(
-            Duration::from_secs(2),
-            sqlx::query("SELECT 1").execute(&mut *connection)
-        )
-        .await,
-        Ok(Ok(_))
-    ) {
-        return (false, Some("database unreachable".into()));
-    }
-
-    let revisions =
-        sqlx::query_scalar::<_, String>("SELECT version_num FROM alembic_version LIMIT 2")
-            .fetch_all(&mut *connection);
-    let detail = match tokio::time::timeout(Duration::from_secs(2), revisions).await {
-        Ok(Ok(rows)) if rows.as_slice() == [SCHEMA_REVISION] => None,
-        Ok(Ok(rows)) if rows.len() == 1 => Some(format!(
-            "schema at '{}', expected '{}'",
-            rows[0], SCHEMA_REVISION
-        )),
-        Ok(Ok(rows)) if rows.is_empty() => {
-            Some(format!("schema at None, expected '{}'", SCHEMA_REVISION))
-        }
-        Ok(Ok(_)) => Some("migration state unreadable: MultipleResultsFound".into()),
-        Ok(Err(sqlx::Error::Database(error)))
-            if error.code().is_some_and(|code| code.starts_with("42")) =>
-        {
-            Some("migration state unreadable: ProgrammingError".into())
-        }
-        _ => Some("migration state unreadable".into()),
-    };
-    (true, detail)
-}
-
 async fn readiness(State(app): State<App>) -> (StatusCode, Json<Readiness>) {
-    let (database, detail) = check_revision(&app.pool).await;
+    let (database, detail) = readiness_db::check(&app.pool, &app.diagnostics).await;
     let ready = detail.is_none();
     let body = Readiness {
         status: if ready { "ready" } else { "not_ready" },
@@ -187,5 +154,6 @@ pub mod external_oauth;
 pub mod token_revocation;
 
 mod query;
+mod readiness_db;
 
 mod admin_audit;

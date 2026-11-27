@@ -30,7 +30,7 @@ Install stable Rust with rustfmt and Clippy, just, and Docker Compose. Run `just
 
 - `just setup` fetches locked dependencies.
 - `just dev` starts PostgreSQL 17 and serves the API on localhost:8000.
-- `just health` calls both probes. A fresh database returns 503 for readiness until the supported schema is migrated. The service never stamps a blank database as migrated.
+- `just health` calls both probes. A fresh database returns 503 for readiness until the supported schema is migrated. The service never stamps a blank database as migrated. A readiness request can wait up to 30 seconds for one of the pool’s 15 connections. PostgreSQL statement and lock timeouts govern the migration query. A timed-out connection attempt can trigger one diagnostic connection at a time to identify the failure.
 - `just check` checks formatting, runs Clippy and executes the offline tests.
 - `just test-db` runs the real PostgreSQL integration test after `just db-up`.
 - `just db-down` stops local PostgreSQL and retains its volume.

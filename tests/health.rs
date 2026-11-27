@@ -66,6 +66,15 @@ async fn postgres_readiness() {
         .execute(&pool)
         .await
         .unwrap();
+    sqlx::query("INSERT INTO alembic_version VALUES (NULL)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, body) = get(&app, path).await;
+    assert_eq!(
+        body["detail"],
+        format!("schema at None, expected '{}'", pyloros::SCHEMA_REVISION)
+    );
     for revision in ["old", pyloros::SCHEMA_REVISION] {
         sqlx::query("DELETE FROM alembic_version")
             .execute(&pool)
@@ -142,4 +151,51 @@ async fn trailing_slash_redirects_preserve_query_and_method() {
         response.headers()["location"],
         "http://auth.example:8443/.well-known/jwks.json?name=a%20b&v=2"
     );
+}
+
+#[tokio::test]
+async fn refused_listener_is_identified_after_pool_retries() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let pool = PgPoolOptions::new()
+        .acquire_timeout(Duration::from_millis(100))
+        .connect_lazy(&format!("postgres://user@{addr}/db"))
+        .unwrap();
+    let (status, body) = get(
+        &pyloros::router("test".into(), pool),
+        "/api/v1/health/ready",
+    )
+    .await;
+    assert_eq!(status, 503);
+    assert_eq!(
+        body["detail"],
+        "database unreachable: ConnectionRefusedError"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL; run just test-db"]
+async fn readiness_waits_for_capacity_and_for_the_revision_query() {
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_millis(250))
+        .connect(&std::env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let mut held = pool.acquire().await.unwrap();
+    sqlx::query(
+        "CREATE TEMP VIEW alembic_version AS SELECT '0043'::text AS version_num FROM pg_sleep(2.2)",
+    )
+    .execute(&mut *held)
+    .await
+    .unwrap();
+    let app = pyloros::router("test".into(), pool);
+    let check = get(&app, "/api/v1/health/ready");
+    let release = async move {
+        tokio::time::sleep(Duration::from_millis(550)).await;
+        drop(held);
+    };
+    let ((status, body), ()) = tokio::join!(check, release);
+    assert_eq!(status, 200, "{body}");
 }

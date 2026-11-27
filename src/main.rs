@@ -6,7 +6,7 @@ use tokio::net::TcpListener;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(15)
         .acquire_timeout(Duration::from_secs(2))
         .connect_lazy(&env::var("DATABASE_URL")?)?;
     let listener =
