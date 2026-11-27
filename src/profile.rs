@@ -419,6 +419,10 @@ fn build_routes(
             any(admin_organizations::list),
         )
         .route(
+            "/api/v1/admin/organizations/{org_id}",
+            any(admin_organizations::detail),
+        )
+        .route(
             "/api/v1/admin/users/{user_id}/organizations",
             any(admin_organizations::memberships)
                 .post(admin_organizations::add)

@@ -13,18 +13,50 @@ pub(super) async fn memberships(
     headers: HeaderMap,
     Path(raw): Path<String>,
 ) -> Response {
-    if method != Method::GET {
-        return crate::browser_http::method_not_allowed().await;
-    }
-    let (mut tx, _, _) = match administrator::operator(&state, &headers).await {
-        Ok(operator) => operator,
+    let (mut tx, user) = match target(&state, method, &headers, &raw, "user_id").await {
+        Ok(target) => target,
         Err(error) => return *error,
     };
-    let user = match crate::query::path_uuid(&raw, "user_id") {
-        Ok(user) => user,
-        Err(issue) => return passkeys::validation(vec![issue]),
-    };
     read(&mut tx, user).await.unwrap_or_else(|_| internal())
+}
+
+async fn target(
+    state: &Profile,
+    method: Method,
+    headers: &HeaderMap,
+    raw: &str,
+    field: &str,
+) -> Result<(Transaction<'static, Postgres>, Uuid), Box<Response>> {
+    if method != Method::GET {
+        return Err(Box::new(crate::browser_http::method_not_allowed().await));
+    }
+    let (tx, _, _) = administrator::operator(state, headers).await?;
+    let id = crate::query::path_uuid(raw, field)
+        .map_err(|issue| Box::new(passkeys::validation(vec![issue])))?;
+    Ok((tx, id))
+}
+
+pub(super) async fn detail(
+    State(state): State<Arc<Profile>>,
+    method: Method,
+    headers: HeaderMap,
+    Path(raw): Path<String>,
+) -> Response {
+    let (mut tx, id) = match target(&state, method, &headers, &raw, "org_id").await {
+        Ok(target) => target,
+        Err(error) => return *error,
+    };
+    let query = format!("SELECT {COLUMNS} FROM organizations o WHERE o.id=$1");
+    match sqlx::query_as::<_, DirectoryRow>(&query)
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .and_then(|row| row.map(item).transpose())
+    {
+        Ok(Some(record)) => Json(record).into_response(),
+        Ok(None) => crate::login_http::problem(StatusCode::NOT_FOUND, "Organization not found"),
+        Err(_) => internal(),
+    }
 }
 
 async fn read(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> Result<Response, sqlx::Error> {
@@ -55,15 +87,14 @@ const COLUMNS: &str = "jsonb_build_object('id', o.id, 'name', o.name, 'short_nam
                 o.extra_metadata::text, o.created_at, o.updated_at";
 
 fn directory(rows: Vec<DirectoryRow>) -> Result<Vec<Value>, sqlx::Error> {
-    let mut organizations = Vec::with_capacity(rows.len());
-    for (mut item, metadata, created, updated) in rows {
-        item["metadata"] =
-            metadata::strings(&metadata).map_err(|e| sqlx::Error::Decode(e.into()))?;
-        item["created_at"] = json!(timestamp(created));
-        item["updated_at"] = json!(timestamp(updated));
-        organizations.push(item);
-    }
-    Ok(organizations)
+    rows.into_iter().map(item).collect()
+}
+
+fn item((mut item, metadata, created, updated): DirectoryRow) -> Result<Value, sqlx::Error> {
+    item["metadata"] = metadata::strings(&metadata).map_err(|e| sqlx::Error::Decode(e.into()))?;
+    item["created_at"] = json!(timestamp(created));
+    item["updated_at"] = json!(timestamp(updated));
+    Ok(item)
 }
 
 async fn user_exists(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> Result<bool, sqlx::Error> {

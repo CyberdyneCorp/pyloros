@@ -1,0 +1,2 @@
+- [x] Implement the organization detail read.
+- [x] Compare authorization, UUID validation, active and inactive records, missing records, metadata and CLI output.
