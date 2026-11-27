@@ -31,6 +31,8 @@ impl Chain {
             .filter(|address| seen.insert(*address))
         {
             let client = Client::builder()
+                .no_gzip()
+                .no_deflate()
                 .resolve(host, address)
                 .build()
                 .map_err(|_| ReadError::Failure)?;

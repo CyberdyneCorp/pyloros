@@ -56,12 +56,20 @@ impl KeyEncryptionKey {
     }
 
     pub(crate) fn decrypt(&self, envelope: &[u8]) -> Result<Zeroizing<Vec<u8>>, EncryptionError> {
+        self.decrypt_with_aad(envelope, &[])
+    }
+
+    pub(crate) fn decrypt_with_aad(
+        &self,
+        envelope: &[u8],
+        associated: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, EncryptionError> {
         let (nonce, data) = envelope.split_at_checked(12).ok_or(EncryptionError)?;
         let nonce = aead::Nonce::try_assume_unique_for_key(nonce).map_err(|_| EncryptionError)?;
         let mut buffer = Zeroizing::new(data.to_vec());
         let size = self
             .0
-            .open_in_place(nonce, aead::Aad::empty(), &mut buffer)
+            .open_in_place(nonce, aead::Aad::from(associated), &mut buffer)
             .map_err(|_| EncryptionError)?
             .len();
         buffer.truncate(size);

@@ -110,7 +110,7 @@ fn public(ip: IpAddr) -> bool {
     }
     !EXCLUDED.iter().any(|net| net.contains(&ip)) || EXCEPTIONS.iter().any(|net| net.contains(&ip))
 }
-pub(super) fn pin(mut answers: impl Iterator<Item = SocketAddr>) -> Option<SocketAddr> {
+pub(crate) fn pin(mut answers: impl Iterator<Item = SocketAddr>) -> Option<SocketAddr> {
     let first = answers.next()?;
     (public(first.ip()) && answers.all(|a| public(a.ip()))).then_some(first)
 }

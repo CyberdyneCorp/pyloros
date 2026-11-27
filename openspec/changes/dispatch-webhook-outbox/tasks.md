@@ -1,0 +1,3 @@
+- [x] Implement leased delivery, signing, bounded transport and retry history.
+- [x] Verify receiver-visible behavior, concurrent replicas and recovery on PostgreSQL.
+- [ ] Verify production TLS receiver behavior, remaining transport failure details and special-use IPv6 policy before migration signoff.

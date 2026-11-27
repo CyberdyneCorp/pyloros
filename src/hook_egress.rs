@@ -1,5 +1,6 @@
 //! An application-owned CONNECT proxy for allowlisted hook destinations.
 mod policy;
+pub(crate) use policy::pin;
 use policy::{Destination, Reply};
 use socket2::{Domain, Socket, Type};
 use std::{

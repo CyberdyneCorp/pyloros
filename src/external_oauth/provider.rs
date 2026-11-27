@@ -89,6 +89,8 @@ impl Provider {
             }
         };
         let http = Client::builder()
+            .no_gzip()
+            .no_deflate()
             .https_only(true)
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(10))

@@ -15,6 +15,14 @@ pub(crate) fn flag_with_default(name: &str, default: bool) -> Result<bool, Box<d
     }
 }
 
+pub(crate) fn insecure_webhook_http() -> Result<bool, Box<dyn Error>> {
+    let enabled = flag("WEBHOOKS_ALLOW_INSECURE_HTTP")?;
+    if enabled && env::var("APP_ENV").as_deref() == Ok("production") {
+        return Err("insecure webhook HTTP is disabled in production".into());
+    }
+    Ok(enabled)
+}
+
 pub(crate) fn pem(path_var: &str, inline_var: &str) -> Result<Option<String>, Box<dyn Error>> {
     if let Some(path) = env::var(path_var).ok().filter(|s| !s.trim().is_empty()) {
         return Ok(Some(std::fs::read_to_string(path)?));

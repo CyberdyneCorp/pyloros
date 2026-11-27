@@ -18,12 +18,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let seconds: u64 = env::var("OAUTH_REGISTRY_REFRESH_SECONDS")
         .unwrap_or_else(|_| "30".into())
         .parse()?;
-    let app = pyloros::application(environment, pool, Duration::from_secs(seconds)).await?;
+    let app = pyloros::application(environment, pool.clone(), Duration::from_secs(seconds)).await?;
     let app = app
         .layer(axum::Extension(listener.local_addr()?))
         .layer(axum::middleware::from_fn(
             pyloros::profile::limit_passkey_body,
         ));
+    let _webhook_worker = pyloros::webhook_worker::Worker::start(pool)?;
     axum::serve(
         listener,
         pyloros::headers::apply(app, secure_transport)

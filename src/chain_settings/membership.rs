@@ -30,7 +30,13 @@ sol! {
     function getGroupPolicies(uint256 groupId) external view returns (uint256[]);
 }
 
-static CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+static CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .no_gzip()
+        .no_deflate()
+        .build()
+        .expect("TLS client")
+});
 
 #[derive(Clone)]
 pub(crate) struct Chain {

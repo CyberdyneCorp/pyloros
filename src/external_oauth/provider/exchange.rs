@@ -249,7 +249,12 @@ mod tests {
                 authorization: String::new(),
                 token: format!("{base}/token"),
                 profile: format!("{base}/profile"),
-                http: reqwest::Client::builder().no_proxy().build().unwrap(),
+                http: reqwest::Client::builder()
+                    .no_gzip()
+                    .no_deflate()
+                    .no_proxy()
+                    .build()
+                    .unwrap(),
             };
             let account = remote.exchange("code").await.unwrap();
             assert!(account.email_verified);

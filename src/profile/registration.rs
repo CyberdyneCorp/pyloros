@@ -25,12 +25,8 @@ pub(super) struct Settings {
 
 impl Settings {
     pub(super) fn configured() -> Result<Self, Box<dyn Error>> {
-        let insecure_webhook_http = config::flag("WEBHOOKS_ALLOW_INSECURE_HTTP")?;
-        if insecure_webhook_http && env::var("APP_ENV").as_deref() == Ok("production") {
-            return Err("insecure webhook HTTP is disabled in production".into());
-        }
         Ok(Self {
-            insecure_webhook_http,
+            insecure_webhook_http: config::insecure_webhook_http()?,
             key: env::var("MASTER_KEY")
                 .ok()
                 .map(|s| KeyEncryptionKey::new(&s))

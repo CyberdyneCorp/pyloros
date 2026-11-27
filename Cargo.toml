@@ -45,7 +45,7 @@ der-parser = "10.0.0"
 pem = "3.0.6"
 hyper-util = { version = "0.1", features = ["client-proxy"] }
 hyper = { version = "1", features = ["http1"] }
-reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "form"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "form", "gzip", "deflate"] }
 multer = "3"
 futures-util = "0.3"
 csv = "1"

@@ -1,0 +1,3 @@
+Lease due rows in short PostgreSQL transactions. Resolve the current destination and rotation keys when claiming a delivery. Release database connections before network I/O. Pin the connection to a checked address and preserve the hostname for TLS. Record each attempt and its delivery state together. Expired leases allow another replica to resume after shutdown.
+
+The sender shares the existing egress policy for globally routable addresses. It requires native global unicast for IPv6 after canonicalizing mapped IPv4 addresses. Connection refusal and attempt timeouts have specific history messages. Other transport failures currently use a generic connection or response error.

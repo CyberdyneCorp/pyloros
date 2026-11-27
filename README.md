@@ -26,6 +26,12 @@ With hooks enabled, Pyloros starts a CONNECT proxy on `HOOKS_PROXY_HOST` and `HO
 
 The proposed hook runtime is WebAssembly, hosted by Rust. Existing scripts would be ported to modules and tested against representative events before cutover. The design calls for explicit permissions, bounded execution and a Python-free production runtime.
 
+## Outbound webhooks
+
+Each service replica runs a PostgreSQL outbox worker when `WEBHOOKS_ENABLED=true` (the default). Replicas lease queued deliveries before sending them. Receivers can deduplicate retries by the stable `webhook-id` header. The worker signs the stored body with the subscription key and includes both signatures during key rotation. Configure the same `MASTER_KEY` on all replicas.
+
+By default each replica claims up to 50 deliveries per batch, runs eight sends concurrently, allows ten seconds per request and polls every two seconds when the batch is smaller than the limit. Set `WEBHOOKS_BATCH_SIZE`, `WEBHOOKS_MAX_CONCURRENCY`, `WEBHOOKS_REQUEST_TIMEOUT_SECONDS` and `WEBHOOKS_POLL_INTERVAL_SECONDS` to tune these values. The worker pins HTTPS connections to checked public addresses. For local receiver testing, `WEBHOOKS_ALLOW_INSECURE_HTTP=true` permits HTTP and local addresses in development.
+
 ## Local development
 
 Install stable Rust with rustfmt and Clippy, just, and Docker Compose. Run `just` for available commands.
@@ -192,7 +198,7 @@ The existing forgot-password form submits to `POST /api/v1/auth/password/reset-r
 
 Submit the email verification code to `POST /api/v1/auth/verify-email` as the JSON string field `token`. The endpoint accepts UTF-8, UTF-16 and UTF-32 JSON. An invalid field type returns a 422 response containing the submitted value. Success returns an empty 204. Verification consumes the code and applies the verified email domain’s organization membership rules.
 
-`POST /api/v1/auth/register` creates an unverified password account with a managed Ethereum wallet, emails its verification code, and returns the account ID, normalized email, public key and address. Configure `MASTER_KEY` identically across writers. `RATELIMIT_REGISTER_PER_MIN` defaults to 10 per source. With webhooks enabled, matching subscriptions receive transactional outbox rows for the existing delivery worker. During coexistence, route registration to the legacy backend when an active registration hook requires its dispatcher. Pyloros returns 503 before creating the account in that configuration.
+`POST /api/v1/auth/register` creates an unverified password account with a managed Ethereum wallet, emails its verification code, and returns the account ID, normalized email, public key and address. Configure `MASTER_KEY` identically across writers. `RATELIMIT_REGISTER_PER_MIN` defaults to 10 per source. With webhooks enabled, matching subscriptions receive transactional outbox rows for the delivery worker. During coexistence, route registration to the legacy backend when an active registration hook requires its dispatcher. Pyloros returns 503 before creating the account in that configuration.
 
 First-party sessions can download personal data from `GET /api/v1/users/me/export`. Administrators can download the same report for a specified account from `GET /api/v1/admin/users/{user_id}/export`. Each JSON attachment includes up to 1,000 rows per section, marks truncated sections, and covers the last 90 days of authentication events. Self-service downloads have a three-per-hour allowance per account. The optional `export_notes` object in the report catalog maps table names to deployment-specific section notes.
 

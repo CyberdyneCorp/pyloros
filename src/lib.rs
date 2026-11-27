@@ -47,6 +47,7 @@ pub mod signing;
 pub mod token_authorization;
 pub mod token_http;
 mod token_runtime;
+pub mod webhook_worker;
 
 use std::time::Duration;
 
