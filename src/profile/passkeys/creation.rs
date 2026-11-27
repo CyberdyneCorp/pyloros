@@ -198,21 +198,13 @@ pub(super) async fn login_options(
 ) -> Result<Response, sqlx::Error> {
     let mut tx = pool.begin().await?;
     let challenge = random_bytes();
-    let ceremony = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO passkey_ceremonies
-        (id,purpose,challenge,rp_id,origin,binding_hash,policy,expires_at)
-        VALUES ($1,'login',$2,$3,$4,$5,$6,statement_timestamp()+$7 * interval '1 second')",
-    )
-    .bind(ceremony)
-    .bind(challenge.as_slice())
-    .bind(rp)
-    .bind(&binding.origin)
-    .bind(format!("{:x}", Sha256::digest(&binding.secret)))
-    .bind(&settings.digest)
-    .bind(settings.ttl as f64)
-    .execute(&mut *tx)
-    .await?;
+    let login = crate::passkey_ceremonies::CeremonyBinding {
+        relying_party: rp,
+        origin: &binding.origin,
+        binding: &binding.secret,
+        policy_digest: &settings.digest,
+    };
+    let ceremony = login.issue_login(&mut tx, &challenge, settings.ttl).await?;
     let document = json!({"ceremony_id":ceremony,"publicKey":{
         "rpId":rp,"timeout":settings.ttl*1000,"userVerification":"required",
         "challenge":URL_SAFE_NO_PAD.encode(challenge)

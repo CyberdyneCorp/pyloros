@@ -1,3 +1,3 @@
 - [x] Issue discoverable sign-in options and compare browser and native transport with the reference.
-- [ ] Verify signed assertions, counter policy and single-use challenge handling.
+- [x] Verify signed assertions, counter policy and single-use challenge handling.
 - [ ] Integrate sessions, MFA and audit events, and exercise both backend handoff directions.

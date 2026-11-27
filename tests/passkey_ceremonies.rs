@@ -99,6 +99,41 @@ async fn enrollment_claim_is_bound_expiring_and_committed_once() {
         );
     }
 
+    let binding = pyloros::passkey_ceremonies::CeremonyBinding {
+        relying_party: enrollment.relying_party,
+        origin: enrollment.origin,
+        binding: enrollment.binding,
+        policy_digest: enrollment.policy_digest,
+    };
+    let mut tx = begin(&pool, &schema).await;
+    let login_id = binding.issue_login(&mut tx, &challenge, 60).await.unwrap();
+    tx.commit().await.unwrap();
+    assert!(
+        enrollment
+            .claim(begin(&pool, &schema).await, login_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        binding
+            .claim_login(begin(&pool, &schema).await, id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let first = begin(&pool, &schema).await;
+    let second = begin(&pool, &schema).await;
+    let (first, second) = tokio::join!(
+        binding.claim_login(first, login_id),
+        binding.claim_login(second, login_id)
+    );
+    let claimed: Vec<_> = [first.unwrap(), second.unwrap()]
+        .into_iter()
+        .flatten()
+        .collect();
+    assert_eq!(claimed, [challenge.to_vec()]);
+
     let a = begin(&pool, &schema).await;
     let b = begin(&pool, &schema).await;
     let (a, b) = tokio::join!(enrollment.claim(a, id), enrollment.claim(b, id));
