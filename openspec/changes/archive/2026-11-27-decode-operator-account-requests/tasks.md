@@ -1,0 +1,2 @@
+- [x] Implement document decoding and add a regression for operator authorization order.
+- [x] Verify responses and cross-service provisioning on PostgreSQL.

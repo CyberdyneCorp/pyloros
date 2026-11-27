@@ -63,6 +63,7 @@ use axum::extract::{ConnectInfo, Request};
 use axum::{
     Json, Router,
     extract::State,
+    handler::Handler,
     http::{HeaderMap, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::any,
@@ -569,7 +570,9 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/users",
-            any(admin_users::list).post(registration::admin::create),
+            any(admin_users::list).post(
+                registration::admin::create.layer(axum::extract::DefaultBodyLimit::disable()),
+            ),
         )
         .route(
             "/api/v1/admin/users/bulk",

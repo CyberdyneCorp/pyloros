@@ -7,7 +7,7 @@ pub(in crate::profile) async fn create(
     headers: HeaderMap,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let body = match admin_fields::body(&headers, &bytes) {
+    let body = match crate::request_json::iam_document::document(&headers, &bytes) {
         Ok(v) => v,
         Err(r) => return *r,
     };
@@ -16,9 +16,13 @@ pub(in crate::profile) async fn create(
         Err(r) => return *r,
     };
     let Some(body) = body else { return internal() };
-    let credentials = match fields(body) {
+    let credentials = match crate::request_json::fields::validate_scalar_document(
+        &body,
+        &["email", "password"],
+        fields,
+    ) {
         Ok(v) => v,
-        Err(issues) => return password_change::invalid(issues),
+        Err(response) => return *response,
     };
     let origin = SessionOrigin {
         ip: client_ip(&headers, peer.ip(), state.proxies),

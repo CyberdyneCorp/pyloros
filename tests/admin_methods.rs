@@ -241,3 +241,24 @@ async fn authenticator_changes_challenge_anonymous_well_formed_utf16_requests() 
         assert!(response.headers().contains_key(header::WWW_AUTHENTICATE));
     }
 }
+
+#[tokio::test]
+async fn account_creation_authenticates_before_validating_large_numeric_fields() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let router = pyloros::profile::routes(pool, false).unwrap();
+    let digits = "7".repeat(402);
+    let document = format!(
+        r#"{{"email":{digits},"extra":"{}"}}"#,
+        "x".repeat(2 * 1024 * 1024)
+    );
+    let request = Request::post("/api/v1/admin/users")
+        .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(document))
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(response.headers().contains_key(header::WWW_AUTHENTICATE));
+}
