@@ -268,6 +268,9 @@ pub(crate) struct UnsignedIamTransaction<'a> {
 fn rpc_failure(error: ReadError) -> PrepareError {
     match error {
         ReadError::Rpc(error) => PrepareError::Rpc(error.diagnostic),
+        ReadError::Transport(Some(detail)) | ReadError::Diagnostic(detail) => {
+            PrepareError::Rpc(detail)
+        }
         _ => PrepareError::Unavailable,
     }
 }
@@ -322,7 +325,7 @@ impl Chain {
                     .map_err(rpc_failure)?;
                 history_priority_fee(&history)
             }
-            Err(_) => Err(PrepareError::Unavailable),
+            Err(error) => Err(rpc_failure(error)),
         }
     }
 

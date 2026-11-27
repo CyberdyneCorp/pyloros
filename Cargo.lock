@@ -2728,6 +2728,7 @@ dependencies = [
  "data-encoding",
  "der-parser",
  "futures-util",
+ "hyper",
  "idna",
  "indexmap 2.14.2",
  "ipnet",

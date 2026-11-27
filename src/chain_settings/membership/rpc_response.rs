@@ -12,8 +12,19 @@ pub(super) struct RpcError {
 }
 
 pub(super) fn decode(body: &[u8]) -> Result<Value, ReadError> {
+    let raw: &RawValue = serde_json::from_slice(body).map_err(|e| invalid_json(body, e))?;
+    if !raw.get().starts_with('{') {
+        let rendered = if raw.get().starts_with('"') {
+            serde_json::from_str(raw.get()).map_err(|_| ReadError::Failure)?
+        } else {
+            crate::json_representation::representation(raw).map_err(|_| ReadError::Failure)?
+        };
+        return Err(ReadError::Diagnostic(format!(
+            "Malformed response: expected a valid JSON-RPC response object, got: `{rendered}`"
+        )));
+    }
     let fields: HashMap<String, &RawValue> =
-        serde_json::from_slice(body).map_err(|_| ReadError::Failure)?;
+        serde_json::from_str(raw.get()).map_err(|_| ReadError::Failure)?;
     let version = fields
         .get("jsonrpc")
         .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok());
@@ -35,8 +46,33 @@ pub(super) fn decode(body: &[u8]) -> Result<Value, ReadError> {
             diagnostic,
         })));
     }
-    let result = fields.get("result").ok_or(ReadError::Failure)?;
+    let Some(result) = fields.get("result") else {
+        let rendered =
+            crate::json_representation::representation(raw).map_err(|_| ReadError::Failure)?;
+        return Err(ReadError::Diagnostic(format!(
+            "The response was in an unexpected format and unable to be parsed. Response must include either \"error\" or \"result\". The raw response is: {rendered}"
+        )));
+    };
     serde_json::from_str(result.get()).map_err(|_| ReadError::Failure)
+}
+
+fn invalid_json(body: &[u8], error: serde_json::Error) -> ReadError {
+    let Ok(text) = std::str::from_utf8(body) else {
+        return ReadError::Failure;
+    };
+    let issue = crate::request_json::json_issue(body, error);
+    let offset = issue["loc"][1].as_u64().expect("JSON character offset") as usize;
+    let message = issue["ctx"]["error"].as_str().expect("JSON diagnostic");
+    let (line, column) =
+        text.chars().take(offset).fold(
+            (1, 1),
+            |(l, c), ch| if ch == '\n' { (l + 1, 1) } else { (l, c + 1) },
+        );
+    let position = format!("line {line} column {column} (char {offset})");
+    ReadError::Diagnostic(format!(
+        "Could not decode {} because of {message}: {position}.: {position}",
+        crate::browser_prompt::quoted_string(text)
+    ))
 }
 
 #[cfg(test)]
@@ -65,7 +101,7 @@ mod tests {
     fn missing_results_and_wrong_response_ids_are_rejected_but_null_is_a_result() {
         assert!(matches!(
             decode(br#"{"id":1,"jsonrpc":"2.0"}"#),
-            Err(ReadError::Failure)
+            Err(ReadError::Diagnostic(_))
         ));
         assert!(matches!(
             decode(br#"{"id":2,"jsonrpc":"2.0","result":null}"#),
@@ -75,5 +111,16 @@ mod tests {
             decode(br#"{"id":1,"jsonrpc":"2.0","result":null}"#),
             Ok(Value::Null)
         ));
+    }
+
+    #[test]
+    fn malformed_json_reports_the_character_position_and_provider_text() {
+        let Err(ReadError::Diagnostic(detail)) = decode(b"{\"jsonrpc\":") else {
+            panic!("expected malformed response")
+        };
+        assert_eq!(
+            detail,
+            r#"Could not decode '{"jsonrpc":' because of Expecting value: line 1 column 12 (char 11).: line 1 column 12 (char 11)"#
+        );
     }
 }

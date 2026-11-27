@@ -63,3 +63,9 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 
 - **WHEN** the identity provider reports an RPC error during transaction preparation
 - **THEN** preserve the provider's field order and integer precision in the operator-facing failure detail
+
+#### Scenario: Provider request fails before submission
+
+- **WHEN** transaction preparation encounters an HTTP refusal or a malformed provider response
+- **THEN** report the failed provider outcome to the operator and record the audit
+- **AND** include the provider failure detail in the mint retry outcome stored on the user

@@ -1,6 +1,7 @@
 //! Read the authority's IAM inventory without sending transactions.
 pub(super) mod policy_transaction;
 mod rpc_response;
+mod transport;
 use super::ChainSettings;
 use alloy_sol_types::{SolCall, sol};
 use data_encoding::{HEXLOWER, HEXLOWER_PERMISSIVE};
@@ -165,7 +166,8 @@ impl Inventory {
 #[derive(Debug)]
 enum ReadError {
     Failure,
-    Transport,
+    Transport(Option<String>),
+    Diagnostic(String),
     Rpc(Box<rpc_response::RpcError>),
 }
 
@@ -418,13 +420,13 @@ impl Chain {
         let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string();
         for attempt in 0..5 {
             match self.request(&body).await {
-                Err(ReadError::Transport) if attempt < 4 => {
+                Err(ReadError::Transport(_)) if attempt < 4 => {
                     tokio::time::sleep(Duration::from_millis(125 << attempt)).await
                 }
                 result => return result,
             }
         }
-        Err(ReadError::Transport)
+        unreachable!("final RPC attempt always returns its result")
     }
 
     async fn request(&self, body: &str) -> Result<Value, ReadError> {
@@ -435,10 +437,16 @@ impl Chain {
             .body(body.to_owned())
             .send()
             .await
-            .and_then(|r| r.error_for_status())
-            .map_err(|_| ReadError::Transport)?;
+            .map_err(|e| transport::request_error(&self.endpoint, &e))?;
+        if response.status().is_client_error() || response.status().is_server_error() {
+            return Err(transport::http_error(&self.endpoint, &response));
+        }
         let mut body = Vec::new();
-        while let Some(piece) = response.chunk().await.map_err(|_| ReadError::Transport)? {
+        while let Some(piece) = response
+            .chunk()
+            .await
+            .map_err(|e| transport::request_error(&self.endpoint, &e))?
+        {
             if piece.len() > 16 * 1024 * 1024 - body.len() {
                 return Err(ReadError::Failure);
             }

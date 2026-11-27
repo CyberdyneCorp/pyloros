@@ -4,7 +4,7 @@ use crate::browser_prompt::quoted_string;
 
 pub(super) fn estimate_error(error: ReadError) -> PrepareError {
     let ReadError::Rpc(doc) = error else {
-        return PrepareError::Unavailable;
+        return rpc_failure(error);
     };
     let Some(reason) = reason(&doc) else {
         return PrepareError::Rpc(doc.diagnostic);
