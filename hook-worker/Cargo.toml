@@ -5,6 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
+ruff_python_ast = "=0.0.10"
+ruff_python_parser = "=0.0.10"
 serde_json = "1"
 wasmtime = { version = "48.0.9", default-features = false, features = ["std", "runtime", "component-model", "cranelift", "anyhow"] }
 

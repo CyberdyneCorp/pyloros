@@ -1,0 +1,3 @@
+- [x] Implement isolated Rust parsing and initial syntax-tree checks.
+- [ ] Implement restricted-language checks and compare diagnostics with the reference.
+- [ ] Connect complete validation to the v1 administrator HTTP route and verify the existing clients.

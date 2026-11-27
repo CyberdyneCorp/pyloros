@@ -232,6 +232,15 @@ Service clients with the `users:provision` scope can invite a person through `PO
 
 A first-party session can edit its phone with `PATCH /api/v1/users/me` or `cyberauth me update --phone`. An empty phone string removes the number. Omitting it or sending null preserves its verification state. The endpoint accepts UTF-8, UTF-16 and UTF-32 JSON. Overlapping requests that each observed a changed number record their own audit events.
 
+### Inspect legacy hook source during migration
+
+Run `pyloros-hook-worker --parse-hook-source < hook.py` to check syntax and
+initial source restrictions without executing the module. The worker reads up
+to 2 MiB of UTF-8 source and returns JSON. A `rejected` result includes a
+diagnostic. A `parsed` result means the module reached the next validation
+stage. Keep the v1 validation route on the existing service while the remaining
+restricted-language and compiler diagnostics are being implemented.
+
 ### Validate a WebAssembly hook
 
 Administrators can submit a binary WebAssembly component to

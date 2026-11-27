@@ -1,3 +1,4 @@
+mod source;
 use serde_json::{Value, json};
 use std::io::{self, Read};
 use wasmtime::component::{Component, Linker};
@@ -86,7 +87,13 @@ fn main() {
     if bound_address_space().is_err() {
         std::process::exit(2);
     }
-    let Some(result) = handle(io::stdin().lock()) else {
+    let mut args = std::env::args_os().skip(1);
+    let result = match (args.next(), args.next()) {
+        (None, None) => handle(io::stdin().lock()),
+        (Some(mode), None) if mode == "--parse-hook-source" => source::inspect(io::stdin().lock()),
+        _ => None,
+    };
+    let Some(result) = result else {
         std::process::exit(2)
     };
     println!("{result}");
