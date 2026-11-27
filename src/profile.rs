@@ -274,6 +274,10 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/userinfo", any(userinfo::handle))
         .route(
+            "/api/v1/auth/passkeys/login/options",
+            any(passkeys::start_login),
+        )
+        .route(
             "/api/v1/auth/passkeys/register/options",
             any(passkeys::start_enrollment),
         )

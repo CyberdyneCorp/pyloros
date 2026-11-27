@@ -17,11 +17,7 @@ pub(in crate::profile) async fn handle(
     req: Request,
 ) -> Response {
     if req.method() != Method::POST {
-        let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
-        response
-            .headers_mut()
-            .insert(header::ALLOW, header::HeaderValue::from_static("POST"));
-        return response;
+        return post_required();
     }
     let (parts, body) = req.into_parts();
     let Ok(bytes) = axum::body::to_bytes(body, 65536).await else {

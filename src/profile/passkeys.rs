@@ -32,6 +32,7 @@ pub async fn limit_passkey_body(req: Request, next: axum::middleware::Next) -> R
 pub(super) struct Inventory {
     rp: Option<String>,
     creation: Option<creation::Settings>,
+    login_start_quota: LoginThrottle,
     start_quota: LoginThrottle,
     finish_quota: LoginThrottle,
     quota: LoginThrottle,
@@ -60,6 +61,7 @@ impl Inventory {
         Self {
             rp,
             creation: None,
+            login_start_quota: LoginThrottle::new(limit),
             start_quota: LoginThrottle::new(limit),
             finish_quota: LoginThrottle::new(limit),
             quota: LoginThrottle::new(limit),
@@ -108,6 +110,41 @@ pub(super) async fn modify(
     }
 }
 
+fn post_required() -> Response {
+    let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+    response
+        .headers_mut()
+        .insert(header::ALLOW, header::HeaderValue::from_static("POST"));
+    response
+}
+
+pub(super) async fn start_login(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    method: Method,
+    headers: HeaderMap,
+) -> Response {
+    if method != Method::POST {
+        return post_required();
+    }
+    let inventory = &state.passkeys;
+    let (Some(rp), Some(settings)) = (&inventory.rp, &inventory.creation) else {
+        return problem(StatusCode::NOT_FOUND, "Passkeys disabled");
+    };
+    if !inventory
+        .login_start_quota
+        .allow(client_ip(&headers, peer.ip(), state.proxies))
+    {
+        return RateLimited.into_response();
+    }
+    let Some(binding) = settings.transport(&headers, peer.ip(), true) else {
+        return finish::invalid();
+    };
+    creation::login_options(&state.pool, settings, rp, binding)
+        .await
+        .unwrap_or_else(|_| internal())
+}
+
 pub(super) async fn start_enrollment(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -115,11 +152,7 @@ pub(super) async fn start_enrollment(
     headers: HeaderMap,
 ) -> Response {
     if method != Method::POST {
-        let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
-        response
-            .headers_mut()
-            .insert(header::ALLOW, header::HeaderValue::from_static("POST"));
-        return response;
+        return post_required();
     }
     let binding = state
         .passkeys

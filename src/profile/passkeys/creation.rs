@@ -180,13 +180,52 @@ pub(super) async fn issue(
         .map(|key| json!({"type":"public-key","id":key}))
         .collect();
     let handle = URL_SAFE_NO_PAD.encode(handle);
-    let mut document = json!({"ceremony_id":ceremony,"publicKey":{
+    let document = json!({"ceremony_id":ceremony,"publicKey":{
         "rp":{"id":rp,"name":settings.name},"user":{"id":handle,"name":handle,"displayName":"CyberdyneAuth account"},
         "challenge":URL_SAFE_NO_PAD.encode(challenge),"timeout":settings.ttl * 1000,"excludeCredentials":exclude,
         "pubKeyCredParams":[{"type":"public-key","alg":-7},{"type":"public-key","alg":-257}],
         "authenticatorSelection":{"residentKey":"required","requireResidentKey":true,"userVerification":"required"},
         "attestation":"none"
     }});
+    options_response(tx, settings, binding, document).await
+}
+
+pub(super) async fn login_options(
+    pool: &PgPool,
+    settings: &Settings,
+    rp: &str,
+    binding: Transport,
+) -> Result<Response, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let challenge = random_bytes();
+    let ceremony = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO passkey_ceremonies
+        (id,purpose,challenge,rp_id,origin,binding_hash,policy,expires_at)
+        VALUES ($1,'login',$2,$3,$4,$5,$6,statement_timestamp()+$7 * interval '1 second')",
+    )
+    .bind(ceremony)
+    .bind(challenge.as_slice())
+    .bind(rp)
+    .bind(&binding.origin)
+    .bind(format!("{:x}", Sha256::digest(&binding.secret)))
+    .bind(&settings.digest)
+    .bind(settings.ttl as f64)
+    .execute(&mut *tx)
+    .await?;
+    let document = json!({"ceremony_id":ceremony,"publicKey":{
+        "rpId":rp,"timeout":settings.ttl*1000,"userVerification":"required",
+        "challenge":URL_SAFE_NO_PAD.encode(challenge)
+    }});
+    options_response(tx, settings, binding, document).await
+}
+
+async fn options_response(
+    tx: Transaction<'_, Postgres>,
+    settings: &Settings,
+    binding: Transport,
+    mut document: Value,
+) -> Result<Response, sqlx::Error> {
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CACHE_CONTROL,
@@ -217,6 +256,59 @@ pub(super) async fn issue(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn discoverable_login_persists_an_anonymous_challenge() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        sqlx::query("CREATE TEMP TABLE passkey_ceremonies
+            (id uuid PRIMARY KEY,purpose text,challenge bytea,rp_id text,origin text,
+             binding_hash text,policy text,expires_at timestamptz,user_id uuid,session_id uuid,credential_id uuid)")
+            .execute(&pool).await.unwrap();
+        let settings = Settings {
+            name: "Test".into(),
+            ttl: 60,
+            browser: vec![],
+            native: vec![],
+            digest: "policy".into(),
+            dev: true,
+            secure: false,
+            proxy_peers: vec![],
+        };
+        let transport = Transport {
+            origin: "https://keys.example".into(),
+            secret: "test-binding".into(),
+            native: true,
+        };
+        let response = login_options(&pool, &settings, "keys.example", transport)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert!(!response.headers().contains_key(header::SET_COOKIE));
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let document: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(document["binding_secret"], "test-binding");
+        let id = Uuid::parse_str(document["ceremony_id"].as_str().unwrap()).unwrap();
+        let challenge=sqlx::query_scalar::<_,Vec<u8>>(
+            "SELECT challenge FROM passkey_ceremonies WHERE id=$1 AND purpose='login'
+             AND user_id IS NULL AND session_id IS NULL AND credential_id IS NULL
+             AND expires_at>clock_timestamp() AND rp_id='keys.example' AND origin='https://keys.example'
+             AND policy='policy' AND binding_hash=$2")
+             .bind(id).bind(format!("{:x}",Sha256::digest("test-binding"))).fetch_one(&pool).await.unwrap();
+        assert_eq!(challenge.len(), 32);
+        assert_eq!(
+            document["publicKey"],
+            json!({"challenge":URL_SAFE_NO_PAD.encode(challenge),
+            "rpId":"keys.example","timeout":60000,"userVerification":"required"})
+        );
+    }
 
     #[test]
     fn native_client_requires_an_approved_origin_and_secure_connection() {
