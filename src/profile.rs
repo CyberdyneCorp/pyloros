@@ -463,6 +463,13 @@ fn build_routes(
             "/api/v2/admin/hooks/artifacts/{digest}/test",
             any(wasm_hooks::dry_run),
         )
+        .route(
+            "/api/v2/admin/hooks/{hook_id}/binding",
+            axum::routing::get(wasm_hooks::binding::read)
+                .put(wasm_hooks::binding::write)
+                .delete(wasm_hooks::binding::write)
+                .layer(axum::extract::DefaultBodyLimit::max(1024)),
+        )
         .merge(store_products::routes())
         .route(
             "/api/v1/billing/apple/validate",

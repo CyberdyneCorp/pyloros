@@ -274,3 +274,19 @@ The five-second worker deadline includes compilation.
 with `cargo build --manifest-path hook-worker/Cargo.toml --locked --release` and
 install `pyloros-hook-worker` beside the API executable, or set
 `PYLOROS_HOOK_WORKER` to its absolute path.
+
+### Select a hook version
+
+After staging components, apply [the version-binding migration](migrations/002_hook_bindings.sql)
+through the database migration owner. An administrator can then use
+`/api/v2/admin/hooks/{hook_id}/binding` to manage the selected artifact.
+
+| Method | Operation |
+| --- | --- |
+| GET | Read the hook ID and selected SHA-256, or `null` for an unbound hook. |
+| PUT | Select a staged version with a JSON body containing its `sha256`. |
+| DELETE | Release the selection. The artifact remains available for reuse. |
+
+Each change records its previous and new digest in the administrator audit log.
+Repeating a completed change returns the current selection. The hook's existing
+enabled flag, event, privacy settings and source are preserved.

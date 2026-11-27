@@ -20,6 +20,7 @@ pub(super) async fn validate(State(state): State<Arc<Profile>>, req: Request) ->
     }
 }
 
+pub(super) mod binding;
 mod dry_run;
 pub(super) use dry_run::dry_run;
 mod storage;

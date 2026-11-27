@@ -1,0 +1,2 @@
+- [x] Implement version selection, lookup and removal through the administrator API.
+- [x] Verify rollback, concurrent retries, access control and coexistence with hook deletion.

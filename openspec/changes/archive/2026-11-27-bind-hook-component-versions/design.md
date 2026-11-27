@@ -1,0 +1,1 @@
+Store the selected SHA-256 beside the existing hook. Selecting a version does not change whether the hook is enabled. Serialize changes on the hook row and append the operator audit entry in the same transaction. Removing a hook cascades to its binding. Removing a binding preserves the staged artifact.
