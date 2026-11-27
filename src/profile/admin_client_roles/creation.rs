@@ -30,17 +30,18 @@ pub(in crate::profile) async fn create(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    Path(client): Path<String>,
+    Path(path): Path<InventoryPath>,
     bytes: axum::body::Bytes,
 ) -> Response {
     let body = match fields::document(&headers, &bytes) {
         Ok(body) => body,
         Err(error) => return *error,
     };
-    let (tx, actor, email) = match administrator::operator(&state, &headers).await {
-        Ok(operator) => operator,
-        Err(error) => return *error,
-    };
+    let (tx, caller) =
+        match delegated::CatalogCaller::authorize(&state, &headers, path.client_id).await {
+            Ok(result) => result,
+            Err(error) => return *error,
+        };
     let Ok(chain) = authority(&state).await else {
         return internal();
     };
@@ -62,7 +63,7 @@ pub(in crate::profile) async fn create(
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
-    insert(tx, chain, &client, role, (actor, email.as_deref()), origin)
+    insert(tx, chain, &caller.client, role, caller.actor(), origin)
         .await
         .unwrap_or_else(|_| internal())
 }
@@ -98,7 +99,7 @@ async fn insert(
     chain: Option<crate::chain_settings::Chain>,
     client: &str,
     role: NewRole,
-    actor: (Uuid, Option<&str>),
+    actor: crate::admin_audit::Actor<'_>,
     origin: SessionOrigin<'_>,
 ) -> Result<Response, sqlx::Error> {
     if !active_client_for_update(&mut tx, client).await? {
@@ -110,13 +111,21 @@ async fn insert(
             Ok(groups) => groups,
             Err(error) => return Ok(chain_error(error)),
         };
+        if let Some(response) = conflict(client, &role.key, groups.into_iter().map(|g| g.0)) {
+            return Ok(response);
+        }
+        let name = format!("rp:{client}:{}", role.key);
         return Ok(
-            conflict(client, &role.key, groups.into_iter().map(|g| g.0)).unwrap_or_else(|| {
-                problem(
+            match chain
+                .prepare_group_creation(&name, role.description.as_deref())
+                .await
+            {
+                Ok(_) => problem(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "Blockchain role creation unavailable",
-                )
-            }),
+                ),
+                Err(_) => internal(),
+            },
         );
     }
     let prefix = format!("rp:{client}:");
@@ -143,12 +152,12 @@ async fn insert(
         .bind(&role.key)
         .execute(&mut *tx)
         .await?;
-    crate::admin_audit::append(
+    crate::admin_audit::append_sorted_record(
         &mut tx,
         "client_role.create",
-        Some(actor),
-        ("client_role", &format!("{client}:{}", role.key)),
-        json!({}),
+        actor,
+        Some(("client_role", Some(&format!("{client}:{}", role.key)))),
+        &json!({}),
         origin,
     )
     .await?;
@@ -208,7 +217,7 @@ mod tests {
                 None,
                 "app",
                 role(),
-                actor,
+                crate::admin_audit::Actor::User(Some(actor)),
                 origin
             )
             .await
@@ -226,7 +235,7 @@ mod tests {
             None,
             "app",
             role(),
-            actor,
+            crate::admin_audit::Actor::User(Some(actor)),
             origin,
         )
         .await

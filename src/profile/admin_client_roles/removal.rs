@@ -2,12 +2,18 @@
 use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem};
 
+#[derive(Deserialize)]
+pub(in crate::profile) struct RemovePath {
+    client_id: Option<String>,
+    role_key: String,
+}
+
 pub(in crate::profile) async fn remove(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     method: Method,
     headers: HeaderMap,
-    Path((client, key)): Path<(String, String)>,
+    Path(path): Path<RemovePath>,
 ) -> Response {
     if method != Method::DELETE {
         let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
@@ -16,13 +22,15 @@ pub(in crate::profile) async fn remove(
             .insert(header::ALLOW, header::HeaderValue::from_static("DELETE"));
         return response;
     }
-    let (tx, actor, email) = match administrator::operator(&state, &headers).await {
-        Ok(operator) => operator,
-        Err(error) => return *error,
-    };
+    let (tx, caller) =
+        match delegated::CatalogCaller::authorize(&state, &headers, path.client_id).await {
+            Ok(result) => result,
+            Err(error) => return *error,
+        };
     let Ok(chain) = authority(&state).await else {
         return internal();
     };
+    let key = path.role_key;
     if !crate::token_authorization::valid_role_key(&key) {
         return problem(
             StatusCode::BAD_REQUEST,
@@ -36,7 +44,7 @@ pub(in crate::profile) async fn remove(
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
-    delete(tx, chain, &client, &key, (actor, email.as_deref()), origin)
+    delete(tx, chain, &caller.client, &key, caller.actor(), origin)
         .await
         .unwrap_or_else(|_| internal())
 }
@@ -45,12 +53,43 @@ fn matches_role(token: &str, name: &str) -> bool {
     crate::token_authorization::assignment(name).is_some_and(|(role, _)| role == token)
 }
 
+async fn prepare_removal(
+    chain: &crate::chain_settings::Chain,
+    client: &str,
+    key: &str,
+) -> Response {
+    use crate::chain_settings::PrepareError;
+    let inventory = match chain.snapshot().await {
+        Ok(inventory) => inventory,
+        Err(error) => return chain_error(error),
+    };
+    let token = format!("{client}:{key}");
+    // The provider removes organization-bound assignments before retiring the global role.
+    let first = inventory
+        .groups
+        .iter()
+        .filter(|g| matches_role(&token, &g.name))
+        .min_by_key(|g| !g.name.contains('@'));
+    let Some(group) = first else {
+        return missing_role(client, key);
+    };
+    match chain.prepare_role_group_removal(group.id).await {
+        Ok(_) => problem(StatusCode::SERVICE_UNAVAILABLE, "Blockchain role deletion unavailable"),
+        Err(PrepareError::Catalog(error)) => chain_error(error),
+        Err(PrepareError::Reverted(detail)) => (StatusCode::BAD_GATEWAY,
+            Json(json!({"status":502, "type":"about:blank", "title":"Chain transaction failed", "detail":detail}))).into_response(),
+        Err(PrepareError::Rpc(_) | PrepareError::Unavailable | PrepareError::Argument(_)) =>
+            chain_error(crate::chain_settings::SnapshotError::Unavailable),
+        Err(_) => internal(),
+    }
+}
+
 async fn delete(
     mut tx: Transaction<'_, Postgres>,
     chain: Option<crate::chain_settings::Chain>,
     client: &str,
     key: &str,
-    actor: (Uuid, Option<&str>),
+    actor: crate::admin_audit::Actor<'_>,
     origin: SessionOrigin<'_>,
 ) -> Result<Response, sqlx::Error> {
     if !active_client_for_update(&mut tx, client).await? {
@@ -59,14 +98,7 @@ async fn delete(
     let token = format!("{client}:{key}");
     if let Some(chain) = chain {
         tx.commit().await?;
-        return Ok(match chain.group_catalog().await {
-            Err(error) => chain_error(error),
-            Ok(groups) if groups.iter().any(|g| matches_role(&token, &g.0)) => problem(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Blockchain role deletion unavailable",
-            ),
-            Ok(_) => missing_role(client, key),
-        });
+        return Ok(prepare_removal(&chain, client, key).await);
     }
     lock_role(&mut tx, client, key).await?;
     let name = format!("rp:{token}");
@@ -90,22 +122,80 @@ async fn delete(
         .bind(ids)
         .execute(&mut *tx)
         .await?;
-    crate::admin_audit::append(
+    crate::admin_audit::append_sorted_record(
         &mut tx,
         "client_role.delete",
-        Some(actor),
-        ("client_role", &token),
-        json!({}),
+        actor,
+        Some(("client_role", Some(&token))),
+        &json!({}),
         origin,
     )
     .await?;
     tx.commit().await?;
-    Ok(StatusCode::NO_CONTENT.into_response())
+    Ok((
+        StatusCode::NO_CONTENT,
+        [(header::CONTENT_TYPE, "application/json")],
+    )
+        .into_response())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn delegated_delete_records_the_client_and_returns_an_empty_json_response() {
+        use sqlx::Acquire;
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql("CREATE TEMP TABLE oauth_clients(client_id text, active boolean);
+          CREATE TEMP TABLE iam_groups(id uuid, name text);
+          CREATE TEMP TABLE client_role_permissions(client_id text, role_key text);
+          CREATE TEMP TABLE audit_chain_head(id int primary key, head_hash text);
+          CREATE TEMP TABLE admin_action_logs(id uuid, action text,target_type text,target_id text,
+            extra_metadata jsonb,ip_address inet,user_agent text,created_at timestamptz,prev_hash text,
+            row_hash text,actor_type text,actor_user_id uuid,actor_email text,actor_client_id text);
+          INSERT INTO oauth_clients VALUES ('app',true);
+          INSERT INTO iam_groups VALUES(gen_random_uuid(),'rp:app:reader'),(gen_random_uuid(),'rp:sibling:reader');")
+            .execute(&mut *tx).await.unwrap();
+        let result = delete(
+            tx.begin().await.unwrap(),
+            None,
+            "app",
+            "reader",
+            crate::admin_audit::Actor::Client("app"),
+            SessionOrigin {
+                ip: None,
+                user_agent: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.status(), StatusCode::NO_CONTENT);
+        assert_eq!(result.headers()[header::CONTENT_TYPE], "application/json");
+        assert!(
+            axum::body::to_bytes(result.into_body(), 128)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let audit: (String, String, String) =
+            sqlx::query_as("SELECT actor_type,actor_client_id,target_id FROM admin_action_logs")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(audit, ("client".into(), "app".into(), "app:reader".into()));
+        assert_eq!(
+            sqlx::query_scalar::<_, String>("SELECT name FROM iam_groups")
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap(),
+            ["rp:sibling:reader"]
+        );
+    }
+
     #[test]
     fn deletion_selects_only_the_named_role_and_its_organization_assignments() {
         let role = "a:reader";

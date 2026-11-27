@@ -159,7 +159,7 @@ async fn delegated_reads_require_service_bearer_credentials() {
 }
 
 #[tokio::test]
-async fn delegated_permission_writes_require_service_credentials() {
+async fn delegated_catalog_writes_require_service_credentials() {
     let pool = PgPoolOptions::new()
         .connect_lazy("postgresql://localhost/pyloros")
         .unwrap();
@@ -167,6 +167,8 @@ async fn delegated_permission_writes_require_service_credentials() {
     for (method, path) in [
         (Method::POST, "/api/v1/clients/me/permissions"),
         (Method::DELETE, "/api/v1/clients/me/permissions/read"),
+        (Method::POST, "/api/v1/clients/me/roles"),
+        (Method::DELETE, "/api/v1/clients/me/roles/reader"),
     ] {
         let request = Request::builder()
             .method(method)

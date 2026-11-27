@@ -76,22 +76,11 @@ pub(super) async fn read(
     if method != Method::GET {
         return crate::browser_http::method_not_allowed().await;
     }
-    let (tx, client) = match path.client_id {
-        Some(client) => match administrator::operator(&state, &headers).await {
-            Ok((tx, _, _)) => (tx, client),
+    let (tx, caller) =
+        match delegated::CatalogCaller::authorize(&state, &headers, path.client_id).await {
+            Ok(result) => result,
             Err(error) => return *error,
-        },
-        None => {
-            let client = match delegated::client(&state, &headers).await {
-                Ok(client) => client,
-                Err(error) => return *error,
-            };
-            let Ok(tx) = state.pool.begin().await else {
-                return internal();
-            };
-            (tx, client)
-        }
-    };
+        };
     let Ok(chain) = authority(&state).await else {
         return internal();
     };
@@ -99,7 +88,7 @@ pub(super) async fn read(
         &state,
         chain,
         tx,
-        &client,
+        &caller.client,
         path.role_key
             .as_deref()
             .map(|key| Target { key, change: None }),

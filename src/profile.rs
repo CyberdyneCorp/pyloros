@@ -408,7 +408,14 @@ fn build_routes(
             "/api/v1/clients/me/users/{user_id}/roles",
             any(admin_client_roles::delegated_user),
         )
-        .route("/api/v1/clients/me/roles", any(admin_client_roles::read))
+        .route(
+            "/api/v1/clients/me/roles",
+            any(admin_client_roles::read).post(admin_client_roles::create),
+        )
+        .route(
+            "/api/v1/clients/me/roles/{role_key}",
+            any(admin_client_roles::remove),
+        )
         .route(
             "/api/v1/clients/me/roles/{role_key}/permissions",
             any(admin_client_roles::read),

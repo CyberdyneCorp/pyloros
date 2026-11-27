@@ -75,17 +75,12 @@ async fn edit(
     requested_client: Option<String>,
     edit: Edit<'_>,
 ) -> Result<Response, sqlx::Error> {
-    let (mut tx, client, operator) = match requested_client {
-        Some(client) => match administrator::operator(state, headers).await {
-            Ok((tx, id, email)) => (tx, client, Some((id, email))),
-            Err(r) => return Ok(*r),
-        },
-        None => match delegated::client(state, headers).await {
-            Ok(client) => (state.pool.begin().await?, client, None),
-            Err(r) => return Ok(*r),
-        },
-    };
-    let client = client.as_str();
+    let (mut tx, caller) =
+        match delegated::CatalogCaller::authorize(state, headers, requested_client).await {
+            Ok(result) => result,
+            Err(error) => return Ok(*error),
+        };
+    let client = caller.client.as_str();
     if let Some(chain) = state.blockchain.provider().await {
         chain.validate_signer()?;
     }
@@ -111,14 +106,10 @@ async fn edit(
             ip: crate::token_http::client_ip(headers, peer.ip(), state.proxies),
             user_agent: crate::token_http::header(headers, "user-agent"),
         };
-        let actor = match &operator {
-            Some((id, email)) => crate::admin_audit::Actor::User(Some((*id, email.as_deref()))),
-            None => crate::admin_audit::Actor::Client(client),
-        };
         crate::admin_audit::append_sorted_record(
             &mut tx,
             action,
-            actor,
+            caller.actor(),
             Some(("client_permission", Some(&format!("{client}:{key}")))),
             &json!({}),
             origin,

@@ -395,6 +395,21 @@ impl Chain {
             .await
     }
 
+    pub(crate) async fn prepare_role_group_removal(
+        &self,
+        group_id: TokenId,
+    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+        let current = self.snapshot().await.map_err(PrepareError::Catalog)?;
+        if !current.groups.iter().any(|group| group.id == group_id) {
+            return Err(PrepareError::MissingGroup(chain_uuid("group", group_id)));
+        }
+        self.prepare_contract(
+            self.group.as_deref(),
+            deleteGroupCall { id: group_id }.abi_encode(),
+        )
+        .await
+    }
+
     pub(crate) async fn prepare_group_creation(
         &self,
         name: &str,
