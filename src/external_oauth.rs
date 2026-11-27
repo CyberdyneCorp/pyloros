@@ -206,11 +206,7 @@ async fn start(
 }
 
 fn internal() -> Response {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
-    )
-        .into_response()
+    crate::headers::unhandled_error()
 }
 
 #[cfg(test)]

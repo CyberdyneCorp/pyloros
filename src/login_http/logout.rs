@@ -35,13 +35,7 @@ pub(super) async fn handle(
             request,
         )
         .await
-        .unwrap_or_else(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
-            )
-                .into_response()
-        })
+        .unwrap_or_else(|_| crate::headers::unhandled_error())
 }
 
 #[derive(Clone, Copy, PartialEq)]

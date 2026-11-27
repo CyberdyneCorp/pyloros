@@ -142,11 +142,7 @@ pub(crate) fn problem(status: StatusCode, title: &str) -> Response {
 }
 
 pub(crate) fn internal_error() -> Response {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
-    )
-        .into_response()
+    crate::headers::unhandled_error()
 }
 
 async fn handle(
@@ -187,13 +183,7 @@ async fn handle(
             request_id: id,
         })
         .await
-        .unwrap_or_else(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
-            )
-                .into_response()
-        })
+        .unwrap_or_else(|_| crate::headers::unhandled_error())
 }
 
 fn challenge(method: &str, token: String, code: Option<String>) -> Response {

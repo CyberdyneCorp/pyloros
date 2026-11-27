@@ -36,13 +36,7 @@ pub(super) async fn handle(
             header(&parts.headers, "x-request-id"),
         )
         .await
-        .unwrap_or_else(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
-            )
-                .into_response()
-        })
+        .unwrap_or_else(|_| crate::headers::unhandled_error())
 }
 
 fn subject(user: Option<Uuid>) -> AuditSubject {

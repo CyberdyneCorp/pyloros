@@ -91,13 +91,7 @@ async fn handle(
             .await
         }
     };
-    result.unwrap_or_else(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
-        )
-            .into_response()
-    })
+    result.unwrap_or_else(|_| crate::headers::unhandled_error())
 }
 
 fn invalid() -> Response {

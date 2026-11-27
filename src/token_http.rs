@@ -352,11 +352,7 @@ fn exchange_response(
             .into_response(),
         Err(_) => {
             eprintln!("OAuth token exchange failed");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
-            )
-                .into_response()
+            crate::headers::unhandled_error()
         }
     }
 }
@@ -372,11 +368,7 @@ pub(crate) async fn post_only() -> Response {
 }
 
 fn internal() -> Response {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
-    )
-        .into_response()
+    crate::headers::unhandled_error()
 }
 
 #[cfg(test)]

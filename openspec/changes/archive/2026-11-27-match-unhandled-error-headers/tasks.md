@@ -1,0 +1,2 @@
+- [x] Identify unhandled responses at creation and apply browser and transport policy to handled responses.
+- [x] Verify origin, transport and HTTP status behavior, including handled HTTP 500 responses.

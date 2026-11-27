@@ -123,6 +123,13 @@ async fn policy(
         preflight(req.headers(), method, allowed)
     } else {
         let mut res = next.run(req).await;
+        if res
+            .extensions()
+            .get::<crate::headers::UnhandledError>()
+            .is_some()
+        {
+            return res;
+        }
         res.headers_mut().insert(
             "access-control-expose-headers",
             HeaderValue::from_static("X-CSRF-Token"),

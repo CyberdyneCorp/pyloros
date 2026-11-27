@@ -90,10 +90,13 @@ pub(crate) fn passkey_rp(dev: bool) -> Result<Option<String>, Box<dyn Error>> {
     Ok(Some(rp))
 }
 
-fn document_route(status: StatusCode, document: Value) -> MethodRouter {
+fn document_route(document: Option<Value>) -> MethodRouter {
     any(move |method: Method| async move {
         if method == Method::GET {
-            return (status, Json(document)).into_response();
+            return match document {
+                Some(doc) => Json(doc).into_response(),
+                None => crate::headers::unhandled_error(),
+            };
         }
         let problem = json!({
             "type": "about:blank", "title": "Method Not Allowed",
@@ -120,24 +123,12 @@ pub fn routes(environment: &str) -> Result<Router, Box<dyn Error>> {
     }
     let rp = passkey_rp(environment == "dev")?;
     let capabilities = json!({"enabled": rp.is_some(), "rp_id": rp});
-    let (status, providers) = if forbidden {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            json!({
-                "type": "about:blank", "title": "Internal Server Error", "status": 500
-            }),
-        )
-    } else {
-        (StatusCode::OK, json!({"providers": providers}))
-    };
+    let providers = (!forbidden).then(|| json!({"providers": providers}));
     Ok(Router::new()
-        .route(
-            "/api/v1/auth/oauth/providers",
-            document_route(status, providers),
-        )
+        .route("/api/v1/auth/oauth/providers", document_route(providers))
         .route(
             "/api/v1/auth/passkeys/capabilities",
-            document_route(StatusCode::OK, capabilities),
+            document_route(Some(capabilities)),
         ))
 }
 
@@ -148,10 +139,7 @@ mod tests {
     async fn metadata_is_get_only() {
         use axum::{body::Body, http::Request};
         use tower::ServiceExt;
-        let app = Router::new().route(
-            "/methods",
-            document_route(StatusCode::OK, json!({"providers":[]})),
-        );
+        let app = Router::new().route("/methods", document_route(Some(json!({"providers":[]}))));
         for method in [Method::HEAD, Method::POST, Method::OPTIONS] {
             let response = app
                 .clone()
