@@ -4,7 +4,7 @@ mod membership;
 use data_encoding::HEXLOWER_PERMISSIVE;
 pub(crate) use health::Monitor;
 use k256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
-pub(crate) use membership::SnapshotError;
+pub(crate) use membership::{Chain, SnapshotError};
 use serde::Serialize;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;

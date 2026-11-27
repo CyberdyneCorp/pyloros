@@ -1,7 +1,9 @@
 //! Operator inventory of global roles for an active client.
 use super::*;
+mod replacement;
 use crate::chain_settings::SnapshotError;
 use axum::extract::Path;
+pub(super) use replacement::put;
 use serde::Serialize;
 
 pub(super) async fn list(
@@ -36,21 +38,41 @@ async fn read(
         Ok(operator) => operator,
         Err(error) => return *error,
     };
-    catalog(state, tx, client, role)
-        .await
-        .unwrap_or_else(|_| internal())
+    let Ok(chain) = authority(state).await else {
+        return internal();
+    };
+    catalog(
+        state,
+        chain,
+        tx,
+        client,
+        role.map(|key| Target { key, change: None }),
+    )
+    .await
+    .unwrap_or_else(|_| internal())
 }
 
-async fn catalog(
-    state: &Profile,
-    mut tx: Transaction<'_, Postgres>,
-    client: &str,
-    role: Option<&str>,
-) -> Result<Response, sqlx::Error> {
+struct Target<'a> {
+    key: &'a str,
+    change: Option<replacement::Change<'a>>,
+}
+
+async fn authority(state: &Profile) -> Result<Option<crate::chain_settings::Chain>, sqlx::Error> {
     let chain = state.blockchain.membership_source().await;
     if let Some(source) = &chain {
         source.validate_signer()?;
     }
+    Ok(chain)
+}
+
+async fn catalog(
+    state: &Profile,
+    chain: Option<crate::chain_settings::Chain>,
+    mut tx: Transaction<'_, Postgres>,
+    client: &str,
+    target: Option<Target<'_>>,
+) -> Result<Response, sqlx::Error> {
+    let role = target.as_ref().map(|t| t.key);
     let active: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT FROM oauth_clients WHERE client_id=$1 AND active)",
     )
@@ -69,14 +91,17 @@ async fn catalog(
             &format!("invalid role_key {key}: must match [a-z0-9][a-z0-9_-]{{0,47}}"),
         ));
     }
-    if let (None, Some(key)) = (&chain, role) {
+    if chain.is_none()
+        && let Some(target) = target
+    {
+        let key = target.key;
         let name = format!("rp:{client}:{key}");
         let exists = !client.contains('@')
             && sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT FROM iam_groups WHERE name=$1)")
                 .bind(name)
                 .fetch_one(&mut *tx)
                 .await?;
-        return role_mapping(&mut *tx, client, key, exists).await;
+        return complete_mapping(tx, client, target, exists).await;
     }
     let groups = if let Some(chain) = chain {
         tx.commit().await?;
@@ -101,17 +126,24 @@ async fn catalog(
         ).bind(format!("rp:{client}:")).fetch_all(&mut *tx).await?
     };
     let roles = roles(client, groups);
-    match role {
+    match target {
         None => Ok(Json(json!({"client_id":client,"roles":roles})).into_response()),
-        Some(key) => {
-            role_mapping(
-                &state.pool,
-                client,
-                key,
-                roles.iter().any(|r| r.role_key == key),
-            )
-            .await
+        Some(target) => {
+            let exists = roles.iter().any(|r| r.role_key == target.key);
+            complete_mapping(state.pool.begin().await?, client, target, exists).await
         }
+    }
+}
+
+async fn complete_mapping(
+    mut tx: Transaction<'_, Postgres>,
+    client: &str,
+    target: Target<'_>,
+    exists: bool,
+) -> Result<Response, sqlx::Error> {
+    match target.change {
+        Some(change) if exists => change.apply(tx, client, target.key).await,
+        _ => role_mapping(&mut *tx, client, target.key, exists).await,
     }
 }
 

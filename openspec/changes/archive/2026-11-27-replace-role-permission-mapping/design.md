@@ -1,0 +1,1 @@
+Check the global role against the configured IAM authority. Validate permission keys against the client catalog. Commit the full replacement with the operator audit entry in one transaction. Serialize Pyloros replacements for the same client and role. Writers in other implementations can have different concurrency behavior.

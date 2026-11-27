@@ -9,8 +9,12 @@ use uuid::Uuid;
 
 fn canonical_digest(mut fields: Value) -> String {
     fields.sort_all_objects();
+    format!("{:x}", Sha256::digest(ascii_json(&fields).as_bytes()))
+}
+
+pub(crate) fn ascii_json(value: &Value) -> String {
     let mut ascii = String::new();
-    for c in fields.to_string().chars() {
+    for c in value.to_string().chars() {
         if c < '\u{7f}' {
             ascii.push(c);
         } else {
@@ -19,7 +23,7 @@ fn canonical_digest(mut fields: Value) -> String {
             }
         }
     }
-    format!("{:x}", Sha256::digest(ascii.as_bytes()))
+    ascii
 }
 
 pub(crate) async fn append_client_action(

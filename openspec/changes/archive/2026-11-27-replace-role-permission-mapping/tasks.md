@@ -1,0 +1,3 @@
+- [x] Implement authorization, input validation and audited replacement.
+- [x] Compare complete sets, rejection, rollback and provider switching.
+- [x] Exercise the original clients and concurrent writers.

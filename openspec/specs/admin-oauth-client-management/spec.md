@@ -78,3 +78,18 @@ The issuer SHALL allow an authorized operator to create, update, rotate the secr
 
 - **WHEN** the administrative audit write fails after the service validates a partial update
 - **THEN** return a failure and leave the client registration unchanged.
+
+### Requirement: Replace role permissions
+The service SHALL allow an administrator to replace the permissions of an existing global role with a set of registered keys belonging to that client and audit the resulting set.
+
+#### Scenario: Clear the grants
+- **WHEN** the administrator submits an empty list
+- **THEN** all grants for that role are removed and the audit entry records an empty list
+
+#### Scenario: Replacement cannot commit
+- **WHEN** a permission is unknown or audit persistence fails
+- **THEN** the stored mapping remains intact
+
+#### Scenario: Two Pyloros writers replace one role
+- **WHEN** both replacements complete successfully
+- **THEN** the stored set equals the last committed replacement
