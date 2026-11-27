@@ -1,0 +1,2 @@
+- [x] Implement the filtered directory and subscriber reports.
+- [x] Compare reports against PostgreSQL with both client applications.

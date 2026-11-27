@@ -19,6 +19,7 @@ mod blockchain;
 mod delegated;
 mod edit;
 mod email_verification;
+mod entitlement_reports;
 mod erasure;
 mod org_directory;
 mod registries;
@@ -391,6 +392,7 @@ fn build_routes(
     };
     Ok(Router::new()
         .merge(analytics::routes())
+        .merge(entitlement_reports::routes())
         .merge(store_products::routes())
         .route("/api/v1/orgs/{org_id}/members", any(org_directory::read))
         .route(

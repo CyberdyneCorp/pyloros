@@ -1,0 +1,1 @@
+Authorize first-party operators before parsing filters. Count and page grants separately, then resolve labels for the selected page. Aggregate eligible rows in PostgreSQL before resolving product names. Preserve historical grants when returning the inventory.
