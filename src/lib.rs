@@ -1,5 +1,6 @@
 pub mod access_tokens;
 pub mod authorization_codes;
+pub mod browser_client;
 mod client_auth;
 pub mod code_decision;
 pub mod code_exchange;
