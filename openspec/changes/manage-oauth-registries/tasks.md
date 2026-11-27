@@ -1,0 +1,5 @@
+- [x] Capture reference HTTP outcomes for all three registries.
+- [ ] Implement scope reads and audited mutations, including built-in scope protections.
+- [ ] Implement protected-resource reads and audited mutations with scope validation.
+- [ ] Implement web-origin reads and audited mutations with redirect and origin validation.
+- [ ] Verify immediate post-commit policy on the writer, cross-replica refresh, rollback, concurrency and existing consumers.
