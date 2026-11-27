@@ -1,4 +1,5 @@
 //! Public password registration on the shared account schema.
+pub(super) mod admin;
 use super::*;
 use crate::{
     authorization_codes::digest,
@@ -127,13 +128,7 @@ async fn register(
     if !settings.quota.allow(origin.ip) {
         return Ok(refusal(&state.pool, email, "rate_limited", origin, request).await);
     }
-    let existing = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT FROM users WHERE lower(primary_email)=$1)",
-    )
-    .bind(&email)
-    .fetch_one(&state.pool)
-    .await?;
-    if existing {
+    if email_exists(&state.pool, &email).await? {
         return Ok(refusal(&state.pool, email, "already_registered", origin, request).await);
     }
     let Some(key) = &settings.key else {
@@ -152,10 +147,7 @@ async fn register(
         ));
     }
     let user = Uuid::new_v4();
-    let inserted=sqlx::query("INSERT INTO users(id,primary_email,password_hash,public_key,encrypted_private_key,default_wallet_address)
-        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(primary_email) DO NOTHING").bind(user).bind(&email).bind(hash)
-        .bind(&wallet.public_key).bind(wallet.encrypted_private_key).bind(&wallet.address).execute(&mut *tx).await?;
-    if inserted.rows_affected() == 0 {
+    if !insert_user(&mut tx, user, &email, &hash, &wallet, false).await? {
         tx.rollback().await?;
         return Ok(refusal(&state.pool, email, "already_registered", origin, request).await);
     }
@@ -184,7 +176,44 @@ async fn register(
         .bind(Uuid::new_v4()).bind(user).bind(digest(&token)).bind(now+chrono::TimeDelta::hours(24)).execute(&mut *tx).await?;
     state.account_mail.send_verification(&email, &token).await?;
     tx.commit().await?;
-    Ok((StatusCode::CREATED,Json(json!({"user_id":user,"email":email,"public_key":wallet.public_key,"address":wallet.address}))).into_response())
+    Ok(created_response(user, &email, &wallet))
+}
+
+async fn email_exists<'a>(db: impl sqlx::PgExecutor<'a>, email: &str) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT FROM users WHERE lower(primary_email)=$1)")
+        .bind(email)
+        .fetch_one(db)
+        .await
+}
+
+fn created_response(id: Uuid, email: &str, wallet: &ManagedWallet) -> Response {
+    let doc =
+        json!({"user_id":id,"email":email,"public_key":wallet.public_key,"address":wallet.address});
+    (StatusCode::CREATED, Json(doc)).into_response()
+}
+
+async fn insert_user(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    email: &str,
+    hash: &str,
+    wallet: &ManagedWallet,
+    verified: bool,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "INSERT INTO users(id,primary_email,password_hash,public_key,encrypted_private_key,default_wallet_address,is_email_verified)
+         VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(primary_email) DO NOTHING",
+    )
+    .bind(id)
+    .bind(email)
+    .bind(hash)
+    .bind(&wallet.public_key)
+    .bind(&wallet.encrypted_private_key)
+    .bind(&wallet.address)
+    .bind(verified)
+    .execute(&mut **tx)
+    .await?;
+    Ok(result.rows_affected() == 1)
 }
 
 async fn needs_dispatcher(tx: &mut Transaction<'_, Postgres>) -> Result<bool, sqlx::Error> {
@@ -219,6 +248,51 @@ pub(crate) async fn enqueue_webhooks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL; run just test-db"]
+    async fn provisioning_preserves_the_original_accounts_verification_state() {
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("CREATE TEMP TABLE users(id uuid, primary_email text UNIQUE,
+            password_hash text,public_key text,encrypted_private_key bytea,default_wallet_address text,is_email_verified boolean)")
+            .execute(&mut *tx).await.unwrap();
+        let wallet = ManagedWallet {
+            public_key: "public".into(),
+            address: "wallet".into(),
+            encrypted_private_key: vec![1, 2],
+        };
+        for (email, verified) in [("self@example.test", false), ("admin@example.test", true)] {
+            let user = Uuid::new_v4();
+            assert!(
+                insert_user(&mut tx, user, email, "original", &wallet, verified)
+                    .await
+                    .unwrap()
+            );
+            assert!(
+                !insert_user(
+                    &mut tx,
+                    Uuid::new_v4(),
+                    email,
+                    "replacement",
+                    &wallet,
+                    !verified
+                )
+                .await
+                .unwrap()
+            );
+            let stored: (Uuid, bool, String) = sqlx::query_as(
+                "SELECT id,is_email_verified,password_hash FROM users WHERE primary_email=$1",
+            )
+            .bind(email)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            assert_eq!(stored, (user, verified, "original".into()));
+        }
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]

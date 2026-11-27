@@ -361,7 +361,10 @@ fn build_routes(
             "/api/v1/admin/settings/auth-policy",
             any(auth_policy::get).put(auth_policy::update),
         )
-        .route("/api/v1/admin/users", any(admin_users::list))
+        .route(
+            "/api/v1/admin/users",
+            any(admin_users::list).post(registration::admin::create),
+        )
         .route("/api/v1/admin/users/{user_id}", any(admin_users::detail))
         .route("/api/v1/admin/sessions", any(admin_sessions::list))
         .route(
