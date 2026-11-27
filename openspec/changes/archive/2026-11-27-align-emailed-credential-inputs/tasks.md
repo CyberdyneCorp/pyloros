@@ -1,0 +1,2 @@
+- [x] Consolidate request decoding and cover numeric edge cases.
+- [x] Verify validation responses and ordinary redemption on both services.

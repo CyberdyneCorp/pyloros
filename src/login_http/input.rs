@@ -1,9 +1,5 @@
 use super::mailbox::address;
-use axum::{
-    body::{Body, to_bytes},
-    http::HeaderMap,
-    response::Response,
-};
+use axum::{body::Body, http::HeaderMap, response::Response};
 use serde_json::{Value, json};
 
 fn issue(field: &str, kind: &str, msg: &str, input: &Value) -> Value {
@@ -109,17 +105,13 @@ pub(super) async fn read<T>(
     keys: &[&str],
     parse: fn(&Value) -> Inputs<T>,
 ) -> Result<T, Box<Response>> {
-    let bytes = to_bytes(body, usize::MAX)
-        .await
-        .map_err(|_| Box::new(super::internal_error()))?;
-    let raw = crate::request_json::iam_document::document(headers, &bytes)?
-        .ok_or_else(|| Box::new(super::internal_error()))?;
-    crate::request_json::fields::validate_scalar_document(&raw, keys, |body| fields(&body, parse))
+    crate::request_json::fields::read_fields(headers, body, keys, |body| fields(&body, parse)).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::to_bytes;
     use axum::http::StatusCode;
 
     #[tokio::test]

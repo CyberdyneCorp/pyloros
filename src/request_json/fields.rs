@@ -210,17 +210,9 @@ pub(crate) async fn read_fields<T>(
     let bytes = to_bytes(stream, usize::MAX)
         .await
         .map_err(|_| Box::new(internal_error()))?;
-    validate_fields(headers, &bytes, keys, validate)
-}
-
-pub(crate) fn validate_fields<T>(
-    headers: &HeaderMap,
-    bytes: &[u8],
-    keys: &[&str],
-    validate: impl FnOnce(Value) -> Result<T, Vec<Value>>,
-) -> Result<T, Box<Response>> {
-    let raw = document(headers, bytes)?.ok_or_else(|| Box::new(internal_error()))?;
-    validate_document(&raw, keys, validate)
+    let raw = super::iam_document::document(headers, &bytes)?
+        .ok_or_else(|| Box::new(internal_error()))?;
+    validate_scalar_document(&raw, keys, validate)
 }
 
 pub(crate) fn validate_document<T>(
@@ -309,6 +301,23 @@ mod tests {
                 .unwrap(),
             "session"
         );
+    }
+
+    #[tokio::test]
+    async fn token_input_ignores_unrelated_nonfinite_numbers_and_preserves_error_status() {
+        let valid = Body::from(r#"{"token":"sample","other":NaN}"#);
+        assert_eq!(
+            read_string(&headers(), valid, "token", 1, 32)
+                .await
+                .unwrap(),
+            "sample"
+        );
+        for wire in [r#"{"token":1e999}"#, r#"{"token":{"nested":[-Infinity]}}"#] {
+            let error = read_string(&headers(), Body::from(wire), "token", 1, 32)
+                .await
+                .unwrap_err();
+            assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        }
     }
 
     #[tokio::test]
