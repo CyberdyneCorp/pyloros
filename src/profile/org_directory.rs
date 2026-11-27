@@ -3,22 +3,6 @@ use super::*;
 use crate::{login_http::problem, query};
 use axum::extract::{Path, RawQuery};
 
-async fn authorize(
-    state: &Profile,
-    headers: &HeaderMap,
-) -> Result<Transaction<'static, Postgres>, Box<Response>> {
-    if let Some(claims) = crate::csrf::bearer(headers)
-        .and_then(|token| state.verify.as_ref()?.service_claims(token))
-        .filter(|claims| claims["type"] == "service")
-    {
-        delegated::scoped_client(state, &claims, "directory:read").await?;
-        return state.pool.begin().await.map_err(|_| Box::new(internal()));
-    }
-    administrator::operator(state, headers)
-        .await
-        .map(|(tx, _, _)| tx)
-}
-
 #[derive(serde::Serialize)]
 struct Member {
     id: Uuid,
@@ -132,7 +116,7 @@ pub(super) async fn read(
     if method != Method::GET {
         return crate::browser_http::method_not_allowed().await;
     }
-    let mut tx = match authorize(&state, &headers).await {
+    let (mut tx, _) = match delegated::read_caller(&state, &headers, "directory:read").await {
         Ok(tx) => tx,
         Err(e) => return *e,
     };

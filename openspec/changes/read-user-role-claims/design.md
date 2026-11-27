@@ -1,0 +1,1 @@
+Reuse the live IAM provider, active organization memberships and PostgreSQL role-to-permission mappings used by authorization claims. Authenticate before interpreting the target. Restrict service clients to their own catalog. Administrators can request a client or inspect roles across clients. Read permissions for one active client at a time.

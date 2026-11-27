@@ -19,7 +19,7 @@ async fn grant_access_claims() {
         .unwrap();
     let mut tx = pool.begin().await.unwrap();
     sqlx::raw_sql("CREATE TEMP TABLE users(id uuid,primary_email text,is_admin boolean,is_email_verified boolean,is_active boolean,organization_id uuid);
-        CREATE TEMP TABLE organizations(id uuid,name text,short_name text,github_login text,is_active boolean);
+        CREATE TEMP TABLE organizations(id uuid,name text,short_name text,github_login text,is_active boolean,extra_metadata jsonb DEFAULT '{}');
         CREATE TEMP TABLE user_organizations(user_id uuid,organization_id uuid);
         CREATE TEMP TABLE entitlements(user_id uuid,organization_id uuid,status text,expires_at timestamptz,product_key text,plan text);
         CREATE TEMP TABLE oauth_clients(client_id text,active boolean,access_token_audience text);

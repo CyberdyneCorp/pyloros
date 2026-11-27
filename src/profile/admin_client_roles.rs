@@ -8,7 +8,7 @@ mod revoke;
 pub(super) use grant::grant;
 pub(super) use revoke::{revoke, withdraw_scoped};
 mod user_inventory;
-pub(super) use user_inventory::{delegated_user, list_user};
+pub(super) use user_inventory::{claims, delegated_user, list_user};
 mod removal;
 mod replacement;
 use crate::chain_settings::SnapshotError;

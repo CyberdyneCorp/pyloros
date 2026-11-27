@@ -7,6 +7,7 @@ use crate::{
 use axum::extract::Path;
 
 mod assignments;
+pub(in crate::profile) use assignments::{linked_token, postgres as stored_assignments};
 pub(super) mod token;
 
 enum View {

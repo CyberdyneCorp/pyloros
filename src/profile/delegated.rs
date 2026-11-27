@@ -38,6 +38,24 @@ pub(super) async fn scoped_client(
     Ok(client)
 }
 
+pub(super) async fn read_caller(
+    state: &Profile,
+    headers: &HeaderMap,
+    scope: &str,
+) -> Result<(Transaction<'static, Postgres>, Option<String>), Box<Response>> {
+    if let Some(claims) = crate::csrf::bearer(headers)
+        .and_then(|token| state.verify.as_ref()?.service_claims(token))
+        .filter(|claims| claims["type"] == "service")
+    {
+        let client = scoped_client(state, &claims, scope).await?;
+        let tx = state.pool.begin().await.map_err(|_| Box::new(internal()))?;
+        return Ok((tx, Some(client)));
+    }
+    administrator::operator(state, headers)
+        .await
+        .map(|(tx, _, _)| (tx, None))
+}
+
 pub(super) enum RoleCaller {
     Operator(Uuid, Option<String>),
     Client(String),

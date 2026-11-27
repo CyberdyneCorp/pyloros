@@ -12,7 +12,7 @@ async fn audience_and_membership_constrain_authorization() {
         CREATE TEMP TABLE iam_identities(id int,user_id uuid);
         CREATE TEMP TABLE iam_groups(id int,name varchar(128));
         CREATE TEMP TABLE iam_group_members(group_id int,identity_id int);
-        CREATE TEMP TABLE organizations(id uuid,is_active bool);
+        CREATE TEMP TABLE organizations(id uuid,is_active bool,extra_metadata jsonb DEFAULT '{}');
         CREATE TEMP TABLE user_organizations(user_id uuid,organization_id uuid);
         CREATE TEMP TABLE oauth_clients(client_id text, active bool, registration_source text, access_token_audience text);
         CREATE TEMP TABLE client_role_permissions(client_id text,role_key text,permission_key text);

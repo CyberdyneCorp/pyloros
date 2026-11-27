@@ -22,7 +22,7 @@ pub(super) mod token_status;
 mod user_detail;
 mod user_identity;
 mod user_policies;
-pub(super) use user_detail::{user_iam, user_token};
+pub(super) use user_detail::{linked_token, stored_assignments, user_iam, user_token};
 mod group_relations;
 pub(super) use group_relations::{
     add_member, attach_group_policy, attach_role_policy, attach_user_policy, delete_only,

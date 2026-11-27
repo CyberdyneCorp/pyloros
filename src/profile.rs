@@ -759,6 +759,14 @@ fn build_routes(
         )
         .route("/api/v1/auth/password/change", any(password_change::handle))
         .route("/api/v1/auth/logout-all", any(logout_all::handle))
+        .route(
+            "/api/v1/users/{user_id}/roles",
+            any(admin_client_roles::claims::<false>),
+        )
+        .route(
+            "/api/v1/users/{user_id}/permissions",
+            any(admin_client_roles::claims::<true>),
+        )
         .route("/api/v1/users/me/private-key", any(wallet_export::handle))
         .route("/api/v1/users/me/entitlements", any(entitlements))
         .with_state(Arc::new(state)))

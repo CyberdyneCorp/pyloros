@@ -1,0 +1,3 @@
+- [x] Implement the live reads with caller and client selection.
+- [x] Verify PostgreSQL, chain responses, isolation and application clients.
+- [ ] Confirm migration signoff for role listings with overlapping legacy client identifiers.

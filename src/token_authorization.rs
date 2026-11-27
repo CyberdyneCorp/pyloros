@@ -138,13 +138,13 @@ pub(crate) async fn stored_groups(
     .await
 }
 
-pub(crate) async fn client_assignments<'e>(
+pub(crate) async fn role_assignments<'e>(
     executor: impl sqlx::Executor<'e, Database = Postgres>,
     user: Uuid,
-    client: &str,
+    client: Option<&str>,
     groups: &[String],
 ) -> Result<Assignments, sqlx::Error> {
-    project_groups(executor, user, groups, Some(client))
+    project_groups(executor, user, groups, client)
         .await
         .map(assignments)
 }
@@ -158,14 +158,18 @@ async fn project_groups<'e>(
     let refs: Vec<_> = names.iter().filter_map(|name| assignment(name)).collect();
     let mut active = BTreeSet::new();
     if refs.iter().any(|(_, org)| org.is_some()) {
-        let memberships = sqlx::query_scalar::<_, Uuid>(
-            "SELECT o.id FROM organizations o JOIN user_organizations m ON m.organization_id=o.id
+        let memberships = sqlx::query_as::<_, (Uuid,String)>(
+            "SELECT o.id,o.extra_metadata::text FROM organizations o JOIN user_organizations m ON m.organization_id=o.id
              WHERE m.user_id=$1 AND o.is_active",
         )
         .bind(user)
         .fetch_all(executor)
         .await?;
-        active.extend(memberships);
+        for (org, metadata) in memberships {
+            crate::stored_json::check_integers(&metadata)?;
+            crate::profile::normalized_storage(&metadata)?;
+            active.insert(org);
+        }
     }
     let mut roles = Buckets::new();
     for (token, org) in refs {
@@ -184,8 +188,20 @@ async fn project_groups<'e>(
     Ok(roles)
 }
 
+pub(crate) async fn client_permissions(
+    conn: &mut sqlx::PgConnection,
+    user: Uuid,
+    groups: &[String],
+    client: &str,
+) -> Result<Assignments, sqlx::Error> {
+    let roles = project_groups(&mut *conn, user, groups, None).await?;
+    permissions(conn, &roles, client, None)
+        .await
+        .map(assignments)
+}
+
 async fn permissions(
-    tx: &mut Transaction<'_, Postgres>,
+    conn: &mut sqlx::PgConnection,
     roles: &Buckets,
     client: &str,
     audience: Option<&str>,
@@ -197,7 +213,7 @@ async fn permissions(
     )
     .bind(client)
     .bind(audience)
-    .fetch_all(&mut **tx)
+    .fetch_all(conn)
     .await?;
     let mut mappings = BTreeMap::<String, Vec<String>>::new();
     for (role, permission) in rows {
@@ -228,7 +244,7 @@ mod tests {
         let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await?;
         let mut tx = pool.begin().await?;
         sqlx::raw_sql(
-            "CREATE TEMP TABLE organizations(id uuid, is_active boolean);
+            "CREATE TEMP TABLE organizations(id uuid, is_active boolean,extra_metadata jsonb DEFAULT '{}');
             CREATE TEMP TABLE user_organizations(user_id uuid, organization_id uuid);",
         )
         .execute(&mut *tx)
@@ -266,14 +282,36 @@ mod tests {
         assert!(project_groups(&mut *tx, user, &[], None).await?.is_empty());
         let mut mixed = groups;
         mixed.extend([format!("rp:other:staff@{member}"), "rp:other:staff".into()]);
-        let scoped = client_assignments(&mut *tx, user, "app", &mixed).await?;
+        let scoped = role_assignments(&mut *tx, user, Some("app"), &mixed).await?;
         assert_eq!(scoped.global, ["reader"]);
         assert_eq!(
             scoped.organizations,
             BTreeMap::from([(member.to_string(), vec!["owner".into()])])
         );
-        let absent = client_assignments(&mut *tx, user, "missing", &mixed).await?;
+        let absent = role_assignments(&mut *tx, user, Some("missing"), &mixed).await?;
         assert!(absent.global.is_empty() && absent.organizations.is_empty());
+        let neighbor = role_assignments(
+            &mut *tx,
+            user,
+            Some("app"),
+            &["rp:app:region:private".into()],
+        )
+        .await?;
+        assert!(neighbor.global.is_empty());
+        sqlx::query("UPDATE organizations SET extra_metadata='true'::jsonb WHERE id=$1")
+            .bind(member)
+            .execute(&mut *tx)
+            .await?;
+        assert!(
+            role_assignments(&mut *tx, user, Some("app"), &mixed)
+                .await
+                .is_err()
+        );
+        assert!(
+            role_assignments(&mut *tx, user, Some("app"), &["rp:app:reader".into()])
+                .await
+                .is_ok()
+        );
         Ok(())
     }
 }
