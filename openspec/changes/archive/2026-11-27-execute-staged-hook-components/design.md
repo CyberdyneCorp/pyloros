@@ -1,0 +1,1 @@
+A fresh process compiles and runs one component with an empty linker. A memory limiter and fuel budget apply before instantiation. The service limits concurrent workers and elapsed time, including compilation, and terminates the worker on cancellation. Dry runs accept synthetic event JSON supplied by the operator and use no production event data.

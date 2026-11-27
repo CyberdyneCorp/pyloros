@@ -9,6 +9,7 @@ default:
 # Fetch the locked Rust dependencies.
 setup:
     cargo fetch --locked
+    cargo fetch --manifest-path hook-worker/Cargo.toml --locked
 
 # Boot local PostgreSQL 17 and wait for it to accept connections.
 db-up:
@@ -23,8 +24,12 @@ db-shell:
     docker compose exec postgres psql -U pyloros -d pyloros
 
 # Run the API with the current environment.
-run:
-    cargo run --locked
+run: hook-worker
+    PYLOROS_HOOK_WORKER="${PYLOROS_HOOK_WORKER:-$PWD/hook-worker/target/debug/pyloros-hook-worker}" cargo run --locked
+
+# Build the isolated component worker.
+hook-worker:
+    cargo build --manifest-path hook-worker/Cargo.toml --target-dir hook-worker/target --locked
 
 # Boot the database, then run the API in the foreground.
 dev: db-up run
@@ -32,14 +37,18 @@ dev: db-up run
 # Format Rust source.
 fmt:
     cargo fmt --all
+    cargo fmt --manifest-path hook-worker/Cargo.toml
 
 # Check formatting and lint all targets.
 lint:
+    cargo fmt --manifest-path hook-worker/Cargo.toml -- --check
+    cargo clippy --manifest-path hook-worker/Cargo.toml --locked --all-targets -- -D warnings
     cargo fmt --all -- --check
     cargo clippy --locked --all-targets -- -D warnings
 
 # Run tests that do not require a database.
 test:
+    cargo test --manifest-path hook-worker/Cargo.toml --locked
     cargo test --locked
 
 # Exercise readiness with real PostgreSQL using connection-local temporary tables.

@@ -22,3 +22,12 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: cargo test --locked --tests -- --ignored
+
+  hook-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+      - run: cargo fmt --manifest-path hook-worker/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path hook-worker/Cargo.toml --locked --all-targets -- -D warnings
+      - run: cargo test --manifest-path hook-worker/Cargo.toml --locked

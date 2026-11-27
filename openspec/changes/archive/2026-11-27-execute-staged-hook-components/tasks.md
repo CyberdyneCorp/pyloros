@@ -1,0 +1,2 @@
+- [x] Implement and verify an import-free component worker with bounded execution and a versioned handler.
+- [x] Integrate authenticated, concurrency-limited dry runs, enforce the end-to-end deadline and verify process cleanup.

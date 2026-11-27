@@ -255,3 +255,22 @@ Upload the binary to `POST /api/v2/admin/hooks/artifacts` using the same credent
 and media type as validation. A first upload returns 201. Repeating it returns 200
 and the same SHA-256 digest. Administrators can download the exact component from
 `GET /api/v2/admin/hooks/artifacts/{sha256}`. Staged components are inactive.
+
+### Dry-run a staged hook
+
+Send synthetic event JSON to `POST /api/v2/admin/hooks/artifacts/{sha256}/test`
+as an administrator, with `Content-Type: application/json`. A completed request
+returns a JSON status of `success` or `error` with the handler's output, or
+`failed` with a diagnostic for a trap, limit, or timeout. A busy or unavailable
+worker returns HTTP 503.
+
+Each dry run starts a fresh Wasmtime process with no host imports. The service
+accepts two runs at once. Event and output strings have a 64 KiB limit each.
+The guest has one 16 MiB linear memory and one million units of execution fuel.
+On Linux the worker also caps its total address space at 1 GiB or the inherited limit, whichever is lower.
+The five-second worker deadline includes compilation.
+
+`just run` builds and selects the development worker. For deployment, build it
+with `cargo build --manifest-path hook-worker/Cargo.toml --locked --release` and
+install `pyloros-hook-worker` beside the API executable, or set
+`PYLOROS_HOOK_WORKER` to its absolute path.

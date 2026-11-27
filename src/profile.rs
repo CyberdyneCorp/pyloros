@@ -459,6 +459,10 @@ fn build_routes(
             "/api/v2/admin/hooks/artifacts/{digest}",
             any(wasm_hooks::download),
         )
+        .route(
+            "/api/v2/admin/hooks/artifacts/{digest}/test",
+            any(wasm_hooks::dry_run),
+        )
         .merge(store_products::routes())
         .route(
             "/api/v1/billing/apple/validate",
