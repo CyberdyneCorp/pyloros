@@ -1,0 +1,1 @@
+When graph storage is installed, lock the account before erasure starts, then explicitly delete and count its direct edges in the erasure transaction. The foreign key orders concurrent grants against the account lock. Use the existing aggregation for the receipt and audit events.

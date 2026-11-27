@@ -52,6 +52,7 @@ async fn erase(
     origin: SessionOrigin<'_>,
     request: Option<&str>,
 ) -> Result<Response, sqlx::Error> {
+    let relationship_count = records::remove_direct_relationships(&mut tx, user).await?;
     type Account = (Option<String>, Option<String>, Option<String>, Option<Uuid>);
     let row = sqlx::query_as::<_, Account>(
         "SELECT primary_email, primary_phone, default_wallet_address, organization_id
@@ -87,7 +88,8 @@ async fn erase(
     )
     .await?;
     let sessions = logout_all::revoke_sessions(&mut tx, user, Utc::now()).await?;
-    let counts = records::erase(&mut tx, user, &ids).await?;
+    let mut counts = records::erase(&mut tx, user, &ids).await?;
+    counts.deleted("pyloros_user_relationships", relationship_count);
     let totals = state.erasure.totals(&counts, sessions);
     let subject = || AuditSubject {
         user: Some(user),
@@ -157,6 +159,50 @@ async fn audit_erasure(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn erasure_counts_only_deleted_relationships_and_rolls_back_with_the_account()
+    -> sqlx::Result<()> {
+        use sqlx::Acquire;
+        let pool = PgPool::connect(&env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = pool.begin().await?;
+        sqlx::raw_sql(
+            "SET LOCAL search_path TO pg_temp;
+            CREATE TEMP TABLE users(id uuid PRIMARY KEY);
+            INSERT INTO users VALUES (gen_random_uuid()), (gen_random_uuid());",
+        )
+        .execute(&mut *tx)
+        .await?;
+        let user = sqlx::query_scalar("SELECT id FROM users LIMIT 1")
+            .fetch_one(&mut *tx)
+            .await?;
+        assert_eq!(
+            records::remove_direct_relationships(&mut tx, user).await?,
+            0
+        );
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE pyloros_user_relationships(user_id uuid REFERENCES users);
+            INSERT INTO pyloros_user_relationships SELECT id FROM users;",
+        )
+        .execute(&mut *tx)
+        .await?;
+        let mut erase = tx.begin().await?;
+        assert_eq!(
+            records::remove_direct_relationships(&mut erase, user).await?,
+            1
+        );
+        let survivor: Uuid = sqlx::query_scalar("SELECT user_id FROM pyloros_user_relationships")
+            .fetch_one(&mut *erase)
+            .await?;
+        assert_ne!(survivor, user);
+        erase.rollback().await?;
+        assert_eq!(
+            records::remove_direct_relationships(&mut tx, user).await?,
+            1
+        );
+        tx.rollback().await
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]

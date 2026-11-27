@@ -23,6 +23,29 @@ const OWNED: &[&str] = &[
     "apple_transactions",
     "google_purchases",
 ];
+pub(super) async fn remove_direct_relationships(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+) -> sqlx::Result<i64> {
+    let installed: bool =
+        sqlx::query_scalar("SELECT to_regclass('pyloros_user_relationships') IS NOT NULL")
+            .fetch_one(&mut **tx)
+            .await?;
+    if !installed {
+        return Ok(0);
+    }
+    // Order grants (which take a foreign-key lock) before or after this erasure.
+    sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+        .bind(user)
+        .execute(&mut **tx)
+        .await?;
+    let deleted = sqlx::query("DELETE FROM pyloros_user_relationships WHERE user_id=$1")
+        .bind(user)
+        .execute(&mut **tx)
+        .await?;
+    Ok(deleted.rows_affected() as i64)
+}
+
 pub(super) async fn erase(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,

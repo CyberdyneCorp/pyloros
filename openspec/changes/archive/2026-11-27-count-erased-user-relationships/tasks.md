@@ -1,0 +1,2 @@
+- [x] Include direct relationships in the erasure receipt and aggregate audit count.
+- [x] Exercise the deletion, rollback and independent account records.
