@@ -13,6 +13,7 @@ mod admin_sessions;
 mod admin_users;
 mod admin_wallet;
 mod administrator;
+mod analytics;
 mod auth_policy;
 mod blockchain;
 mod delegated;
@@ -388,6 +389,7 @@ fn build_routes(
         production,
     };
     Ok(Router::new()
+        .merge(analytics::routes())
         .route("/api/v1/orgs/{org_id}/members", any(org_directory::read))
         .route(
             "/api/v1/admin/settings/blockchain",

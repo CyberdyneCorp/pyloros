@@ -108,7 +108,7 @@ pub(crate) fn pagination(
     )
 }
 
-fn bounded(name: &str, raw: &str, max: Option<i128>) -> Result<i128, Value> {
+pub(crate) fn bounded(name: &str, raw: &str, max: Option<i128>) -> Result<i128, Value> {
     let error =
         |kind: &str, msg: &str| json!({"loc":["query",name],"type":kind,"msg":msg,"input":raw});
     let digits = crate::query::integer(raw).map_err(|(k, m)| error(k, m))?;

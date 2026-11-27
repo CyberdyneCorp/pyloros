@@ -1,0 +1,2 @@
+- [x] Implement and exercise the four reports against PostgreSQL.
+- [x] Compare authorization, dates, counts, CLI output and dashboard behavior.
