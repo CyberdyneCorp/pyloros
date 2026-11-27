@@ -1,5 +1,6 @@
 //! Read stored hook definitions and execution history for the administrator console.
 use super::*;
+mod removal;
 use axum::extract::{Path, RawQuery};
 use sqlx::{Row, postgres::PgRow};
 use std::collections::HashMap;
@@ -7,7 +8,10 @@ use std::collections::HashMap;
 pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
         .route("/api/v1/admin/hooks", any(list))
-        .route("/api/v1/admin/hooks/{hook_id}", any(detail))
+        .route(
+            "/api/v1/admin/hooks/{hook_id}",
+            any(detail).delete(removal::remove),
+        )
         .route("/api/v1/admin/hooks/{hook_id}/executions", any(history))
 }
 
@@ -76,10 +80,14 @@ async fn detail(
         .and_then(|row| row.as_ref().map(hook).transpose())
     {
         Ok(Some(h)) => Json(h).into_response(),
-        Ok(None) => crate::login_http::problem(StatusCode::NOT_FOUND, "Hook not found"),
+        Ok(None) => missing(),
         Err(_) => internal(),
     }
 }
+fn missing() -> Response {
+    crate::login_http::problem(StatusCode::NOT_FOUND, "Hook not found")
+}
+
 struct Page {
     id: Uuid,
     limit: i64,

@@ -1,0 +1,1 @@
+Authorize the administrator, validate the identifier, and delete the existing hook in a transaction with its audit record. Only the deletion that removes the hook creates an audit entry. The database foreign key removes linked executions.

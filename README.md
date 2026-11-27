@@ -26,7 +26,7 @@ With hooks enabled, Pyloros starts a CONNECT proxy on `HOOKS_PROXY_HOST` and `HO
 
 The proposed hook runtime is WebAssembly, hosted by Rust. Existing scripts would be ported to modules and tested against representative events before cutover. The design calls for explicit permissions, bounded execution and a Python-free production runtime.
 
-Administrators can inspect saved hook definitions at `GET /api/v1/admin/hooks` and `GET /api/v1/admin/hooks/{hook_id}`. The definitions include stored source, active status, timeout, network access and the personal-data opt-in. Execution history at `GET /api/v1/admin/hooks/{hook_id}/executions` supports `limit` (1–100, default 50) and `offset` (default 0). It returns the total and a newest-first page of outcomes. All three reads work with the executor disabled.
+Administrators can inspect saved hook definitions at `GET /api/v1/admin/hooks` and `GET /api/v1/admin/hooks/{hook_id}`. The definitions include stored source, active status, timeout, network access and the personal-data opt-in. Execution history at `GET /api/v1/admin/hooks/{hook_id}/executions` supports `limit` (1–100, default 50) and `offset` (default 0). It returns the total and a newest-first page of outcomes. All three reads work with the executor disabled. Administrators can remove a hook with `DELETE /api/v1/admin/hooks/{hook_id}`. A successful deletion removes its execution history and records the operator action in the audit log.
 
 ## Stripe Checkout
 

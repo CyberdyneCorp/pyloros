@@ -1,0 +1,3 @@
+- [x] Implement audited deletion and verify cascade and rollback.
+- [x] Compare the existing operator clients, repeated requests and concurrent deletion.
+- [ ] Resolve migration signoff for a deferred audit rejection and simultaneous deletions.
