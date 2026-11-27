@@ -1,0 +1,1 @@
+Use Unicode NFC for the local part and IDNA Unicode form for the domain. Preserve the local part's case. Look up the single normalized identity using the existing database policy. Normalization happens at the input boundary and performs no account merges. Existing noncanonical database rows need an explicit migration decision if found during inventory.

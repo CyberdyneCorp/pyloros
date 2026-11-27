@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::{Value, json};
+use unicode_normalization::UnicodeNormalization;
 
 fn issue(field: &str, kind: &str, msg: &str, input: &Value) -> Value {
     json!({"loc":["body",field],"type":kind,"msg":msg,"input":input})
@@ -76,7 +77,8 @@ fn address(raw: &str) -> Result<String, &'static str> {
     let mailbox = raw
         .parse::<lettre::message::Mailbox>()
         .map_err(|_| "The email address is not valid.")?;
-    let domain = mailbox.email.domain().to_lowercase();
+    let (domain, validity) = idna::domain_to_unicode(mailbox.email.domain());
+    validity.map_err(|_| "The email address is not valid.")?;
     let (_, suffix) = domain
         .rsplit_once('.')
         .ok_or("The part after the @-sign is not valid. It should have a period.")?;
@@ -90,7 +92,8 @@ fn address(raw: &str) -> Result<String, &'static str> {
             "The part after the @-sign is not valid. It is not within a valid top-level domain.",
         );
     }
-    Ok(format!("{}@{domain}", mailbox.email.user()))
+    let local: String = mailbox.email.user().nfc().collect();
+    Ok(format!("{local}@{domain}"))
 }
 
 pub(crate) fn email_field(body: &Value) -> Result<String, Vec<Value>> {
@@ -193,6 +196,17 @@ pub(super) async fn read<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_addresses_share_a_unicode_spelling_before_lookup() {
+        for submitted in [
+            "Cafe\u{301}@xn--bcher-kva.de",
+            "Name <Café@BÜCHER.DE>",
+            "Café@bu\u{308}cher.de",
+        ] {
+            assert_eq!(address(submitted).unwrap(), "Café@bücher.de");
+        }
+    }
 
     #[test]
     fn malformed_email_diagnostics_apply_to_the_address_inside_a_display_name() {

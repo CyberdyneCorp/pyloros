@@ -2398,6 +2398,7 @@ dependencies = [
  "data-encoding",
  "der-parser",
  "futures-util",
+ "idna",
  "ipnet",
  "jsonwebtoken",
  "k256",
