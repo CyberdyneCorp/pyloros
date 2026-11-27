@@ -23,7 +23,13 @@ An operator can register the custom OAuth scope `rebac:manage` and grant it to a
 }
 ```
 
-Models accept up to 65,536 permission references in total, counting each direct proof once and each inherited proof once per declared destination type. An accepted model returns HTTP 204. A change that would invalidate an existing assignment returns HTTP 409. Relationship writes and online permission checks remain planned.
+Models accept up to 65,536 permission references in total, counting each direct proof once and each inherited proof once per declared destination type. An accepted model returns HTTP 204. A change that would invalidate an existing assignment returns HTTP 409. Use the same service token with `PUT /api/v1/clients/me/rebac/relationships` to grant a relationship. Use `DELETE` with the same JSON body to revoke it. For the collection model above, this makes one collection a child of another.
+
+```json
+{"object":{"type":"collection","id":"drafts"},"relation":"parent","subject":{"type":"collection","id":"library"}}
+```
+
+For direct membership, use relation `member` and a subject of type `user` with the account UUID as its ID. Each successful write returns HTTP 204. Retries preserve the assignment state and produce one audit record per actual change. Online permission checks remain planned.
 
 ## Frontend
 

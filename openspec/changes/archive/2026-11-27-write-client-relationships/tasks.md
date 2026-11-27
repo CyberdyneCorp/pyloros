@@ -1,0 +1,2 @@
+- [x] Implement and document relationship writes and their authorization.
+- [x] Verify concurrent writes, scope isolation, model conflicts and audit rollback.

@@ -22,7 +22,7 @@ enum Proof {
     Inherited { via: String, permission: String },
 }
 
-fn name(value: &str) -> bool {
+pub(super) fn name(value: &str) -> bool {
     !value.is_empty() && value.len() <= 128 && !value.chars().any(char::is_control)
 }
 

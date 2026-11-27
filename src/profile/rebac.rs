@@ -2,6 +2,8 @@
 use super::*;
 use crate::{admin_audit, grant_response::SessionOrigin, login_http::problem};
 mod model;
+mod relationships;
+pub(super) use relationships::write;
 
 pub(super) async fn put_model(
     State(state): State<Arc<Profile>>,
@@ -9,20 +11,9 @@ pub(super) async fn put_model(
     headers: HeaderMap,
     Json(model): Json<model::Model>,
 ) -> Response {
-    let Some(claims) =
-        crate::csrf::bearer(&headers).and_then(|raw| state.verify.as_ref()?.service_claims(raw))
-    else {
-        return *crate::login_http::service_identity::unauthorized("Service token required");
-    };
-    let client = match delegated::scoped_client(&state, &claims, "rebac:manage").await {
-        Ok(client) => client,
+    let (client, registration) = match caller(&state, &headers, "rebac:manage").await {
+        Ok(caller) => caller,
         Err(response) => return *response,
-    };
-    let Some(registration) = claims["rebac_client_id"]
-        .as_str()
-        .and_then(|id| Uuid::parse_str(id).ok())
-    else {
-        return *crate::login_http::service_identity::unauthorized("Relationship token required");
     };
     if let Err(message) = model.validate() {
         return problem(StatusCode::UNPROCESSABLE_ENTITY, message);
@@ -36,14 +27,36 @@ pub(super) async fn put_model(
         .unwrap_or_else(|_| internal())
 }
 
-async fn replace(
+async fn caller(
+    state: &Profile,
+    headers: &HeaderMap,
+    scope: &str,
+) -> Result<(String, Uuid), Box<Response>> {
+    let Some(claims) =
+        crate::csrf::bearer(headers).and_then(|raw| state.verify.as_ref()?.service_claims(raw))
+    else {
+        return Err(crate::login_http::service_identity::unauthorized(
+            "Service token required",
+        ));
+    };
+    let client = delegated::scoped_client(state, &claims, scope).await?;
+    let Some(registration) = claims["rebac_client_id"]
+        .as_str()
+        .and_then(|id| Uuid::parse_str(id).ok())
+    else {
+        return Err(crate::login_http::service_identity::unauthorized(
+            "Relationship token required",
+        ));
+    };
+    Ok((client, registration))
+}
+
+async fn management_transaction(
     pool: &PgPool,
     client: &str,
     registration: Uuid,
-    model: &model::Model,
-    origin: SessionOrigin<'_>,
-) -> sqlx::Result<Response> {
-    let mut tx = pool.begin().await?;
+) -> Result<Transaction<'static, Postgres>, Box<Response>> {
+    let mut tx = pool.begin().await.map_err(|_| Box::new(internal()))?;
     let owner: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM oauth_clients WHERE client_id=$1 AND id=$2 AND active AND registration_source='admin' AND client_type='confidential'
          AND 'rebac:manage'=ANY(regexp_split_to_array(allowed_scopes,'[[:space:]]+')) FOR UPDATE",
@@ -51,23 +64,39 @@ async fn replace(
     .bind(client)
     .bind(registration)
     .fetch_optional(&mut *tx)
-    .await?;
-    let Some(owner) = owner else {
-        return Ok(problem(
+    .await.map_err(|_| Box::new(internal()))?;
+    if owner.is_none() {
+        return Err(Box::new(problem(
             StatusCode::FORBIDDEN,
             "Relationship management grant required",
-        ));
+        )));
     };
     let ready: bool =
         sqlx::query_scalar("SELECT to_regclass('pyloros_relationship_models') IS NOT NULL")
             .fetch_one(&mut *tx)
-            .await?;
+            .await
+            .map_err(|_| Box::new(internal()))?;
     if !ready {
-        return Ok(problem(
+        return Err(Box::new(problem(
             StatusCode::SERVICE_UNAVAILABLE,
             "Relationship storage unavailable",
-        ));
+        )));
     }
+    Ok(tx)
+}
+
+async fn replace(
+    pool: &PgPool,
+    client: &str,
+    registration: Uuid,
+    model: &model::Model,
+    origin: SessionOrigin<'_>,
+) -> sqlx::Result<Response> {
+    let mut tx = match management_transaction(pool, client, registration).await {
+        Ok(tx) => tx,
+        Err(response) => return Ok(*response),
+    };
+    let owner = registration;
     let model = sqlx::types::Json(model);
     let conflict: bool = sqlx::query_scalar(
         "SELECT EXISTS (

@@ -1,0 +1,1 @@
+Share model-management authorization and lock ordering. Creating an assignment checks the current model and locks any referenced account against deletion. Both methods identify a single edge by its typed source, relation and typed destination. Audit state changes in the same transaction.
