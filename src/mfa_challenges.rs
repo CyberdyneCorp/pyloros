@@ -30,6 +30,22 @@ pub enum ChallengeError {
     Jwt(#[from] jsonwebtoken::errors::Error),
 }
 
+impl ChallengeError {
+    pub(crate) fn audit_reason(&self) -> &'static str {
+        match self {
+            Self::Jwt(error)
+                if matches!(
+                    error.kind(),
+                    jsonwebtoken::errors::ErrorKind::ExpiredSignature
+                ) =>
+            {
+                "expired"
+            }
+            _ => "invalid_token",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct Claims {
     iss: String,
@@ -87,6 +103,12 @@ pub(crate) struct RefreshIdentity {
     pub jti: Uuid,
 }
 
+pub(crate) struct AccessRevocation {
+    pub jti: Uuid,
+    pub expires: DateTime<Utc>,
+    pub client: Option<String>,
+}
+
 pub struct ChallengeVerifier {
     key: DecodingKey,
     validation: Validation,
@@ -119,6 +141,34 @@ impl ChallengeVerifier {
         validation.validate_nbf = true;
         validation.validate_aud = false;
         Self { key, validation }
+    }
+
+    pub(crate) fn revocable_access(&self, token: &str) -> Option<AccessRevocation> {
+        #[derive(Deserialize)]
+        struct Claims {
+            #[serde(rename = "iss")]
+            _issuer: String,
+            #[serde(rename = "sub")]
+            _user: Uuid,
+            #[serde(rename = "sid")]
+            _session: Option<Uuid>,
+            #[serde(rename = "type")]
+            kind: String,
+            jti: Uuid,
+            exp: i64,
+            client_id: Option<String>,
+        }
+        let claims = decode::<Claims>(token, &self.key, &self.validation)
+            .ok()?
+            .claims;
+        if claims.kind != "access" {
+            return None;
+        }
+        Some(AccessRevocation {
+            jti: claims.jti,
+            expires: DateTime::from_timestamp(claims.exp, 0)?,
+            client: claims.client_id,
+        })
     }
 
     pub(crate) fn refresh(&self, token: &str) -> Result<RefreshIdentity, ChallengeError> {
@@ -167,6 +217,27 @@ impl ChallengeVerifier {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn logout_accepts_client_access_tokens_and_rejects_other_credential_types() {
+        let signer = SigningIdentity::hmac("issuer".into(), b"test-secret").unwrap();
+        let verifier = ChallengeVerifier::hmac("issuer", b"test-secret").unwrap();
+        let jti = Uuid::new_v4();
+        let exp = Utc::now().timestamp() + 120;
+        let mut claims = json!({"iss":"issuer","sub":Uuid::new_v4(),"jti":jti,"exp":exp,"type":"access","client_id":"registered"});
+        let token = verifier
+            .revocable_access(&signer.sign(&claims).unwrap())
+            .unwrap();
+        assert_eq!(token.jti, jti);
+        assert_eq!(token.expires.timestamp(), exp);
+        assert_eq!(token.client.as_deref(), Some("registered"));
+        claims["type"] = json!("refresh");
+        assert!(
+            verifier
+                .revocable_access(&signer.sign(&claims).unwrap())
+                .is_none()
+        );
+    }
 
     #[test]
     fn refresh_requires_the_configured_issuer_and_a_session_credential() {

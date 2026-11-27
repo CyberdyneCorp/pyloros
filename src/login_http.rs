@@ -1,6 +1,7 @@
 //! Password login for the PostgreSQL identity backend.
 mod config;
 mod input;
+mod logout;
 mod mfa;
 use crate::enrolled_factor::FactorVerifier;
 mod poll;
@@ -60,6 +61,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     Ok(Router::new()
         .route("/api/v1/auth/login", any(handle))
         .route("/api/v1/auth/refresh", any(refresh::handle))
+        .route("/api/v1/auth/logout", any(logout::handle))
         .route("/api/v1/auth/mfa/verify", any(mfa::handle))
         .route("/api/v1/auth/magic-link/status", any(poll::handle))
         .with_state(login))

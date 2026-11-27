@@ -78,6 +78,7 @@ impl Policy {
                 req.uri().path(),
                 "/api/v1/auth/login"
                     | "/api/v1/auth/refresh"
+                    | "/api/v1/auth/logout"
                     | "/api/v1/auth/oauth2/token"
                     | "/api/v1/auth/magic-link/inspect"
                     | "/api/v1/auth/magic-link/confirm"
@@ -158,6 +159,15 @@ mod tests {
         assert!(
             policy
                 .refusal(&request("/api/v1/auth/refresh/other", origin, ""))
+                .is_some()
+        );
+        assert_eq!(
+            policy.refusal(&request("/api/v1/auth/logout", origin, "")),
+            None
+        );
+        assert!(
+            policy
+                .refusal(&request("/api/v1/auth/logout-all", origin, ""))
                 .is_some()
         );
         assert_eq!(

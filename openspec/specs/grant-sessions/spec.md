@@ -118,3 +118,18 @@ The browser refresh endpoint SHALL accept a refresh cookie or JSON token, prefer
 #### Scenario: Replay outside grace
 - **WHEN** an otherwise valid credential for the session is unknown or reused outside grace
 - **THEN** revoke the session and its remaining refresh credentials before returning the error.
+
+### Requirement: End a browser session
+The single-session logout endpoint SHALL clear browser session cookies and return 204 for a valid request body, including when the credentials are already expired or missing. It SHALL denylist a valid presented access token until expiry and revoke the session family identified by a valid refresh token.
+
+#### Scenario: An existing login ends
+- **WHEN** the browser presents its access and refresh cookies
+- **THEN** record logoff, revoke the session and its refresh credentials, denylist the access identifier and expire the cookies.
+
+#### Scenario: Credential precedence
+- **WHEN** both cookie and explicit credentials are present
+- **THEN** use the refresh cookie before the JSON token and the bearer access token before the access cookie.
+
+#### Scenario: Access token alone
+- **WHEN** a valid access token is presented without a refresh token
+- **THEN** denylist its identifier while leaving the session family available.

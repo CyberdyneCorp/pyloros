@@ -1,0 +1,1 @@
+Use the refresh cookie before a JSON credential, and prefer bearer authentication for the independently presented access token. Persist only a verified access identifier and expiration. Revoke the refresh family and record the successful logoff in the same transaction. Clear cookies after committing.

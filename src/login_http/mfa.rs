@@ -1,9 +1,7 @@
 //! Complete a password challenge with an authenticator or recovery code.
 use super::*;
 use crate::{
-    enrolled_factor::FactorDecision,
-    login_throttle::RateLimited,
-    mfa_challenges::{Binding, ChallengeError},
+    enrolled_factor::FactorDecision, login_throttle::RateLimited, mfa_challenges::Binding,
 };
 
 pub(super) async fn handle(
@@ -69,8 +67,7 @@ impl Login {
         let challenge = match self.verifier.verify(token) {
             Ok(challenge) => challenge,
             Err(error) => {
-                let expired = matches!(error, ChallengeError::Jwt(ref e) if matches!(e.kind(), jsonwebtoken::errors::ErrorKind::ExpiredSignature));
-                let reason = if expired { "expired" } else { "invalid_token" };
+                let reason = error.audit_reason();
                 return Ok(self
                     .reject_factor(subject(None), reason, origin, request)
                     .await);

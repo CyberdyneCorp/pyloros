@@ -1,9 +1,6 @@
 //! Rotate credentials for a first-party browser session.
 use super::*;
-use crate::{
-    csrf::cookie,
-    mfa_challenges::{ChallengeError, RefreshIdentity},
-};
+use crate::{csrf::cookie, mfa_challenges::RefreshIdentity};
 use chrono::DateTime;
 use std::collections::BTreeSet;
 
@@ -21,27 +18,20 @@ pub(super) async fn handle(
         return problem(StatusCode::SERVICE_UNAVAILABLE, "Login signing unavailable");
     };
     let (parts, body) = req.into_parts();
-    let body_token = match input::read(&parts.headers, body, input::refresh).await {
-        Ok(value) => value,
+    let token = match read_token(&parts.headers, body).await {
+        Ok(Some(token)) => token,
+        Ok(None) => return problem(StatusCode::UNAUTHORIZED, "Missing refresh token"),
         Err(response) => return response,
-    };
-    let token = cookie(&parts.headers, "refresh_token")
-        .filter(|s| !s.is_empty())
-        .or(body_token.as_deref())
-        .filter(|s| !s.is_empty());
-    let Some(token) = token else {
-        return problem(StatusCode::UNAUTHORIZED, "Missing refresh token");
     };
     let origin = SessionOrigin {
         ip: client_ip(&parts.headers, peer.ip(), login.proxies),
         user_agent: header(&parts.headers, "user-agent"),
     };
     let request = header(&parts.headers, "x-request-id");
-    let identity = match login.verifier.refresh(token) {
+    let identity = match login.verifier.refresh(&token) {
         Ok(id) => id,
         Err(err) => {
-            let expired = matches!(err, ChallengeError::Jwt(ref e) if matches!(e.kind(),jsonwebtoken::errors::ErrorKind::ExpiredSignature));
-            let reason = if expired { "expired" } else { "invalid_token" };
+            let reason = err.audit_reason();
             return login.reject_refresh(None, reason, origin, request).await;
         }
     };
@@ -65,6 +55,18 @@ pub(super) async fn handle(
         )
             .into_response()
     })
+}
+
+pub(super) async fn read_token(
+    headers: &axum::http::HeaderMap,
+    body: axum::body::Body,
+) -> Result<Option<String>, Response> {
+    let submitted = input::read(headers, body, input::refresh).await?;
+    Ok(cookie(headers, "refresh_token")
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .or(submitted)
+        .filter(|s| !s.is_empty()))
 }
 
 enum Claim {
@@ -205,14 +207,12 @@ impl Login {
     }
 }
 
-async fn revoke_family(tx: &mut Tx<'_>, id: RefreshIdentity) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND user_id=$2",
-    )
-    .bind(id.session)
-    .bind(id.user)
-    .execute(&mut **tx)
-    .await?;
+pub(super) async fn revoke_family(tx: &mut Tx<'_>, id: RefreshIdentity) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE sessions SET revoked_at=now() WHERE id=$1 AND user_id=$2")
+        .bind(id.session)
+        .bind(id.user)
+        .execute(&mut **tx)
+        .await?;
     sqlx::query("UPDATE refresh_tokens SET revoked_at=now() WHERE session_id=$1 AND user_id=$2 AND revoked_at IS NULL")
         .bind(id.session).bind(id.user).execute(&mut **tx).await?;
     Ok(())

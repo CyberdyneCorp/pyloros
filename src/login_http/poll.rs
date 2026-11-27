@@ -2,7 +2,7 @@
 use super::*;
 use crate::{
     login_throttle::RateLimited,
-    mfa_challenges::{Binding, ChallengeError},
+    mfa_challenges::Binding,
     request_json::{parse_body, token_field},
 };
 use axum::body::to_bytes;
@@ -66,8 +66,7 @@ impl Login {
         let challenge = match self.verifier.verify(token) {
             Ok(value) => value,
             Err(error) => {
-                let expired = matches!(error, ChallengeError::Jwt(ref e) if matches!(e.kind(), jsonwebtoken::errors::ErrorKind::ExpiredSignature));
-                let reason = if expired { "expired" } else { "invalid_token" };
+                let reason = error.audit_reason();
                 return Ok(self.refuse_poll(None, reason, origin, request).await);
             }
         };

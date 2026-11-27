@@ -130,6 +130,10 @@ pub(crate) enum AuditActivity<'a> {
         reason: Option<&'static str>,
     },
     PasswordLogin(Uuid),
+    Logoff {
+        reason: Option<&'static str>,
+        details: Value,
+    },
     Refresh {
         session: Option<Uuid>,
         reason: Option<&'static str>,
@@ -217,6 +221,15 @@ pub(crate) async fn write_activity<'e>(
             } else {
                 json!({})
             },
+        ),
+        AuditActivity::Logoff { reason, details } => (
+            "session",
+            "logoff",
+            None,
+            "",
+            outcome(reason.is_some()),
+            reason,
+            details,
         ),
         AuditActivity::Refresh { session, reason } => (
             "session",

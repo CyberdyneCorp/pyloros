@@ -1,0 +1,1 @@
+- [x] Compare cookie removal, audit, credential selection and revocation with the reference.
