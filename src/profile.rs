@@ -1,4 +1,5 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
+mod admin_clients;
 mod edit;
 mod email_verification;
 pub(crate) use email_verification::verify_account;
@@ -228,6 +229,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    admin_enabled: bool,
     passkeys: passkeys::Inventory,
     oidc_enabled: bool,
     registration: registration::Settings,
@@ -247,6 +249,7 @@ struct Profile {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        admin_enabled: config::flag_with_default("ADMIN_API_ENABLED", true)?,
         passkeys: passkeys::Inventory::configured()?,
         oidc_enabled: config::flag("OIDC_ENABLED")?,
         registration: registration::Settings::configured()?,
@@ -274,6 +277,11 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         production,
     };
     Ok(Router::new()
+        .route("/api/v1/admin/oauth/clients", any(admin_clients::list))
+        .route(
+            "/api/v1/admin/oauth/clients/{client_id}",
+            any(admin_clients::detail),
+        )
         .route("/api/v1/auth/oauth2/userinfo", any(userinfo::handle))
         .route(
             "/api/v1/auth/passkeys/login/options",

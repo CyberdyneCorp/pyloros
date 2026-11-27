@@ -255,6 +255,7 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
+            admin_enabled: true,
             passkeys: passkeys::Inventory::new(None, 10),
             oidc_enabled: false,
             registration: registration::Settings::configured().unwrap(),

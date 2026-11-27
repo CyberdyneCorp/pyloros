@@ -1,3 +1,0 @@
-- [x] Capture reference outcomes for authorization, collection and detail requests.
-- [ ] Implement authenticated reads and validate access against current administrative policy.
-- [ ] Compare responses for shared rows, check credential exclusion and exercise existing consumers.
