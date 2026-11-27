@@ -44,7 +44,7 @@ async fn write(
         return internal();
     };
     let path = path.map(|raw| crate::query::path_uuid(raw, "policy_id"));
-    let (id, policy) = match policy_input::parse(&raw, path) {
+    let (id, policy) = match input::parse(&raw, path) {
         Ok(v) => v,
         Err(r) => return *r,
     };

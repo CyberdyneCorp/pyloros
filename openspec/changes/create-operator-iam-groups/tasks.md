@@ -1,0 +1,4 @@
+- [x] Implement PostgreSQL group creation and atomic auditing.
+- [x] Compare the original clients, request validation, duplicate names and rollback.
+- [x] Verify unsigned chain group creation and provider failure behavior.
+- [ ] Submit chain group creation and compare confirmed outcomes.

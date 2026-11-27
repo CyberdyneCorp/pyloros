@@ -1,4 +1,4 @@
-//! Project only policy fields, retaining submitted JSON for nested validation errors.
+//! Project only IAM request fields, retaining submitted JSON for nested validation errors.
 use super::*;
 use crate::request_json::fields::{FieldIssue, field_issue, finite_error_input, object_fields};
 use serde_json::value::RawValue;
@@ -137,14 +137,32 @@ impl<'a> Errors<'a> {
     }
 }
 
+pub(super) fn group(raw: &RawValue) -> Result<Value, Box<Response>> {
+    const GROUP: Shape = Object(&[
+        Field("name", &Text, Required),
+        Field("description", &Text, Nullable),
+    ]);
+    project(raw, &GROUP, None).map(|(_, body)| body)
+}
+
 pub(super) fn parse(
     raw: &RawValue,
     path: Option<Result<Uuid, Value>>,
 ) -> Result<(Option<Uuid>, Value), Box<Response>> {
     let shape = if path.is_some() { &REPLACE } else { &CREATE };
+    let (id, body) = project(raw, shape, path)?;
+    validate_statements(&body)?;
+    Ok((id, body))
+}
+
+fn project(
+    raw: &RawValue,
+    shape: &Shape,
+    path: Option<Result<Uuid, Value>>,
+) -> Result<(Option<Uuid>, Value), Box<Response>> {
     let mut errors = Errors::default();
     let mut loc = vec![json!("body")];
-    let policy = if raw.get() == "null" {
+    let body = if raw.get() == "null" {
         errors.reject(raw, &loc, "missing", "Field required")?
     } else {
         errors.project(raw, &mut loc, shape)?
@@ -153,8 +171,7 @@ pub(super) fn parse(
         Ok(id) if errors.detail.is_empty() => id,
         result => return Err(errors.response(result.err())),
     };
-    validate_statements(&policy)?;
-    Ok((id, policy))
+    Ok((id, body))
 }
 
 fn validate_statements(policy: &Value) -> Result<(), Box<Response>> {

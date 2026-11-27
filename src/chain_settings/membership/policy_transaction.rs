@@ -1,4 +1,4 @@
-//! Encode policy contract calls and prepare unsigned EIP-1559 transactions.
+//! Encode IAM contract calls and prepare unsigned EIP-1559 transactions.
 use super::*;
 use serde::Deserialize;
 mod revert;
@@ -23,6 +23,7 @@ sol! {
     function createPolicy(string name,string description,Rule[] statements);
     function updatePolicy(uint256 id,string name,string description,Rule[] statements);
     function deletePolicy(uint256 id);
+    function createGroup(string name,string description);
 }
 
 fn empty_if_null<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
@@ -118,7 +119,7 @@ impl PolicyMutation<'_> {
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct UnsignedPolicyTransaction<'a> {
+pub(crate) struct UnsignedIamTransaction<'a> {
     from: &'a str,
     to: &'a str,
     nonce: TokenId,
@@ -173,9 +174,30 @@ impl Chain {
     pub(crate) async fn prepare_policy(
         &self,
         mutation: &PolicyMutation<'_>,
-    ) -> Result<UnsignedPolicyTransaction<'_>, PrepareError> {
+    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
         let call = mutation.calldata(self).await?;
-        let to = self.policy.as_deref().ok_or(PrepareError::Unavailable)?;
+        self.prepare_contract(self.policy.as_deref(), call).await
+    }
+
+    pub(crate) async fn prepare_group_creation(
+        &self,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+        let call = createGroupCall {
+            name: name.into(),
+            description: description.unwrap_or_default().into(),
+        };
+        self.prepare_contract(self.group.as_deref(), call.abi_encode())
+            .await
+    }
+
+    async fn prepare_contract<'a>(
+        &'a self,
+        address: Option<&'a str>,
+        call: Vec<u8>,
+    ) -> Result<UnsignedIamTransaction<'a>, PrepareError> {
+        let to = address.ok_or(PrepareError::Unavailable)?;
         validate_address(to).map_err(|_| PrepareError::Unavailable)?;
         let from = self.signer.as_deref().ok_or(PrepareError::Invalid)?;
         let data = format!("0x{}", HEXLOWER.encode(&call));
@@ -201,7 +223,7 @@ impl Chain {
             .checked_mul(TokenId::from(2))
             .and_then(|v| v.checked_add(max_priority_fee_per_gas))
             .ok_or(PrepareError::Unavailable)?;
-        Ok(UnsignedPolicyTransaction {
+        Ok(UnsignedIamTransaction {
             from,
             to,
             nonce,

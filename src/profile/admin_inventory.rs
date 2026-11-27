@@ -4,7 +4,9 @@ use serde::Serialize;
 
 mod removal;
 pub(super) use removal::remove;
-mod policy_input;
+mod create_group;
+mod input;
+pub(super) use create_group::create_group;
 mod statements;
 mod writes;
 pub(super) use writes::{create, replace};
