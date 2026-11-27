@@ -1,0 +1,3 @@
+Use the shared PostgreSQL enrollment state so a backend switch can happen between options and verification. Match the existing client's origin and binding transport. Generate challenge and handle bytes with an operating-system-backed random source. Claim an eligible challenge in its own committed transaction before verifying the credential. Recheck recent authentication and write the validated key and audit event together.
+
+Keep reference captures and the unchanged frontend test private. Exercise a browser authenticator through the actual preferences page and run both directions of the backend switch.
