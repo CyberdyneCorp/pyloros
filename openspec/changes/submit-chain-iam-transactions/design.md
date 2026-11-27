@@ -7,3 +7,7 @@ A database rollback cannot undo a confirmed external mutation. Compare the recor
 ## Verification
 
 Compare unsigned call data and identifier handling using independent fixtures. Exercise concurrent submission, an unavailable provider, a rejected transaction, a reverted receipt, a confirmation timeout and audit failure. Verify the API and unchanged clients using an isolated provider.
+
+## Open compatibility decisions
+
+Determine the response and audit outcome for a receipt with an absent or nonstandard status, a hash that differs from the submitted transaction, or a confirmed creation whose identifier cannot be decoded. Verify against the deployment contract before enabling retries or marking chain creation compatible.
