@@ -50,6 +50,14 @@ pub(crate) fn matches_s256(verifier: &str, challenge: &str) -> bool {
     verifier.is_ascii() && bool::from(proof.as_bytes().ct_eq(challenge.as_bytes()))
 }
 
+pub(crate) fn resource_matches(requested: &[String], bound: Option<&str>) -> bool {
+    match requested {
+        [] => true,
+        [resource] => Some(resource.as_str()) == bound,
+        _ => false,
+    }
+}
+
 fn check_bindings(
     code: &StoredCode,
     req: &ExchangeRequest<'_>,
@@ -61,10 +69,8 @@ fn check_bindings(
     if req.redirect_uri != Some(code.grant.redirect_uri.as_str()) {
         return Err(Refusal::RedirectMismatch);
     }
-    match req.resources {
-        [] => {}
-        [resource] if Some(resource.as_str()) == code.grant.resource.as_deref() => {}
-        _ => return Err(Refusal::InvalidTarget),
+    if !resource_matches(req.resources, code.grant.resource.as_deref()) {
+        return Err(Refusal::InvalidTarget);
     }
     if code.challenge_method != "S256" || !matches_s256(req.verifier, &code.grant.challenge) {
         return Err(Refusal::InvalidProof);
