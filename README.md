@@ -311,7 +311,8 @@ worker returns HTTP 503.
 
 Each dry run starts a fresh Wasmtime process with no host imports. The service
 accepts two runs at once. Event and output strings have a 64 KiB limit each.
-The guest has one 16 MiB linear memory and one million units of execution fuel.
+The guest has one 16 MiB linear memory. Its execution budget is one million
+fuel units plus 256 per event byte, up to 17,777,216 units for a 64 KiB event.
 On Linux the worker also caps its total address space at 1 GiB or the inherited limit, whichever is lower.
 The five-second worker deadline includes compilation.
 

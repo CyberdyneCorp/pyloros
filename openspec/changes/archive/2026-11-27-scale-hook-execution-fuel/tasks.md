@@ -1,0 +1,2 @@
+- [x] Implement and test the bounded fuel schedule.
+- [x] Compare the compiled Rust guest and legacy execution with the previously failing contexts.

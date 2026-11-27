@@ -29,7 +29,10 @@ fn run(component: &[u8], event: &str) -> wasmtime::Result<Value> {
         .build();
     let mut store = Store::new(&engine, limits);
     store.limiter(|s| s);
-    store.set_fuel(1_000_000)?;
+    // Decoding admitted context is part of guest execution. Account for that
+    // work even when the handler only reads one small field.
+    let event_bytes = event.len().min(MAX_EVENT) as u64;
+    store.set_fuel(1_000_000 + 256 * event_bytes)?;
     let linker = Linker::new(&engine);
     let hook = Hook::instantiate(&mut store, &component, &linker)?;
     let result = hook
@@ -132,6 +135,30 @@ mod tests {
         let oversized = "i32.const 1 memory.grow drop i32.const 8 i32.const 65537 i32.store";
         assert_eq!(execute(oversized, "{}").unwrap()["status"], "failed");
         assert_eq!(execute("", "{}").unwrap()["status"], "success");
+    }
+
+    #[test]
+    fn larger_events_get_more_fuel_and_still_stop_runaway_code() {
+        let finite_work = "(local $n i32) i32.const 300000 local.set $n
+            (loop $work local.get $n i32.const 1 i32.sub local.tee $n br_if $work)";
+        let short = execute(finite_work, "{}").unwrap_err();
+        assert_eq!(
+            short.downcast_ref::<wasmtime::Trap>(),
+            Some(&wasmtime::Trap::OutOfFuel)
+        );
+        let context = format!(r#"{{"values":"{}"}}"#, "x".repeat(8192));
+        assert_eq!(execute(finite_work, &context).unwrap()["status"], "success");
+
+        // Leave room for canonical ABI data beside the maximum-size context.
+        let source = FIXTURE
+            .replace("(export \"memory\") 1", "(export \"memory\") 2")
+            .replace("i32.const 0))", "(loop $busy br $busy) i32.const 0))");
+        let max_context = format!("{}{{}}", " ".repeat(MAX_EVENT - 2));
+        let runaway = run(&wat::parse_str(source).unwrap(), &max_context).unwrap_err();
+        assert_eq!(
+            runaway.downcast_ref::<wasmtime::Trap>(),
+            Some(&wasmtime::Trap::OutOfFuel)
+        );
     }
 
     #[test]

@@ -1,0 +1,1 @@
+Use the byte length already checked at the worker boundary. A compiled Rust event handler consumed about 14.6 million units on a 65,529-byte event dominated by small integers. The bounded linear schedule supplies 17,777,216 units at 64 KiB. Fuel is deterministic instruction accounting. The caller continues to enforce its elapsed-time deadline.
