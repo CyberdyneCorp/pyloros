@@ -1,0 +1,3 @@
+- [ ] Compare request validation, disabled operation, throttling, success and refusal responses against reference fixtures.
+- [ ] Implement transactional redemption, session issuance and token grant auditing.
+- [ ] Verify both backend directions, replay, incorrect verifier, expiry, inactive accounts, races and transaction rollback on PostgreSQL.
