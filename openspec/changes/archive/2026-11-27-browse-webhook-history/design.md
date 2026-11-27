@@ -1,0 +1,1 @@
+Read the subscription before its deliveries. Count matching deliveries, fetch the requested page and batch-load attempts for that page. A transaction at the database default isolation level preserves visibility of commits between those statements.

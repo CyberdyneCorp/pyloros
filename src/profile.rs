@@ -45,6 +45,7 @@ mod update_input;
 mod userinfo;
 mod wallet_challenge;
 mod wallet_export;
+mod webhook_history;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
 use axum::{
@@ -417,6 +418,7 @@ fn build_routes(
         .merge(audit_directory::routes())
         .merge(project_usage::routes())
         .merge(subject_export::routes())
+        .merge(webhook_history::routes())
         .merge(store_products::routes())
         .route("/api/v1/orgs/{org_id}/members", any(org_directory::read))
         .route(

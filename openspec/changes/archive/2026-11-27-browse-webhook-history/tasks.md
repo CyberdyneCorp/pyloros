@@ -1,0 +1,3 @@
+- [x] Implement subscription inventory and details.
+- [x] Implement paginated delivery and attempt history.
+- [x] Compare the reports, access checks, errors and existing clients on both services.
