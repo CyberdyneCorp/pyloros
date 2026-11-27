@@ -1,0 +1,3 @@
+- [x] Compare successful and refused grants with the reference, including client-secret rotation, scopes, audiences, quotas and issuance records.
+- [ ] Implement client-credentials issuance and verify the shared token endpoint with browser authorization enabled and disabled.
+- [ ] Exercise production-style service-token signing, reference introspection and client-authenticated revocation across both implementations.
