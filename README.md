@@ -287,9 +287,20 @@ through the database migration owner. An administrator can then use
 | PUT | Select a staged version with a JSON body containing its `sha256`. |
 | DELETE | Release the selection. The artifact remains available for reuse. |
 
-Each change records its previous and new digest in the administrator audit log.
+Each explicit binding change records its previous and new digest in the administrator audit log.
 Repeating a completed change returns the current selection. The hook's existing
 enabled flag, event, privacy settings and source are preserved.
+
+Apply [the source-edit trigger migration](migrations/004_invalidate_edited_hook_bindings.sql)
+after migrations 001–003 and before routing hook events to Rust. Every database
+role that edits hook source needs DELETE on the binding table and SELECT on its
+hook_id column. Check existing selections against the current source before
+enabling dispatch. Earlier bindings contain no record of the source they replaced.
+
+A committed source edit from either writer clears that hook’s selection. Stage
+and bind the component corresponding to the edited source before resuming
+dispatch. Settings-only edits retain the selection. Deliveries queued before
+the edit still run their pinned component.
 
 ### Deliver entitlement hooks
 

@@ -158,3 +158,15 @@ When login dispatch is enabled, the service SHALL deliver one login event per se
 #### Scenario: No new user session
 - **WHEN** a client refreshes tokens, polls a pending device code or replays a consumed code
 - **THEN** enqueue no login event
+
+### Requirement: Invalidate a component selection on source edits
+The service SHALL clear a hook’s selected component when any writer commits a change to its stored source.
+
+#### Scenario: Committed edit
+- **WHEN** source text changes for a bound hook
+- **THEN** clear its binding in the edit transaction and require selection before dispatching future events to that hook
+- **AND** retain the pinned versions of previously queued deliveries
+
+#### Scenario: Settings change or aborted edit
+- **WHEN** a writer updates settings without changing source, resubmits identical source or rolls back a source edit
+- **THEN** preserve the hook’s prior selection

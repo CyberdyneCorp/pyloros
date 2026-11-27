@@ -1,0 +1,2 @@
+- [x] Add the migration, rollback and isolation tests, and deployment instructions.
+- [x] Verify legacy HTTP edits and component binding behavior across both writers.

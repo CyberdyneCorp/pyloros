@@ -1,0 +1,2 @@
+## Decisions
+Use a row trigger on the shared hook table so every writer observes the same ordering. Binding updates already lock that hook row. Compare old and new source values and remove only the affected selection. Queued deliveries pin their own digest. Operators reconcile bindings made before the migration against current source because historical source revisions were never stored with those bindings.
