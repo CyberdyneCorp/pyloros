@@ -80,3 +80,47 @@ pub(crate) fn forwarded_peers() -> Vec<ipnet::IpNet> {
         })
         .collect()
 }
+
+pub(crate) fn configured_issuer() -> Option<String> {
+    std::env::var("OIDC_ISSUER")
+        .ok()
+        .filter(|issuer| !issuer.is_empty())
+}
+
+pub(crate) fn session_issuer() -> String {
+    configured_issuer()
+        .or_else(|| std::env::var("JWT_ISSUER").ok())
+        .unwrap_or_else(|| "cyberdyne-auth".into())
+}
+
+pub(crate) enum SigningAlgorithm {
+    Hs256,
+    Rs256,
+}
+
+pub(crate) fn signing_algorithm() -> Result<SigningAlgorithm, Box<dyn Error>> {
+    match env::var("JWT_ALGORITHM").as_deref() {
+        Ok("HS256") | Err(env::VarError::NotPresent) => Ok(SigningAlgorithm::Hs256),
+        Ok("RS256") => Ok(SigningAlgorithm::Rs256),
+        _ => Err("unsupported JWT signing algorithm".into()),
+    }
+}
+
+pub(crate) fn rsa_public_key(text: &str) -> Result<rsa::RsaPublicKey, Box<dyn Error>> {
+    use rsa::{pkcs1::DecodeRsaPublicKey, pkcs8::DecodePublicKey};
+    use x509_parser::prelude::{FromDer, X509Certificate};
+    let block = pem::parse(text)?;
+    let der = block.contents();
+    match block.tag() {
+        "PUBLIC KEY" => Ok(rsa::RsaPublicKey::from_public_key_der(der)?),
+        "RSA PUBLIC KEY" => Ok(rsa::RsaPublicKey::from_pkcs1_der(der)?),
+        "CERTIFICATE" => {
+            let (_, cert) =
+                X509Certificate::from_der(der).map_err(|_| "invalid signing certificate")?;
+            Ok(rsa::RsaPublicKey::from_public_key_der(
+                cert.public_key().raw,
+            )?)
+        }
+        _ => Err("expected an RSA public key or signing certificate".into()),
+    }
+}

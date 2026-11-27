@@ -1,9 +1,9 @@
 //! HTTP routing shared by the public health and issuer documents.
 use axum::{
     Router,
-    extract::{ConnectInfo, Request},
+    extract::{ConnectInfo, FromRequestParts, Request},
     handler::Handler,
-    http::{header, uri::Authority},
+    http::{Extensions, HeaderMap, Uri, header, request::Parts, uri::Authority},
     response::Redirect,
     routing::{any, get},
 };
@@ -29,33 +29,61 @@ where
 }
 
 fn canonical_location(req: &Request, path: &str, peers: &[ipnet::IpNet]) -> String {
-    let trusted = req
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .is_some_and(|peer| peers.iter().any(|net| net.contains(&peer.0.ip())));
-    let scheme = if trusted
-        && req
-            .headers()
-            .get("x-forwarded-proto")
-            .is_some_and(|h| h == "https")
-    {
-        "https"
-    } else {
-        req.uri().scheme_str().unwrap_or("http")
-    };
-    let host = req
-        .headers()
-        .get(header::HOST)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.parse::<Authority>().ok())
-        .filter(|h| !h.as_str().contains('@'));
-    let mut location = host.map_or_else(String::new, |h| format!("{scheme}://{h}"));
+    let mut location =
+        origin(req.headers(), req.uri(), req.extensions(), peers).unwrap_or_default();
     location.push_str(path);
     if let Some(query) = req.uri().query() {
         location.push('?');
         location.push_str(query);
     }
     location
+}
+
+pub(crate) struct RequestOrigin(pub Option<String>);
+
+impl<S: Send + Sync> FromRequestParts<S> for RequestOrigin {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        static PEERS: std::sync::LazyLock<Vec<ipnet::IpNet>> =
+            std::sync::LazyLock::new(crate::config::forwarded_peers);
+        Ok(Self(origin(
+            &parts.headers,
+            &parts.uri,
+            &parts.extensions,
+            &PEERS,
+        )))
+    }
+}
+
+fn origin(
+    headers: &HeaderMap,
+    uri: &Uri,
+    extensions: &Extensions,
+    peers: &[ipnet::IpNet],
+) -> Option<String> {
+    let trusted = extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .is_some_and(|peer| peers.iter().any(|net| net.contains(&peer.0.ip())));
+    let scheme = if trusted
+        && headers
+            .get("x-forwarded-proto")
+            .is_some_and(|h| h == "https")
+    {
+        "https"
+    } else {
+        uri.scheme_str().unwrap_or("http")
+    };
+    let host = headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.parse::<Authority>().ok());
+    let authority = host
+        .or_else(|| uri.authority().cloned())
+        .filter(|h| !h.as_str().contains('@'))
+        .map(|h| h.to_string())
+        .or_else(|| extensions.get::<SocketAddr>().map(ToString::to_string));
+    authority.map(|host| format!("{scheme}://{host}"))
 }
 
 #[cfg(test)]

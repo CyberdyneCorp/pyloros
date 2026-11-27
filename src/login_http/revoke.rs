@@ -59,6 +59,7 @@ impl Decision {
 pub(super) async fn handle(
     State(login): State<Option<Arc<Login>>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    base: crate::foundation::RequestOrigin,
     req: Request,
 ) -> Response {
     if req.method() != Method::POST {
@@ -116,6 +117,7 @@ pub(super) async fn handle(
             token,
             origin,
             header(&headers, "x-request-id"),
+            login.oidc_issuer.as_deref().or(base.0.as_deref()),
         )
         .await
     {
@@ -144,10 +146,11 @@ impl Login {
         token: &str,
         origin: SessionOrigin<'_>,
         request: Option<&str>,
+        oidc_issuer: Option<&str>,
     ) -> LoginResult {
         let mut tx = self.pool.begin().await?;
         let decision = self
-            .revocation_decision(&mut tx, client, secret, token, origin.ip)
+            .revocation_decision(&mut tx, client, secret, token, origin.ip, oidc_issuer)
             .await?;
         let event = AuditActivity::Revoke {
             client,
@@ -181,6 +184,7 @@ impl Login {
         secret: Option<&str>,
         token: &str,
         ip: Option<std::net::IpAddr>,
+        oidc_issuer: Option<&str>,
     ) -> Result<Decision, sqlx::Error> {
         let now = Utc::now();
         let record = client_auth::registration(tx, client, now).await?;
@@ -223,20 +227,22 @@ impl Login {
                 "invalid_client",
             ));
         }
-        Ok(match self.verifier.token_for_revocation(token) {
-            Ok(credential) => Decision::for_token(
-                &credential,
-                token_revocation::revoke(tx, client, &credential, now).await?,
-            ),
-            Err(TokenError::Unsupported) => Decision::error(
-                StatusCode::BAD_REQUEST,
-                "unsupported_token_type",
-                "only access and refresh tokens can be revoked",
-                "unsupported_token_type",
-            ),
-            Err(TokenError::Expired) => Decision::empty(Some("expired")),
-            Err(TokenError::Invalid) => Decision::empty(Some("invalid_token")),
-        })
+        Ok(
+            match self.verifier.token_for_revocation_at(token, oidc_issuer) {
+                Ok(credential) => Decision::for_token(
+                    &credential,
+                    token_revocation::revoke(tx, client, &credential, now).await?,
+                ),
+                Err(TokenError::Unsupported) => Decision::error(
+                    StatusCode::BAD_REQUEST,
+                    "unsupported_token_type",
+                    "only access and refresh tokens can be revoked",
+                    "unsupported_token_type",
+                ),
+                Err(TokenError::Expired) => Decision::empty(Some("expired")),
+                Err(TokenError::Invalid) => Decision::empty(Some("invalid_token")),
+            },
+        )
     }
 }
 
@@ -250,7 +256,13 @@ mod tests {
         let request = Request::post("/api/v1/auth/oauth2/revoke")
             .body(axum::body::Body::empty())
             .unwrap();
-        let response = handle(State(None), ConnectInfo(peer), request).await;
+        let response = handle(
+            State(None),
+            ConnectInfo(peer),
+            crate::foundation::RequestOrigin(None),
+            request,
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(response.headers()[h::CACHE_CONTROL], "no-store");
         assert_eq!(response.headers()[h::PRAGMA], "no-cache");

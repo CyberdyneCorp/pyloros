@@ -128,3 +128,48 @@ async fn postgres_scope_refresh() {
         json!(["hidden", "openid"])
     );
 }
+
+#[tokio::test]
+async fn metadata_uses_the_request_origin_across_requests_without_a_configured_issuer() {
+    let app = routes(Some(
+        Provider::new("", PEM, None, "profile", true, true).unwrap(),
+    ));
+    for (host, proto) in [("a.example", "http"), ("b.example:8443", "https")] {
+        let request = Request::get(OIDC)
+            .header("host", host)
+            .header("x-forwarded-proto", proto)
+            .extension(axum::extract::ConnectInfo(
+                "127.0.0.1:5123".parse::<std::net::SocketAddr>().unwrap(),
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), 200);
+        let doc: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 16384).await.unwrap()).unwrap();
+        let base = format!("{proto}://{host}");
+        assert_eq!(doc["issuer"], base);
+        assert_eq!(doc["jwks_uri"], format!("{base}{KEYS}"));
+        assert_eq!(
+            doc["device_authorization_endpoint"],
+            format!("{base}/api/v1/auth/oauth2/device_authorization")
+        );
+    }
+}
+
+#[tokio::test]
+async fn rsa_public_key_encodings_publish_the_same_thumbprint_with_an_empty_key_id() {
+    use rsa::{RsaPublicKey, pkcs1::EncodeRsaPublicKey, pkcs8::DecodePublicKey};
+    let alternate = RsaPublicKey::from_public_key_pem(PEM)
+        .unwrap()
+        .to_pkcs1_pem(Default::default())
+        .unwrap();
+    let mut documents = Vec::new();
+    for (pem, kid) in [(PEM, None), (alternate.as_str(), Some(String::new()))] {
+        let provider =
+            Provider::new("https://issuer.example", pem, kid, "openid", false, false).unwrap();
+        documents.push(get(&routes(Some(provider)), KEYS).await);
+    }
+    assert_eq!(documents[0], documents[1]);
+    assert_eq!(documents[1].1["keys"][0]["kid"].as_str().unwrap().len(), 43);
+}

@@ -7,7 +7,7 @@ use crate::{
 };
 use axum::{Json, Router, extract::State, http::StatusCode};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use rsa::{RsaPublicKey, pkcs8::DecodePublicKey, traits::PublicKeyParts};
+use rsa::{RsaPublicKey, traits::PublicKeyParts};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -18,7 +18,10 @@ type Document = Result<Json<Value>, Disabled>;
 struct Disabled;
 
 pub struct Provider {
-    metadata: Value,
+    issuer: Option<String>,
+    fixed_metadata: Option<Value>,
+    device: bool,
+    registration: bool,
     public_jwk: Option<Value>,
     scopes: tokio::sync::watch::Receiver<BTreeMap<String, String>>,
 }
@@ -33,17 +36,15 @@ impl Provider {
         if !flag("OIDC_ENABLED")? {
             return Ok(None);
         }
-        let explicit = env::var("JWT_ALGORITHM").ok();
-        let public = match explicit.as_deref() {
-            Some("HS256") => None,
-            Some("RS256") => Some(
+        use crate::config::SigningAlgorithm;
+        let public = match crate::config::signing_algorithm()? {
+            SigningAlgorithm::Hs256 => None,
+            SigningAlgorithm::Rs256 => Some(
                 crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?
                     .ok_or("RS256 discovery requires an RSA public key")?,
             ),
-            None => crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?,
-            _ => return Err("unsupported discovery signing algorithm".into()),
         };
-        let issuer = env::var("OIDC_ISSUER")?;
+        let issuer = crate::config::configured_issuer().unwrap_or_default();
         let scopes = env::var("OIDC_SCOPES")
             .unwrap_or_else(|_| "openid profile email offline_access".into());
         let provider = Self::configured(
@@ -76,29 +77,60 @@ impl Provider {
         registration: bool,
         device: bool,
     ) -> Result<Self, ConfigError> {
-        let issuer = issuer.trim_end_matches('/');
-        let url = Url::parse(issuer)?;
-        if !matches!(url.scheme(), "https" | "http")
-            || url.host().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err(
-                "OIDC_ISSUER must be an HTTP(S) issuer URL without credentials, query or fragment"
-                    .into(),
-            );
+        let issuer = if issuer.is_empty() {
+            None
+        } else {
+            Some(issuer)
+        };
+        if let Some(base) = issuer {
+            validate_issuer(base.trim_end_matches('/'))?;
         }
         let public_jwk = if let Some(pem) = pem {
-            let public = RsaPublicKey::from_public_key_pem(pem)?;
+            let public = crate::config::rsa_public_key(pem)?;
             let n = URL_SAFE_NO_PAD.encode(public.n().to_bytes_be());
             let e = URL_SAFE_NO_PAD.encode(public.e().to_bytes_be());
-            let kid = key_id.unwrap_or_else(|| rsa_kid(&n, &e));
+            let kid = key_id
+                .filter(|id| !id.is_empty())
+                .unwrap_or_else(|| rsa_kid(&n, &e));
             Some(json!({"alg":"RS256","use":"sig","kty":"RSA","kid":kid,"n":n,"e":e}))
         } else {
             None
         };
+        let scopes = tokio::sync::watch::channel(
+            scopes
+                .split_ascii_whitespace()
+                .map(|name| (name.to_owned(), String::new()))
+                .collect(),
+        )
+        .1;
+        Ok(Self {
+            fixed_metadata: issuer
+                .map(|base| Self::document(base.trim_end_matches('/'), device, registration)),
+            issuer: issuer.map(str::to_owned),
+            device,
+            registration,
+            public_jwk,
+            scopes,
+        })
+    }
+
+    pub(crate) fn session_issuer(&self) -> String {
+        self.issuer
+            .clone()
+            .unwrap_or_else(crate::config::session_issuer)
+    }
+
+    pub(crate) fn public_base(&self) -> Option<&str> {
+        self.issuer.as_deref().map(|s| s.trim_end_matches('/'))
+    }
+
+    fn metadata(&self, origin: Option<&str>) -> Option<Value> {
+        self.fixed_metadata
+            .clone()
+            .or_else(|| origin.map(|base| Self::document(base, self.device, self.registration)))
+    }
+
+    fn document(issuer: &str, device: bool, registration: bool) -> Value {
         let base = format!("{issuer}/api/v1/auth");
         let oauth = format!("{base}/oauth2");
         let methods = ["client_secret_basic", "client_secret_post", "none"];
@@ -124,18 +156,7 @@ impl Provider {
         if registration {
             metadata["registration_endpoint"] = json!(format!("{oauth}/register"));
         }
-        let scopes = tokio::sync::watch::channel(
-            scopes
-                .split_ascii_whitespace()
-                .map(|name| (name.to_owned(), String::new()))
-                .collect(),
-        )
-        .1;
-        Ok(Self {
-            metadata,
-            public_jwk,
-            scopes,
-        })
+        metadata
     }
 
     pub(crate) fn scope_catalog(&self) -> tokio::sync::watch::Receiver<BTreeMap<String, String>> {
@@ -143,22 +164,18 @@ impl Provider {
     }
 
     pub(crate) fn dynamic_registration_enabled(&self) -> bool {
-        self.metadata.get("registration_endpoint").is_some()
+        self.registration
     }
 
     pub(crate) fn device_authorization_enabled(&self) -> bool {
-        self.metadata.get("device_authorization_endpoint").is_some()
-    }
-
-    pub(crate) fn issuer(&self) -> &str {
-        self.metadata["issuer"].as_str().expect("configured issuer")
+        self.device
     }
 
     pub(crate) fn uses_shared_secret(&self) -> bool {
         self.public_jwk.is_none()
     }
 
-    pub(crate) fn signing_identity(&self, key: &RsaPublicKey) -> Result<(&str, &str), ConfigError> {
+    pub(crate) fn signing_identity(&self, key: &RsaPublicKey) -> Result<&str, ConfigError> {
         let jwk = self
             .public_jwk
             .as_ref()
@@ -168,10 +185,7 @@ impl Provider {
         {
             return Err("private signing key does not match discovery public key".into());
         }
-        Ok((
-            self.issuer(),
-            jwk["kid"].as_str().expect("configured key identifier"),
-        ))
+        Ok(jwk["kid"].as_str().expect("configured key identifier"))
     }
 
     pub async fn refresh_scopes(&mut self, pool: sqlx::PgPool, interval: Duration) {
@@ -333,6 +347,23 @@ impl ScopePublisher {
     }
 }
 
+fn validate_issuer(issuer: &str) -> Result<(), ConfigError> {
+    let url = Url::parse(issuer)?;
+    if !matches!(url.scheme(), "https" | "http")
+        || url.host().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(
+            "OIDC_ISSUER must be an HTTP(S) issuer URL without credentials, query or fragment"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 type ProviderState = Option<Arc<Provider>>;
 
 impl axum::response::IntoResponse for Disabled {
@@ -341,11 +372,19 @@ impl axum::response::IntoResponse for Disabled {
     }
 }
 
-async fn metadata(State(provider): State<ProviderState>) -> Document {
-    let issuer = provider.as_ref().ok_or(Disabled)?;
-    let mut document = issuer.metadata.clone();
+async fn metadata(
+    State(provider): State<ProviderState>,
+    origin: crate::foundation::RequestOrigin,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let Some(issuer) = provider.as_ref() else {
+        return Disabled.into_response();
+    };
+    let Some(mut document) = issuer.metadata(origin.0.as_deref()) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
     document["scopes_supported"] = json!(issuer.scopes.borrow().keys().collect::<Vec<_>>());
-    Ok(Json(document))
+    Json(document).into_response()
 }
 
 async fn keys(State(provider): State<ProviderState>) -> Document {
@@ -383,7 +422,7 @@ mod tests {
         .unwrap();
         assert!(provider.uses_shared_secret());
         assert_eq!(
-            provider.metadata["id_token_signing_alg_values_supported"],
+            provider.metadata(None).unwrap()["id_token_signing_alg_values_supported"],
             json!(["RS256"])
         );
     }

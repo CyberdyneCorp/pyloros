@@ -8,9 +8,23 @@ use uuid::Uuid;
 impl ChallengeVerifier {
     /// Check a credential at its issuer. The audience identifies a relying party or resource.
     pub fn token_for_revocation(&self, token: &str) -> Result<VerifiedToken, TokenError> {
+        self.token_for_revocation_at(token, None)
+    }
+
+    pub(crate) fn token_for_revocation_at(
+        &self,
+        token: &str,
+        oidc_issuer: Option<&str>,
+    ) -> Result<VerifiedToken, TokenError> {
         let claims = match self.verified_claims(token) {
+            Ok(claims)
+                if claims["type"].is_null()
+                    && oidc_issuer.is_some_and(|issuer| claims["iss"] != issuer) =>
+            {
+                return Err(TokenError::Invalid);
+            }
             Ok(claims) => claims,
-            Err(_) if self.logout_client_hint(token).is_some() => {
+            Err(_) if self.logout_client_hint(token, oidc_issuer).is_some() => {
                 return Err(TokenError::Unsupported);
             }
             Err(error) if matches!(error.kind(), ErrorKind::ExpiredSignature) => {

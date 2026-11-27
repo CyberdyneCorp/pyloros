@@ -142,7 +142,7 @@ impl GrantSessionIssuer {
         let exp = now
             .checked_add_signed(lifetime)
             .ok_or(SessionError::InvalidLifetime)?;
-        let mut doc = json!({"iss":self.issuer(),"sub":grant.user_id.to_string(),"aud":grant.client_id,
+        let mut doc = json!({"iss":self.id_issuer(),"sub":grant.user_id.to_string(),"aud":grant.client_id,
             "iat":now.timestamp(),"exp":exp.timestamp()});
         if let Some(nonce) = grant.nonce.filter(|n| !n.is_empty()) {
             doc["nonce"] = json!(nonce);

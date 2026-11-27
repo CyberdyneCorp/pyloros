@@ -193,6 +193,7 @@ async fn authorize(
 
 pub(super) async fn exchange(
     rt: &Runtime,
+    signer: &crate::grant_sessions::GrantSessionIssuer,
     req: Request<'_>,
     settings: &GrantSettings<'_>,
     origin: SessionOrigin<'_>,
@@ -238,8 +239,7 @@ pub(super) async fn exchange(
         .signer
         .store_session(&mut tx, record, origin, now)
         .await?;
-    let mut response = rt
-        .signer
+    let mut response = signer
         .session_response(&mut tx, record, req.client, settings, now)
         .await?;
     response.refresh_token = approved

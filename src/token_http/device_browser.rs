@@ -1,4 +1,5 @@
 //! Browser verification uses the same deployment-supplied pages as the original issuer.
+use axum::response::IntoResponse;
 mod decision;
 use super::{client_ip, header};
 use crate::{
@@ -114,6 +115,7 @@ fn unavailable() -> Response {
 }
 
 async fn verify(
+    origin: crate::foundation::RequestOrigin,
     State(browser): State<Arc<Browser>>,
     OriginalUri(uri): OriginalUri,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -123,7 +125,7 @@ async fn verify(
         return unavailable();
     };
     browser
-        .verify(rt, &uri, &headers, peer)
+        .verify(rt, &uri, &headers, peer, origin)
         .await
         .unwrap_or_else(|_| unavailable())
 }
@@ -143,6 +145,7 @@ impl Browser {
         uri: &Uri,
         headers: &HeaderMap,
         peer: SocketAddr,
+        origin: crate::foundation::RequestOrigin,
     ) -> PageResult {
         let mut tx = rt.pool.begin().await?;
         let Some(session) = rt
@@ -156,10 +159,9 @@ impl Browser {
                     "Authentication required and no login URL is configured",
                 ));
             };
-            let issuer = url::Url::parse(rt.signer.issuer())?;
-            let origin = header(headers, "host")
-                .map(|host| format!("{}://{host}", issuer.scheme()))
-                .unwrap_or_else(|| issuer.origin().ascii_serialization());
+            let Some(origin) = origin.0 else {
+                return Ok(StatusCode::BAD_REQUEST.into_response());
+            };
             let target = format!(
                 "{origin}{}",
                 uri.path_and_query().map_or(PATH, |p| p.as_str())

@@ -47,6 +47,7 @@ use std::{env, error::Error, net::SocketAddr, sync::Arc};
 use uuid::Uuid;
 
 pub(crate) struct Login {
+    oidc_issuer: Option<String>,
     signed_out: String,
     passkeys: Option<passkey::Policy>,
     pool: PgPool,

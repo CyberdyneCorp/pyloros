@@ -151,7 +151,11 @@ impl ChallengeVerifier {
         Ok(decode(token, &self.key, &self.validation)?.claims)
     }
 
-    pub(crate) fn logout_client_hint(&self, token: &str) -> Option<String> {
+    pub(crate) fn logout_client_hint(
+        &self,
+        token: &str,
+        oidc_issuer: Option<&str>,
+    ) -> Option<String> {
         #[derive(Deserialize)]
         struct Hint {
             #[serde(rename = "sub")]
@@ -161,6 +165,9 @@ impl ChallengeVerifier {
             kind: Option<serde_json::Value>,
         }
         let mut validation = self.validation.clone();
+        if let Some(issuer) = oidc_issuer {
+            validation.set_issuer(&[issuer]);
+        }
         validation.validate_exp = false;
         validation.set_required_spec_claims(&["iss", "sub"]);
         let hint = decode::<Hint>(token, &self.key, &validation).ok()?.claims;
@@ -249,9 +256,23 @@ mod tests {
         let hint = json!({"iss":"issuer","sub":Uuid::new_v4(),"aud":"client","exp":1});
         assert_eq!(
             verifier
-                .logout_client_hint(&signer.sign(&hint).unwrap())
+                .logout_client_hint(&signer.sign(&hint).unwrap(), None)
                 .as_deref(),
             Some("client")
+        );
+        let public_hint = signer
+            .sign(&json!({"iss":"https://id.example","sub":Uuid::new_v4(),"aud":"client","exp":1}))
+            .unwrap();
+        assert_eq!(
+            verifier
+                .logout_client_hint(&public_hint, Some("https://id.example"))
+                .as_deref(),
+            Some("client")
+        );
+        assert!(
+            verifier
+                .logout_client_hint(&public_hint, Some("https://other.example"))
+                .is_none()
         );
         for (field, value) in [
             ("iss", json!("another")),
@@ -263,7 +284,7 @@ mod tests {
             invalid[field] = value;
             assert!(
                 verifier
-                    .logout_client_hint(&signer.sign(&invalid).unwrap())
+                    .logout_client_hint(&signer.sign(&invalid).unwrap(), None)
                     .is_none()
             );
         }

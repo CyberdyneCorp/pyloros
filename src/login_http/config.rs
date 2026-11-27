@@ -2,26 +2,16 @@ use super::*;
 use crate::token_runtime::{lifetime, number};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rsa::{
-    RsaPrivateKey, RsaPublicKey,
-    pkcs1::DecodeRsaPrivateKey,
-    pkcs8::{DecodePrivateKey, DecodePublicKey},
-    traits::PublicKeyParts,
+    RsaPrivateKey, pkcs1::DecodeRsaPrivateKey, pkcs8::DecodePrivateKey, traits::PublicKeyParts,
 };
 
 pub(crate) fn identity(
     production: bool,
 ) -> Result<Option<(SigningIdentity, ChallengeVerifier)>, Box<dyn Error>> {
-    let public = crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?;
-    let algorithm = env::var("JWT_ALGORITHM")
-        .unwrap_or_else(|_| if public.is_some() { "RS256" } else { "HS256" }.into());
-    let issuer = env::var("OIDC_ISSUER")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .map(|s| s.trim_end_matches('/').to_owned())
-        .or_else(|| env::var("JWT_ISSUER").ok())
-        .unwrap_or_else(|| "cyberdyne-auth".into());
-    match algorithm.as_str() {
-        "HS256" => {
+    use crate::config::SigningAlgorithm;
+    let issuer = crate::config::session_issuer();
+    match crate::config::signing_algorithm()? {
+        SigningAlgorithm::Hs256 => {
             let Ok(secret) = env::var("JWT_SECRET_KEY") else {
                 return Ok(None);
             };
@@ -34,7 +24,7 @@ pub(crate) fn identity(
                 verifier,
             )))
         }
-        "RS256" => {
+        SigningAlgorithm::Rs256 => {
             let Some(private) = crate::config::pem("JWT_PRIVATE_KEY_PATH", "JWT_PRIVATE_KEY")?
             else {
                 return Ok(None);
@@ -42,9 +32,10 @@ pub(crate) fn identity(
             let key = RsaPrivateKey::from_pkcs8_pem(&private)
                 .or_else(|_| RsaPrivateKey::from_pkcs1_pem(&private))?
                 .to_public_key();
-            let pem = public.ok_or("missing JWT public key")?;
+            let pem = crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?
+                .ok_or("missing JWT public key")?;
             let verifier = ChallengeVerifier::rsa(&issuer, pem.as_bytes())?;
-            let public = RsaPublicKey::from_public_key_pem(&pem)?;
+            let public = crate::config::rsa_public_key(&pem)?;
             if public != key {
                 return Err("JWT public and private keys do not match".into());
             }
@@ -62,7 +53,6 @@ pub(crate) fn identity(
                 verifier,
             )))
         }
-        _ => Err("unsupported login signing algorithm".into()),
     }
 }
 
@@ -87,6 +77,8 @@ impl Login {
             }
         };
         Ok(Some(Self {
+            oidc_issuer: crate::config::configured_issuer()
+                .map(|s| s.trim_end_matches('/').to_owned()),
             signed_out,
             passkeys: passkey::Policy::configured()?,
             reuse_grace: TimeDelta::seconds(grace),

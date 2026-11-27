@@ -30,7 +30,7 @@ pub(super) const LETTERS: &[u8] = b"BCDFGHJKLMNPQRSTVWXZ";
 
 struct Device {
     pool: PgPool,
-    uri: String,
+    issuer: Option<String>,
     lifetime: i64,
     interval: i32,
     quota: LoginThrottle,
@@ -56,7 +56,7 @@ pub(super) fn routes(
     }
     let config = Device {
         pool,
-        uri: format!("{}/api/v1/auth/oauth2/device", provider.issuer()),
+        issuer: provider.public_base().map(str::to_owned),
         lifetime,
         interval: interval.try_into()?,
         quota: LoginThrottle::new(number("RATELIMIT_DEVICE_AUTHORIZATION_PER_MIN", 10)?),
@@ -89,6 +89,7 @@ impl Refusal {
 
 async fn start(
     State(state): State<Arc<Device>>,
+    base: crate::foundation::RequestOrigin,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
@@ -123,8 +124,12 @@ async fn start(
         ip: client_ip(&headers, peer.ip(), state.proxies),
         user_agent: header(&headers, "user-agent"),
     };
+    let Some(issuer) = state.issuer.as_deref().or(base.0.as_deref()) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let uri = format!("{issuer}/api/v1/auth/oauth2/device");
     match state
-        .issue(input, origin, header(&headers, "x-request-id"))
+        .issue(input, origin, header(&headers, "x-request-id"), &uri)
         .await
     {
         Ok((status, body)) => (
@@ -213,6 +218,7 @@ impl Device {
         input: Input<'_>,
         origin: SessionOrigin<'_>,
         request_id: Option<&str>,
+        uri: &str,
     ) -> Result<(StatusCode, Value), sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         let now = Utc::now();
@@ -291,8 +297,8 @@ impl Device {
             tx.commit().await?;
             return Ok((
                 StatusCode::OK,
-                json!({"device_code":token,"user_code":shown,"verification_uri":self.uri,
-                "verification_uri_complete":format!("{}?user_code={shown}",self.uri),"expires_in":self.lifetime,"interval":self.interval}),
+                json!({"device_code":token,"user_code":shown,"verification_uri":uri,
+                "verification_uri_complete":format!("{uri}?user_code={shown}"),"expires_in":self.lifetime,"interval":self.interval}),
             ));
         }
         tx.rollback().await?;

@@ -26,7 +26,7 @@ async fn a_device_code_becomes_pollable_only_when_its_audit_record_commits() {
 
     let state = Device {
         pool: pool.clone(),
-        uri: "https://issuer.example/device".into(),
+        issuer: None,
         lifetime: 90,
         interval: 3,
         quota: LoginThrottle::new(10),
@@ -45,6 +45,7 @@ async fn a_device_code_becomes_pollable_only_when_its_audit_record_commits() {
                 user_agent: None,
             },
             None,
+            "https://issuer.example/device",
         )
     };
     assert!(issue().await.is_err());

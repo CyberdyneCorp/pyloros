@@ -21,7 +21,8 @@ pub(crate) struct SessionRecord<'a> {
 }
 
 pub struct GrantSessionIssuer {
-    signing: SigningIdentity,
+    signing: std::sync::Arc<SigningIdentity>,
+    id_issuer: Option<String>,
     refresh_lifetime: TimeDelta,
 }
 
@@ -60,9 +61,22 @@ impl GrantSessionIssuer {
             return Err(SessionError::InvalidLifetime);
         }
         Ok(Self {
-            signing,
+            signing: std::sync::Arc::new(signing),
+            id_issuer: None,
             refresh_lifetime,
         })
+    }
+
+    pub(crate) fn for_id_issuer(&self, issuer: &str) -> Self {
+        Self {
+            signing: self.signing.clone(),
+            id_issuer: Some(issuer.to_owned()),
+            refresh_lifetime: self.refresh_lifetime,
+        }
+    }
+
+    pub(crate) fn id_issuer(&self) -> &str {
+        self.id_issuer.as_deref().unwrap_or_else(|| self.issuer())
     }
 
     pub(crate) fn supports_id_tokens(&self) -> bool {

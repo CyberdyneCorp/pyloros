@@ -23,6 +23,7 @@ pub(super) async fn disabled(method: Method) -> Response {
 
 pub(super) async fn handle(
     State(state): State<Option<Arc<Login>>>,
+    base: crate::foundation::RequestOrigin,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
@@ -59,7 +60,13 @@ pub(super) async fn handle(
     else {
         return problem(StatusCode::SERVICE_UNAVAILABLE, "Logout unavailable");
     };
-    let mut response = destination(&login, params, form).await;
+    let mut response = destination(
+        &login,
+        params,
+        form,
+        login.oidc_issuer.as_deref().or(base.0.as_deref()),
+    )
+    .await;
     for value in cleared.headers().get_all(h::SET_COOKIE) {
         response.headers_mut().append(h::SET_COOKIE, value.clone());
     }
@@ -70,7 +77,12 @@ fn refused(detail: &str) -> Response {
     (StatusCode::BAD_REQUEST, Json(json!({"detail":detail}))).into_response()
 }
 
-async fn destination(login: &Login, params: Vec<(String, String)>, form: bool) -> Response {
+async fn destination(
+    login: &Login,
+    params: Vec<(String, String)>,
+    form: bool,
+    issuer: Option<&str>,
+) -> Response {
     let get = |key: &str| {
         params
             .iter()
@@ -79,7 +91,7 @@ async fn destination(login: &Login, params: Vec<(String, String)>, form: bool) -
             .map(|(_, v)| v.as_str())
             .filter(|v| !form || !v.is_empty())
     };
-    let hint = get("id_token_hint").and_then(|raw| login.verifier.logout_client_hint(raw));
+    let hint = get("id_token_hint").and_then(|raw| login.verifier.logout_client_hint(raw, issuer));
     let client = get("client_id");
     if let (Some(hint), Some(id)) = (hint.as_deref(), client)
         && hint != id

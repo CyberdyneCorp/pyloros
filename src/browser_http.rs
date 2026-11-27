@@ -70,6 +70,7 @@ fn callback(uri: &str, fields: &[(&str, &str)], state: Option<&str>) -> Response
 
 pub(crate) async fn authorize(
     State(rt): State<Arc<Runtime>>,
+    origin: crate::foundation::RequestOrigin,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
 ) -> Response {
@@ -132,12 +133,12 @@ pub(crate) async fn authorize(
     match prompt {
         PromptDecision::Error { code, description } => return error(code, &description),
         PromptDecision::Login { fresh } => {
-            let Ok(issuer) = url::Url::parse(rt.signer.issuer()) else {
-                return unavailable();
+            let Some(base) = origin.0 else {
+                return StatusCode::BAD_REQUEST.into_response();
             };
             let target = format!(
                 "{}{}",
-                issuer.origin().ascii_serialization(),
+                base,
                 uri.path_and_query().map_or(PATH, |p| p.as_str())
             );
             return redirect(browser_prompt::login_location(

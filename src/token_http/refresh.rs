@@ -80,6 +80,7 @@ async fn authenticate_and_rotate(
 
 pub(super) async fn exchange(
     rt: &Runtime,
+    signer: &crate::grant_sessions::GrantSessionIssuer,
     req: Request<'_>,
     settings: &GrantSettings<'_>,
     origin: SessionOrigin<'_>,
@@ -120,8 +121,7 @@ pub(super) async fn exchange(
     };
     let user = rotation.user;
     let session = rotation.session;
-    let response = rt
-        .signer
+    let response = signer
         .issue_refresh_response(&mut tx, rotation, req.client, settings, now)
         .await?;
     let event = GrantEvent::issued(

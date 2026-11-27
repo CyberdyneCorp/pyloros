@@ -19,9 +19,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or_else(|_| "30".into())
         .parse()?;
     let app = pyloros::application(environment, pool, Duration::from_secs(seconds)).await?;
-    let app = app.layer(axum::middleware::from_fn(
-        pyloros::profile::limit_passkey_body,
-    ));
+    let app = app
+        .layer(axum::Extension(listener.local_addr()?))
+        .layer(axum::middleware::from_fn(
+            pyloros::profile::limit_passkey_body,
+        ));
     axum::serve(
         listener,
         pyloros::headers::apply(app, secure_transport)

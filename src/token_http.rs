@@ -189,6 +189,7 @@ pub(crate) async fn fields(req: Request) -> Result<Fields, Box<Response>> {
 
 async fn exchange(
     State(endpoint): State<Arc<Endpoint>>,
+    origin_base: crate::foundation::RequestOrigin,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
@@ -225,12 +226,6 @@ async fn exchange(
     };
     let polling = endpoint.device && grant == device::GRANT;
     if !polling && !matches!(grant, "authorization_code" | "refresh_token") {
-        let Some(issuer) = &endpoint.service else {
-            return crate::login_http::problem(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Token signing unavailable",
-            );
-        };
         let request = service::Request {
             grant,
             client,
@@ -239,10 +234,7 @@ async fn exchange(
             audience: get("audience"),
             origin,
         };
-        return issuer
-            .exchange(request)
-            .await
-            .unwrap_or_else(|_| internal());
+        return exchange_service(&endpoint, request).await;
     }
     if !endpoint.oidc {
         return (StatusCode::BAD_REQUEST,Json(json!({"error":"unsupported_grant_type","error_description":format!("grant_type '{grant}' is not enabled")}))).into_response();
@@ -276,9 +268,14 @@ async fn exchange(
     };
     let request_id = header(&headers, "x-request-id");
     let now = chrono::Utc::now();
+    let Some(id_issuer) = rt.oidc_issuer.as_deref().or(origin_base.0.as_deref()) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let signer = rt.signer.for_id_issuer(id_issuer);
     let decision = if polling {
         device_poll::exchange(
             rt,
+            &signer,
             device_poll::Request {
                 client,
                 secret,
@@ -294,6 +291,7 @@ async fn exchange(
     } else if grant == "refresh_token" {
         refresh::exchange(
             rt,
+            &signer,
             refresh::Request {
                 client,
                 secret,
@@ -309,11 +307,24 @@ async fn exchange(
         )
         .await
     } else {
-        rt.signer
+        signer
             .exchange_code(&rt.pool, &req, &settings, origin, request_id, now)
             .await
     };
     exchange_response(decision)
+}
+
+async fn exchange_service(endpoint: &Endpoint, request: service::Request<'_>) -> Response {
+    let Some(issuer) = &endpoint.service else {
+        return crate::login_http::problem(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Token signing unavailable",
+        );
+    };
+    issuer
+        .exchange(request)
+        .await
+        .unwrap_or_else(|_| internal())
 }
 
 fn exchange_response(

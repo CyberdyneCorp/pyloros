@@ -36,6 +36,7 @@ pub(crate) struct Runtime {
     pub code_ttl: TimeDelta,
     pub consent_page: Option<crate::consent_page::Page>,
     pub signer: GrantSessionIssuer,
+    pub oidc_issuer: Option<String>,
     pub access_ttl: TimeDelta,
     pub id_ttl: TimeDelta,
     pub admins: Vec<String>,
@@ -239,15 +240,16 @@ impl Runtime {
             };
             let key = RsaPrivateKey::from_pkcs8_pem(&pem)
                 .or_else(|_| RsaPrivateKey::from_pkcs1_pem(&pem))?;
-            let (issuer, kid) = provider.signing_identity(&key.to_public_key())?;
+            let kid = provider.signing_identity(&key.to_public_key())?;
+            let issuer = provider.session_issuer();
             let signer = GrantSessionIssuer::new(
-                issuer.into(),
+                issuer.clone(),
                 kid.into(),
                 pem.as_bytes(),
                 lifetime("JWT_REFRESH_TOKEN_TTL_DAYS", 30, 86400)?,
             )?;
             let verifier = crate::mfa_challenges::ChallengeVerifier::rsa(
-                issuer,
+                &issuer,
                 key.to_public_key()
                     .to_public_key_pem(LineEnding::LF)?
                     .as_bytes(),
@@ -272,6 +274,7 @@ impl Runtime {
             resources,
             pool,
             signer,
+            oidc_issuer: provider.public_base().map(str::to_owned),
         }))
     }
 }

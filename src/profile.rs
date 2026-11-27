@@ -50,20 +50,15 @@ pub(crate) struct Verifier {
 
 impl Verifier {
     pub(crate) fn configured(production: bool) -> Result<Option<Self>, Box<dyn Error>> {
-        let public = config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?;
-        let alg = env::var("JWT_ALGORITHM").unwrap_or_else(|_| {
-            if public.is_some() {
-                "RS256".into()
-            } else {
-                "HS256".into()
-            }
-        });
-        let (alg, key) = match alg.as_str() {
-            "RS256" => {
-                let Some(pem) = public else { return Ok(None) };
+        use crate::config::SigningAlgorithm;
+        let (alg, key) = match config::signing_algorithm()? {
+            SigningAlgorithm::Rs256 => {
+                let Some(pem) = config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")? else {
+                    return Ok(None);
+                };
                 (Algorithm::RS256, DecodingKey::from_rsa_pem(pem.as_bytes())?)
             }
-            "HS256" => {
+            SigningAlgorithm::Hs256 => {
                 let Ok(secret) = env::var("JWT_SECRET_KEY") else {
                     return Ok(None);
                 };
@@ -75,14 +70,8 @@ impl Verifier {
                     DecodingKey::from_secret(secret.as_bytes()),
                 )
             }
-            _ => return Err("unsupported access-token algorithm".into()),
         };
-        let issuer = env::var("OIDC_ISSUER")
-            .ok()
-            .filter(|v| !v.is_empty())
-            .map(|oidc| oidc.trim_end_matches('/').to_owned())
-            .or_else(|| env::var("JWT_ISSUER").ok())
-            .unwrap_or_else(|| "cyberdyne-auth".into());
+        let issuer = crate::config::session_issuer();
         Ok(Some(Self::new(alg, key, &issuer)))
     }
 
