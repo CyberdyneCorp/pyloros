@@ -21,3 +21,13 @@ The service SHALL accept a provider response for an eligible state created on ei
 
 - **WHEN** the return mode is CLI
 - **THEN** issue a short-lived code bound to the stored S256 challenge and return it to the selected loopback port. Create the session only after the CLI redeems that code.
+
+#### Scenario: Reclaim an unverified account
+
+- **WHEN** the provider verifies an address already held by an unverified local account
+- **THEN** link the identity to that account, verify the address, apply domain membership, clear the prior password and enrolled second factor, invalidate recovery codes and revoke existing sessions in the callback transaction.
+
+#### Scenario: Recognize a returning subject
+
+- **WHEN** a linked provider subject returns with a changed email address
+- **THEN** retain its local account and managed wallet. Update an available provider avatar and refuse sign-in if the account is inactive.

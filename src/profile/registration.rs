@@ -198,7 +198,7 @@ async fn needs_dispatcher(tx: &mut Transaction<'_, Postgres>) -> Result<bool, sq
     .await
 }
 
-async fn enqueue_webhooks(
+pub(crate) async fn enqueue_webhooks(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
     now: DateTime<Utc>,

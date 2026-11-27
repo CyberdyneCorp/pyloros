@@ -18,7 +18,7 @@ pub(super) fn owner(row: Option<TokenRow>) -> Result<Uuid, Refusal> {
     }
 }
 
-pub(super) async fn verify_account(
+pub(crate) async fn verify_account(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<Option<AuditSubject>, sqlx::Error> {

@@ -1,5 +1,6 @@
 - [x] Compare callback validation, state lifecycle, provider refusal and audit behavior with the reference.
 - [x] Inspect provider-bound state before exchange and claim it atomically with the caller’s PostgreSQL transaction. Verify rollback, expiry and concurrent consumption.
 - [x] Implement provider exchange and profile resolution for Google, Microsoft and the development provider.
-- [ ] Implement account linking, managed wallet provisioning and session or CLI code issuance.
+- [x] Resolve provider subjects and verified email matches, provision managed wallets, and verify account reclamation and concurrent sign-ins.
+- [ ] Issue browser sessions or CLI codes from the callback with the corresponding audit event.
 - [ ] Verify mixed-backend browser and CLI flows, concurrent completion, rollback, redirect policy changes and inactive-account handling.

@@ -1,6 +1,7 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
 mod edit;
 mod email_verification;
+pub(crate) use email_verification::verify_account;
 mod enrollment;
 mod logout_all;
 pub(crate) mod passkeys;
@@ -8,6 +9,7 @@ pub use passkeys::limit_passkey_body;
 mod password_change;
 mod password_reset;
 mod registration;
+pub(crate) use registration::enqueue_webhooks;
 mod totp;
 mod userinfo;
 use crate::{config, token_authorization};
