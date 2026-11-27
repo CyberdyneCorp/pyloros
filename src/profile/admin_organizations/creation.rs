@@ -2,15 +2,14 @@
 use super::*;
 use crate::profile::admin_fields::trimmed;
 use crate::{grant_response::SessionOrigin, login_http::problem, request_json::fields};
-mod input;
 
-struct NewOrganization {
-    name: String,
-    short_name: Option<String>,
-    domain: Option<String>,
-    github: Option<String>,
-    description: Option<String>,
-    metadata: Value,
+pub(super) struct NewOrganization {
+    pub(super) name: String,
+    pub(super) short_name: Option<String>,
+    pub(super) domain: Option<String>,
+    pub(super) github: Option<String>,
+    pub(super) description: Option<String>,
+    pub(super) metadata: Value,
 }
 
 pub(in crate::profile) async fn create(
@@ -50,7 +49,7 @@ impl NewOrganization {
         origin: SessionOrigin<'_>,
     ) -> Result<Response, sqlx::Error> {
         if let Some(domain) = self.domain.as_deref().filter(|v| !v.is_empty())
-            && taken(&mut tx, "lower(domain_name)=$1", domain).await?
+            && taken(&mut tx, "lower(domain_name)=$1", domain, None).await?
         {
             return Ok(problem(
                 StatusCode::CONFLICT,
@@ -59,7 +58,7 @@ impl NewOrganization {
         }
         let github = normalized(self.github.as_deref());
         if let Some(login) = github.filter(|v| !v.is_empty())
-            && taken(&mut tx, "is_active AND lower(github_login)=$1", login).await?
+            && taken(&mut tx, "is_active AND lower(github_login)=$1", login, None).await?
         {
             return Ok(problem(
                 StatusCode::CONFLICT,
@@ -99,25 +98,30 @@ impl NewOrganization {
     }
 }
 
-async fn taken(
+pub(super) async fn taken(
     tx: &mut Transaction<'_, Postgres>,
     predicate: &'static str,
     value: &str,
+    exclude: Option<Uuid>,
 ) -> Result<bool, sqlx::Error> {
-    // A scalar subquery also detects ambiguous historical case variants.
-    let existing: Option<String> = sqlx::query_scalar(&format!(
-        "SELECT (SELECT extra_metadata::text FROM organizations WHERE {predicate})"
+    let rows = sqlx::query_as::<_, (Uuid, String)>(&format!(
+        "SELECT id,extra_metadata::text FROM organizations WHERE {predicate} LIMIT 2"
     ))
     .bind(value.to_lowercase())
-    .fetch_one(&mut **tx)
+    .fetch_all(&mut **tx)
     .await?;
-    if let Some(metadata) = existing {
-        metadata::strings(&metadata).map_err(|e| sqlx::Error::Decode(e.into()))?;
-        return Ok(true);
+    if rows.len() > 1 {
+        return Err(sqlx::Error::Protocol(
+            "ambiguous organization mapping".into(),
+        ));
+    }
+    if let Some((id, metadata)) = rows.first() {
+        metadata::strings(metadata).map_err(|e| sqlx::Error::Decode(e.into()))?;
+        return Ok(Some(*id) != exclude);
     }
     Ok(false)
 }
 
-fn normalized(value: Option<&str>) -> Option<&str> {
+pub(super) fn normalized(value: Option<&str>) -> Option<&str> {
     value.filter(|v| !v.is_empty()).map(trimmed)
 }

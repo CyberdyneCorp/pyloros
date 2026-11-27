@@ -1,0 +1,2 @@
+- [x] Implement partial updates with directory validation and transactional auditing.
+- [x] Verify client interoperability, rollback, no-op timestamps, reactivation conflicts and concurrent edits.

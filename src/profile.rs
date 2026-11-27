@@ -422,7 +422,9 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/organizations/{org_id}",
-            any(admin_organizations::detail),
+            any(admin_organizations::detail)
+                .patch(admin_organizations::edit)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
             "/api/v1/admin/users/{user_id}/organizations",

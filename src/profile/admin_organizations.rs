@@ -4,10 +4,13 @@ use axum::extract::Path;
 mod addition;
 mod catalog;
 mod creation;
+mod edit;
+mod input;
 mod metadata;
 pub(super) use addition::add;
 pub(super) use catalog::list;
 pub(super) use creation::create;
+pub(super) use edit::edit;
 
 pub(super) async fn memberships(
     State(state): State<Arc<Profile>>,

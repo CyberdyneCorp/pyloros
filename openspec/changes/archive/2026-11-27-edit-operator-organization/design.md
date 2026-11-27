@@ -1,0 +1,1 @@
+Distinguish omitted fields from explicit nulls. Apply metadata patches to the stored map, validate the resulting directory mappings and record the submitted field names. Keep the row change and audit in the same transaction. Compare concurrent edits with the reference, including changes to different columns and changes to the same metadata map.

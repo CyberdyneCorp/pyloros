@@ -1,5 +1,7 @@
 //! Preserve original field values and metadata key order in validation errors.
+use super::creation::NewOrganization;
 use super::*;
+use crate::request_json::fields;
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::value::RawValue;
@@ -14,13 +16,7 @@ const TEXT_FIELDS: &[&str] = &[
 
 pub(super) fn parse(raw: &RawValue) -> Result<NewOrganization, Box<Response>> {
     let submitted = fields::object_fields(raw)?;
-    let mut projection = fields::project(raw, &submitted, TEXT_FIELDS);
-    // A numeric literal outside the native JSON range is still a supplied value.
-    for key in TEXT_FIELDS {
-        if submitted.get(*key).is_some_and(|v| v.get() != "null") && projection[*key].is_null() {
-            projection[*key] = json!(false);
-        }
-    }
+    let projection = project(raw, &submitted, TEXT_FIELDS);
     let mut errors = Vec::new();
     let body =
         admin_fields::object_field(&projection).map_err(|issue| invalid(vec![(issue, raw)]))?;
@@ -41,10 +37,14 @@ pub(super) fn parse(raw: &RawValue) -> Result<NewOrganization, Box<Response>> {
             .unwrap_or(raw);
         errors.push((issue, input));
     }
-    let metadata = metadata(submitted.get("metadata").copied(), &mut errors)?;
+    let mut metadata = metadata(submitted.get("metadata").copied(), &mut errors)?;
     if !errors.is_empty() {
         return Err(invalid(errors));
     }
+    metadata
+        .as_object_mut()
+        .expect("validated map")
+        .retain(|_, v| v.as_str() != Some(""));
     Ok(NewOrganization {
         name: name.expect("validated required name"),
         short_name,
@@ -53,6 +53,112 @@ pub(super) fn parse(raw: &RawValue) -> Result<NewOrganization, Box<Response>> {
         description,
         metadata,
     })
+}
+
+fn project(
+    raw: &RawValue,
+    submitted: &std::collections::HashMap<String, &RawValue>,
+    keys: &[&str],
+) -> Value {
+    let mut projection = fields::project(raw, submitted, keys);
+    // A numeric literal outside the native JSON range is still a supplied value.
+    for key in keys {
+        if submitted.get(*key).is_some_and(|v| v.get() != "null") && projection[*key].is_null() {
+            projection[*key] = json!([]);
+        }
+    }
+    projection
+}
+
+pub(super) fn patch(
+    raw: &RawValue,
+    path: &str,
+) -> Result<(Uuid, serde_json::Map<String, Value>), Box<Response>> {
+    let original_path = serde_json::value::to_raw_value(path).expect("string is JSON");
+    let id = crate::query::path_uuid(path, "org_id");
+    let mut errors = Vec::new();
+    if let Err(issue) = &id {
+        errors.push((issue.clone(), original_path.as_ref()));
+    }
+    let submitted = fields::object_fields(raw)?;
+    let projection = project(
+        raw,
+        &submitted,
+        &[
+            "name",
+            "short_name",
+            "domain_name",
+            "github_login",
+            "description",
+            "active",
+        ],
+    );
+    let body = match admin_fields::object_field(&projection) {
+        Ok(body) => body,
+        Err(issue) => {
+            errors.push((issue, raw));
+            return Err(invalid(errors));
+        }
+    };
+    let mut model = admin_fields::Fields {
+        body,
+        issues: Vec::new(),
+    };
+    let mut patch = text_patch(&mut model);
+    for issue in model.issues.drain(..) {
+        let key = issue["loc"][1].as_str().expect("field name");
+        let input = submitted[key];
+        errors.push((issue, input));
+    }
+    if let Some(value) = submitted.get("metadata") {
+        let map = metadata(Some(value), &mut errors)?;
+        patch.insert(
+            "metadata".into(),
+            if value.get() == "null" {
+                Value::Null
+            } else {
+                map
+            },
+        );
+    }
+    if let Some(input) = body.get("active") {
+        let active = if input.is_null() {
+            Value::Null
+        } else {
+            json!(model.boolean("active"))
+        };
+        patch.insert("active".into(), active);
+        errors.extend(
+            model
+                .issues
+                .into_iter()
+                .map(|issue| (issue, submitted["active"])),
+        );
+    }
+    if !errors.is_empty() {
+        return Err(invalid(errors));
+    }
+    Ok((id.expect("validated UUID"), patch))
+}
+
+fn text_patch(model: &mut admin_fields::Fields<'_>) -> serde_json::Map<String, Value> {
+    let mut patch = serde_json::Map::new();
+    for (key, limit) in [
+        ("name", 200),
+        ("short_name", 64),
+        ("domain_name", 253),
+        ("github_login", 39),
+        ("description", 1024),
+    ] {
+        if let Some(input) = model.body.get(key) {
+            let required = key == "name" && !input.is_null();
+            patch.insert(
+                key.to_owned(),
+                json!(model.string(key, Some(limit), required)),
+            );
+        }
+    }
+    patch
 }
 
 type Issue<'a> = (Value, &'a RawValue);
@@ -101,7 +207,6 @@ fn metadata<'a>(
     {
         errors.push((json!({"type":"value_error","loc":["body","metadata"],"msg":format!("Value error, {message}"),"ctx":{"error":message}}),raw));
     }
-    values.retain(|_, v| !v.is_empty());
     Ok(json!(values))
 }
 
@@ -123,6 +228,28 @@ fn bounds(values: &IndexMap<&str, String>) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overflow_in_the_active_flag_cannot_deactivate_an_organization() {
+        let raw = serde_json::from_str(r#"{"active":1e999}"#).unwrap();
+        let error = patch(raw, &Uuid::new_v4().to_string()).unwrap_err();
+        assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn edits_distinguish_omitted_fields_null_and_metadata_removals() {
+        let raw = serde_json::from_str(
+            r#"{"name":null,"active":null,"short_name":"","metadata":{"retired":""},"extra":10}"#,
+        )
+        .unwrap();
+        let id = Uuid::new_v4();
+        let (target, fields) = patch(raw, &id.to_string()).unwrap();
+        assert_eq!(target, id);
+        assert_eq!(
+            Value::Object(fields),
+            json!({"name":null,"active":null,"short_name":"","metadata":{"retired":""}})
+        );
+    }
 
     #[tokio::test]
     async fn invalid_metadata_values_keep_submission_order_and_exact_integers() {

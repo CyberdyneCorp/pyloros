@@ -14,10 +14,8 @@ pub(super) fn strings(input: &str) -> serde_json::Result<Value> {
             }
         }
         b'[' => {
-            let entries: Vec<&RawValue> = serde_json::from_str(raw.get())?;
-            for entry in entries {
-                let (key, value) = legacy_pair(entry)?;
-                projected.insert(key, Value::String(value));
+            for entry in legacy_entries(raw)? {
+                projected.insert(entry.display_key, Value::String(display(&entry.value)?));
             }
         }
         _ if matches!(raw.get(), "null" | "false" | "\"\"")
@@ -31,21 +29,89 @@ fn invalid_metadata() -> serde_json::Error {
     serde::de::Error::custom("invalid organization metadata")
 }
 
-fn legacy_pair(entry: &RawValue) -> serde_json::Result<(String, String)> {
-    match entry.get().as_bytes()[0] {
+// Writing an old list of pairs back to JSONB preserves the value types.
+// Displaying the same map converts values to strings instead.
+pub(super) fn stored_object(input: &str) -> serde_json::Result<String> {
+    if !input.starts_with('[') {
+        return Ok("{}".into());
+    }
+    let entries = legacy_entries(serde_json::from_str(input)?)?;
+    let fields: BTreeMap<_, _> = entries
+        .into_iter()
+        .map(|entry| (entry.json_key, entry.value))
+        .collect();
+    serde_json::to_string(&fields)
+}
+
+struct Entry {
+    json_key: String,
+    display_key: String,
+    value: Box<RawValue>,
+}
+
+fn legacy_entries(raw: &RawValue) -> serde_json::Result<Vec<Entry>> {
+    let pairs: Vec<&RawValue> = serde_json::from_str(raw.get())?;
+    let mut entries = indexmap::IndexMap::new();
+    for pair in pairs {
+        let (key, value) = legacy_pair(pair)?;
+        let rendered = display(&key)?;
+        let (identity, json_key) = key_identity(&key, &rendered);
+        // Equivalent numeric keys overwrite the value and keep the first key.
+        entries
+            .entry(identity)
+            .and_modify(|entry: &mut Entry| entry.value = value.clone())
+            .or_insert(Entry {
+                json_key,
+                display_key: rendered,
+                value,
+            });
+    }
+    Ok(entries.into_values().collect())
+}
+
+fn key_identity(key: &RawValue, rendered: &str) -> ((char, String), String) {
+    let text = key.get();
+    let (kind, id) = match text {
+        "true" => ('n', "1".into()),
+        "false" => ('n', "0".into()),
+        "null" => ('z', String::new()),
+        _ if text.starts_with('"') => ('s', rendered.to_owned()),
+        _ if text.contains(['.', 'e', 'E']) => {
+            let n = text.parse::<f64>().expect("JSON number");
+            let identity = if n == 0.0 {
+                "0".into()
+            } else if n.fract() == 0.0 {
+                format!("{n:.0}")
+            } else {
+                rendered.to_owned()
+            };
+            ('n', identity)
+        }
+        _ => ('n', text.to_owned()),
+    };
+    let json_key = if matches!(text, "true" | "false" | "null") {
+        text
+    } else {
+        rendered
+    };
+    ((kind, id), json_key.to_owned())
+}
+
+fn legacy_pair(entry: &RawValue) -> serde_json::Result<(Box<RawValue>, Box<RawValue>)> {
+    let pair = match entry.get().as_bytes()[0] {
         b'[' => {
             let [key, value]: [&RawValue; 2] = serde_json::from_str(entry.get())?;
             if key.get().starts_with(['[', '{']) {
                 return Err(invalid_metadata());
             }
-            Ok((display(key)?, display(value)?))
+            return Ok((key.to_owned(), value.to_owned()));
         }
         b'"' => {
             let word: String = serde_json::from_str(entry.get())?;
             let mut chars = word.chars();
             match (chars.next(), chars.next(), chars.next()) {
-                (Some(key), Some(value), None) => Ok((key.to_string(), value.to_string())),
-                _ => Err(invalid_metadata()),
+                (Some(key), Some(value), None) => (key.to_string(), value.to_string()),
+                _ => return Err(invalid_metadata()),
             }
         }
         b'{' => {
@@ -58,10 +124,14 @@ fn legacy_pair(entry: &RawValue) -> serde_json::Result<(String, String)> {
             if key.len() > value.len() {
                 std::mem::swap(&mut key, &mut value);
             }
-            Ok((key, value))
+            (key, value)
         }
-        _ => Err(invalid_metadata()),
-    }
+        _ => return Err(invalid_metadata()),
+    };
+    Ok((
+        serde_json::value::to_raw_value(&pair.0)?,
+        serde_json::value::to_raw_value(&pair.1)?,
+    ))
 }
 
 fn display(value: &RawValue) -> serde_json::Result<String> {
@@ -127,6 +197,19 @@ fn literal(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pair_keys_keep_the_first_equivalent_numeric_key_and_the_last_value() {
+        let input = r#"[[1,"old"],[true,42],[null,["nested",false]]]"#;
+        assert_eq!(
+            stored_object(input).unwrap(),
+            r#"{"1":42,"null":["nested",false]}"#
+        );
+        assert_eq!(
+            strings(input).unwrap(),
+            serde_json::json!({"1":"42","None":"['nested', False]"})
+        );
+    }
 
     #[test]
     fn historical_pairs_and_empty_values_project_to_a_directory_map() {
