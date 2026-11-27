@@ -37,16 +37,7 @@ pub(super) async fn handle(
 async fn read(state: &Profile, id: &Identity) -> Result<Response, sqlx::Error> {
     if state.enforce {
         let mut tx = state.pool.begin().await?;
-        // Loading the account for the revocation check also decodes its stored metadata.
-        let metadata: Option<String> =
-            sqlx::query_scalar("SELECT extra_metadata::text FROM users WHERE id=$1")
-                .bind(id.user)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if let Some(metadata) = metadata {
-            administrator::validate_metadata(&metadata)?;
-        }
-        if revoked(&mut tx, id).await? {
+        if account_revoked(&mut tx, id).await? {
             return Ok(unauthorized());
         }
     }

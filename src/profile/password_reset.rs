@@ -305,6 +305,7 @@ mod tests {
             registration: registration::Settings::configured().unwrap(),
             wallet_export: wallet_export::Settings::configured().unwrap(),
             erasure: erasure::Settings::configured().unwrap(),
+            export_quota: subject_export::quota(),
             account_mail: crate::email_delivery::ConfirmationMailer::mock(),
             reset_quota: crate::login_throttle::LoginThrottle::new(0),
             scheme: crate::passwords::PasswordScheme::Bcrypt,

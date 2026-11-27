@@ -1,8 +1,8 @@
 //! Erase an account and its linked personal data in a single transaction.
 mod activity;
-mod identifiers;
 mod records;
 mod report;
+use super::subject_identifiers::Identifiers;
 use super::*;
 use crate::{
     grant_audit::{AuditActivity, AuditSubject, write_activity},
@@ -11,7 +11,6 @@ use crate::{
     token_http::{client_ip, header as value},
 };
 use axum::extract::Path;
-use identifiers::Identifiers;
 use report::Counts;
 pub(super) use report::Settings;
 

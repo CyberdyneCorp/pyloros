@@ -187,6 +187,10 @@ pub(crate) enum AuditActivity<'a> {
         operator: Uuid,
         sessions: u64,
     },
+    SubjectExport {
+        operator: Option<Uuid>,
+        counts: Value,
+    },
     AccountErased {
         operator: Uuid,
         totals: Value,
@@ -460,6 +464,15 @@ fn classify(activity: AuditActivity<'_>) -> Classification<'_> {
             None,
             json!({"sessions_revoked":sessions}),
         ),
+        AuditActivity::SubjectExport { counts, .. } => (
+            "account_lifecycle",
+            "subject_export",
+            None,
+            "",
+            "success",
+            None,
+            counts,
+        ),
         AuditActivity::AccountErased { totals, .. } => (
             "account_lifecycle",
             "user_delete",
@@ -687,6 +700,7 @@ pub(crate) async fn write_activity<'e>(
         organization,
     } = subject;
     let operator = match &activity {
+        AuditActivity::SubjectExport { operator, .. } => *operator,
         AuditActivity::SessionRevoked { operator, .. }
         | AuditActivity::AdminPasswordReset { operator, .. }
         | AuditActivity::AccountErased { operator, .. }

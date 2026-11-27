@@ -14,6 +14,8 @@ struct Processor {
 pub(in crate::profile) struct Settings {
     retained: BTreeMap<String, String>,
     processors: Vec<Processor>,
+    #[serde(default)]
+    export_notes: BTreeMap<String, String>,
     #[serde(skip)]
     enabled: Vec<&'static str>,
 }
@@ -75,7 +77,14 @@ impl Settings {
         Ok(settings)
     }
 
-    pub(super) fn render(&self, counts: &Counts) -> Value {
+    pub(in crate::profile) fn export_note(&self, table: &str) -> Option<&str> {
+        self.export_notes.get(table).or_else(|| self.retained.get(table)).map(String::as_str).or(match table {
+            "auth_events" => Some("Authentication records are retained with personal identifiers removed on erasure."),
+            "iam_identities" => Some("Identity records remain after personal identifiers are removed."),
+            _ => None,
+        })
+    }
+    pub(in crate::profile) fn processors(&self, touched: impl Fn(&str) -> bool) -> Value {
         let billing = [
             ("stripe_customers", "Stripe"),
             ("apple_transactions", "Apple App Store"),
@@ -83,12 +92,16 @@ impl Settings {
         ];
         let names = billing
             .iter()
-            .filter(|(t, _)| counts.deleted.contains_key(*t))
+            .filter(|(t, _)| touched(t))
             .map(|(_, p)| *p)
             .chain(self.enabled.iter().copied());
         let processors: Vec<_> = names
             .filter_map(|name| self.processors.iter().find(|p| p.name == name))
             .collect();
+        json!(processors)
+    }
+    pub(super) fn render(&self, counts: &Counts) -> Value {
+        let processors = self.processors(|t| counts.deleted.contains_key(t));
         json!({"deleted":counts.deleted,"pseudonymised":counts.rewritten,"retained":self.retained,"processors":processors})
     }
     pub(super) fn totals(&self, counts: &Counts, sessions: u64) -> Value {

@@ -28,6 +28,8 @@ mod erasure;
 mod org_directory;
 mod registries;
 mod store_products;
+mod subject_export;
+mod subject_identifiers;
 pub(crate) use email_verification::verify_account;
 mod enrollment;
 mod logout_all;
@@ -224,6 +226,19 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
         .bind(id.user).bind(id.iat).bind(id.jti).bind(id.sid).fetch_one(&mut **tx).await
 }
 
+async fn account_revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> sqlx::Result<bool> {
+    // Loading the account for the revocation check also decodes its stored metadata.
+    let metadata: Option<String> =
+        sqlx::query_scalar("SELECT extra_metadata::text FROM users WHERE id=$1")
+            .bind(id.user)
+            .fetch_optional(&mut **tx)
+            .await?;
+    if let Some(metadata) = metadata {
+        administrator::validate_metadata(&metadata)?;
+    }
+    revoked(tx, id).await
+}
+
 async fn recent(
     tx: &mut Transaction<'_, Postgres>,
     id: &Identity,
@@ -267,6 +282,7 @@ struct Profile {
     wallet_export: wallet_export::Settings,
     wallet_challenges: wallet_challenge::issue::Settings,
     erasure: erasure::Settings,
+    export_quota: crate::login_throttle::LoginThrottle,
     account_mail: crate::email_delivery::ConfirmationMailer,
     reset_quota: crate::login_throttle::LoginThrottle,
     scheme: crate::passwords::PasswordScheme,
@@ -371,6 +387,7 @@ fn build_routes(
         wallet_export: wallet_export::Settings::configured()?,
         wallet_challenges: wallet_challenge::issue::Settings::configured()?,
         erasure: erasure::Settings::configured()?,
+        export_quota: subject_export::quota(),
         account_mail: crate::email_delivery::ConfirmationMailer::configured()?,
         reset_quota: crate::login_throttle::LoginThrottle::with_window(
             env::var("RATELIMIT_RESET_PER_HOUR").map_or(Ok(5), |s| s.parse())?,
@@ -399,6 +416,7 @@ fn build_routes(
         .merge(entitlement_reports::routes())
         .merge(audit_directory::routes())
         .merge(project_usage::routes())
+        .merge(subject_export::routes())
         .merge(store_products::routes())
         .route("/api/v1/orgs/{org_id}/members", any(org_directory::read))
         .route(

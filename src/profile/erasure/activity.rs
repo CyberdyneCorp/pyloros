@@ -56,29 +56,8 @@ pub(super) async fn rewrite(
         }
     }
 }
-fn is_subject(event: &Value, key: &str, ids: &Identifiers) -> bool {
-    let id = event["subject_identifier"].as_str().unwrap_or("");
-    if event["subject_user_id"] == key
-        || id == key
-        || event["subject_email"]
-            .as_str()
-            .is_some_and(|s| ids.emails.contains(&s.to_lowercase()))
-    {
-        return true;
-    }
-    match event["subject_format"].as_str() {
-        Some("iss_sub") => ids.social.contains(&(
-            event["subject_issuer"].as_str().unwrap_or("").to_owned(),
-            id.to_owned(),
-        )),
-        Some("did") => ids
-            .wallets
-            .contains(&id.rsplit(':').next().unwrap_or("").to_lowercase()),
-        _ => false,
-    }
-}
 fn redact(event: &mut Value, key: &str, ids: &Identifiers, needles: &[String]) {
-    let about = is_subject(event, key, ids);
+    let about = subject_identifiers::is_subject(event, key, ids);
     if event["actor_user_id"] == key
         || (about && event["actor_type"] == "user" && event["actor_user_id"].is_null())
     {

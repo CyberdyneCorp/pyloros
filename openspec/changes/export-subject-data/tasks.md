@@ -1,0 +1,5 @@
+- [x] Verify subject identifier collection for historical identity metadata.
+- [x] Implement bounded section reads, field projection, event redaction and processor reporting.
+- [x] Wire both endpoints with download headers, audit records and self-service throttling.
+- [x] Compare client workflows, authorization, redaction, truncation and transaction failures on both services.
+- [ ] Resolve the HTTP response when PostgreSQL defers audit rejection until commit.
