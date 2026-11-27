@@ -1,0 +1,2 @@
+- [x] Implement authenticated read-only verification of row content and chain links.
+- [x] Exercise both peers with intact, modified, truncated, forked and historical records and the existing client.

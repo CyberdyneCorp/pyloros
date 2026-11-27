@@ -9,9 +9,31 @@ use sqlx::{Postgres, Transaction};
 use std::fmt::Write;
 use uuid::Uuid;
 
-fn sorted_digest(value: &impl serde::Serialize) -> Result<String, serde_json::Error> {
-    let encoded = serde_json::to_string(value)?;
-    Ok(format!("{:x}", Sha256::digest(ascii(&encoded))))
+mod canonical;
+pub(crate) use canonical::compact_metadata;
+use canonical::sorted_digest;
+
+#[derive(serde::Serialize)]
+pub(crate) struct Record<'a, T: ?Sized> {
+    pub(crate) action: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) actor_client_id: Option<&'a str>,
+    pub(crate) actor_email: Option<&'a str>,
+    pub(crate) actor_user_id: Option<Uuid>,
+    pub(crate) created_at: String,
+    pub(crate) id: Uuid,
+    pub(crate) ip_address: Option<&'a str>,
+    pub(crate) metadata: &'a T,
+    pub(crate) prev_hash: &'a str,
+    pub(crate) target_id: Option<&'a str>,
+    pub(crate) target_type: Option<&'a str>,
+    pub(crate) user_agent: Option<&'a str>,
+}
+
+impl<T: serde::Serialize + ?Sized> Record<'_, T> {
+    pub(crate) fn digest(&self) -> Result<String, serde_json::Error> {
+        sorted_digest(self)
+    }
 }
 
 pub(crate) fn ascii_json(value: &Value) -> String {
@@ -122,22 +144,6 @@ pub(crate) async fn append_sorted_record<T: serde::Serialize + Sync>(
         ),
         Actor::Client(client) => ("client", None, None, Some(client)),
     };
-    #[derive(serde::Serialize)]
-    struct Record<'a, T> {
-        action: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        actor_client_id: Option<&'a str>,
-        actor_email: Option<&'a str>,
-        actor_user_id: Option<Uuid>,
-        created_at: String,
-        id: Uuid,
-        ip_address: Option<&'a str>,
-        metadata: &'a T,
-        prev_hash: &'a str,
-        target_id: Option<&'a str>,
-        target_type: Option<&'a str>,
-        user_agent: Option<&'a str>,
-    }
     let record = Record {
         action,
         actor_client_id,
@@ -152,7 +158,9 @@ pub(crate) async fn append_sorted_record<T: serde::Serialize + Sync>(
         target_type,
         user_agent: origin.user_agent,
     };
-    let digest = sorted_digest(&record).map_err(|err| sqlx::Error::Encode(err.into()))?;
+    let digest = record
+        .digest()
+        .map_err(|err| sqlx::Error::Encode(err.into()))?;
     sqlx::query(
         "INSERT INTO admin_action_logs (id,action,target_type,target_id,extra_metadata,ip_address,user_agent,created_at,prev_hash,row_hash,actor_user_id,actor_email,actor_type,actor_client_id)
          VALUES ($1,$2,$12,$3,$4,$5::text::inet,$6,$7,$8,$9,$10,$11,$13,$14)",

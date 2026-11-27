@@ -5,8 +5,12 @@ use serde::Serialize;
 use serde_json::value::RawValue;
 use sqlx::{QueryBuilder, Row, postgres::PgRow};
 
+mod verify;
+
 pub(super) fn routes() -> Router<Arc<Profile>> {
-    Router::new().route("/api/v1/admin/audit", any(list))
+    Router::new()
+        .route("/api/v1/admin/audit", any(list))
+        .route("/api/v1/admin/audit/verify", any(verify::read))
 }
 
 async fn list(

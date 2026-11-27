@@ -1,0 +1,1 @@
+Use one database snapshot for the report. Check content hashes before validating links. A retained history can start at any prior digest after older records expire. Preserve the canonical encoding of timestamps, delegated actors and metadata in existing records.

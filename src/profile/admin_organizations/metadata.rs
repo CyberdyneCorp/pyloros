@@ -14,7 +14,7 @@ pub(super) fn strings(input: &str) -> serde_json::Result<Value> {
             }
         }
         b'[' => {
-            for entry in legacy_entries(raw)? {
+            for entry in legacy_entries(raw)?.into_values() {
                 projected.insert(entry.display_key, Value::String(display(&entry.value)?));
             }
         }
@@ -50,7 +50,7 @@ fn stored_object(input: &str) -> serde_json::Result<String> {
     }
     let entries = legacy_entries(serde_json::from_str(input)?)?;
     let fields: BTreeMap<_, _> = entries
-        .into_iter()
+        .into_values()
         .map(|entry| (entry.json_key, entry.value))
         .collect();
     serde_json::to_string(&fields)
@@ -62,7 +62,73 @@ struct Entry {
     value: Box<RawValue>,
 }
 
-fn legacy_entries(raw: &RawValue) -> serde_json::Result<Vec<Entry>> {
+// Historical pair lists can contain non-string keys. Their original types determine
+// comparison order before JSON encodes the keys as strings.
+pub(crate) fn audit_object(raw: &str) -> sqlx::Result<Option<String>> {
+    if !raw.starts_with('[') {
+        return normalized_storage(raw);
+    }
+    let mut fields = serde_json::from_str(raw)
+        .and_then(legacy_entries)
+        .map_err(|e| sqlx::Error::Decode(e.into()))?;
+    if let Some(((kind, _), _)) = fields.first()
+        && fields.keys().any(|(k, _)| k != kind)
+    {
+        return Err(sqlx::Error::Decode(
+            "incomparable audit metadata keys".into(),
+        ));
+    }
+    fields.sort_by(|(kind, a), _, (_, b), _| {
+        if *kind == 'n' {
+            compare_numbers(a, b)
+        } else {
+            a.cmp(b)
+        }
+    });
+    let values: indexmap::IndexMap<_, _> = fields
+        .into_iter()
+        .map(|((kind, _), f)| {
+            let key = match (kind, f.json_key.as_str()) {
+                ('n', "inf") => "Infinity".into(),
+                ('n', "-inf") => "-Infinity".into(),
+                _ => f.json_key,
+            };
+            (key, f.value)
+        })
+        .collect();
+    serde_json::to_string(&values)
+        .map(Some)
+        .map_err(|e| sqlx::Error::Encode(e.into()))
+}
+
+fn compare_numbers(a: &str, b: &str) -> std::cmp::Ordering {
+    // Fractional binary64 values and exact integers can only tie after conversion
+    // at integral magnitudes. Break those ties with the exact decimal digits.
+    let order = a
+        .parse::<f64>()
+        .expect("numeric key")
+        .total_cmp(&b.parse::<f64>().expect("numeric key"));
+    if !order.is_eq() {
+        return order;
+    }
+    let magnitude = |v: &str| {
+        if v == "inf" || v == "-inf" {
+            usize::MAX
+        } else {
+            v.len()
+        }
+    };
+    let exact = magnitude(a).cmp(&magnitude(b)).then_with(|| a.cmp(b));
+    if a.starts_with('-') {
+        exact.reverse()
+    } else {
+        exact
+    }
+}
+
+type Entries = indexmap::IndexMap<(char, String), Entry>;
+
+fn legacy_entries(raw: &RawValue) -> serde_json::Result<Entries> {
     let pairs: Vec<&RawValue> = serde_json::from_str(raw.get())?;
     let mut entries = indexmap::IndexMap::new();
     for pair in pairs {
@@ -79,7 +145,7 @@ fn legacy_entries(raw: &RawValue) -> serde_json::Result<Vec<Entry>> {
                 value,
             });
     }
-    Ok(entries.into_values().collect())
+    Ok(entries)
 }
 
 fn key_identity(key: &RawValue, rendered: &str) -> ((char, String), String) {
