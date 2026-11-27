@@ -1,0 +1,4 @@
+- [x] Implement operator reset, validation and audit writes.
+- [x] Compare HTTP errors, login, session behavior, concurrency and rollback.
+- [x] Exercise the unchanged operator console and CLI.
+- [ ] Resolve the bcrypt compatibility gate for deployments whose existing password provider fails initialization.

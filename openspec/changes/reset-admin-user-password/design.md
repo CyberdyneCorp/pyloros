@@ -1,0 +1,1 @@
+Apply the administrative request parser, operator authorization and password policy. Use the configured password hasher. Commit the new hash, credential cutoff, session revocations and both audit records in one transaction. Report the number of newly revoked sessions in account activity.
