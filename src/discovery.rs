@@ -13,7 +13,9 @@ use sha2::{Digest, Sha256};
 use url::Url;
 
 type ConfigError = Box<dyn Error>;
-type Document = Result<Json<Value>, axum::response::Response>;
+type Document = Result<Json<Value>, Disabled>;
+
+struct Disabled;
 
 pub struct Provider {
     metadata: Value,
@@ -303,19 +305,21 @@ impl ScopePublisher {
 
 type ProviderState = Option<Arc<Provider>>;
 
-fn disabled() -> axum::response::Response {
-    crate::login_http::problem(StatusCode::NOT_FOUND, "OIDC disabled")
+impl axum::response::IntoResponse for Disabled {
+    fn into_response(self) -> axum::response::Response {
+        crate::login_http::problem(StatusCode::NOT_FOUND, "OIDC disabled")
+    }
 }
 
 async fn metadata(State(provider): State<ProviderState>) -> Document {
-    let issuer = provider.as_ref().ok_or_else(disabled)?;
+    let issuer = provider.as_ref().ok_or(Disabled)?;
     let mut document = issuer.metadata.clone();
     document["scopes_supported"] = json!(issuer.scopes.borrow().keys().collect::<Vec<_>>());
     Ok(Json(document))
 }
 
 async fn keys(State(provider): State<ProviderState>) -> Document {
-    Ok(Json(provider.as_ref().ok_or_else(disabled)?.keys.clone()))
+    Ok(Json(provider.as_ref().ok_or(Disabled)?.keys.clone()))
 }
 
 pub fn routes(provider: Option<Provider>) -> Router {

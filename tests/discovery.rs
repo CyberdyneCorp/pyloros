@@ -13,6 +13,7 @@ async fn get(app: &Router, path: &str) -> (u16, Value) {
         .oneshot(Request::get(path).body(Body::empty()).unwrap())
         .await
         .unwrap();
+    assert_eq!(response.headers()["content-type"], "application/json");
     let status = response.status().as_u16();
     let body = to_bytes(response.into_body(), 16384).await.unwrap();
     (status, serde_json::from_slice(&body).unwrap())
