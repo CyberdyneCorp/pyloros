@@ -1,5 +1,6 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
 mod edit;
+mod enrollment;
 mod logout_all;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
@@ -147,6 +148,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     };
     Ok(Router::new()
         .route("/api/v1/users/me", any(current))
+        .route("/api/v1/auth/mfa/status", any(enrollment::handle))
         .route("/api/v1/auth/logout-all", any(logout_all::handle))
         .route("/api/v1/users/me/entitlements", any(entitlements))
         .with_state(Arc::new(state)))
@@ -163,6 +165,7 @@ fn unauthorized() -> Response {
 }
 
 enum View {
+    Enrollment,
     Profile,
     Entitlements,
 }
@@ -194,6 +197,9 @@ async fn serve(state: &Profile, method: Method, headers: &HeaderMap, view: View)
     let Some(id) = credential(headers).and_then(|raw| state.verify.as_ref()?.read(raw)) else {
         return unauthorized();
     };
+    if matches!(view, View::Enrollment) && id.client_bound {
+        return unauthorized();
+    }
     match load(state, &id, view).await {
         Ok(result) => result,
         Err(_) => internal(),
@@ -212,6 +218,9 @@ async fn load(state: &Profile, id: &Identity, view: View) -> Result<Response, sq
     let mut tx = state.pool.begin().await?;
     if state.enforce && revoked(&mut tx, id).await? {
         return Ok(unauthorized());
+    }
+    if matches!(view, View::Enrollment) {
+        return enrollment::read(&mut tx, id.user).await;
     }
     if matches!(view, View::Entitlements) {
         let tokens =
