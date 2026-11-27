@@ -1,0 +1,2 @@
+- [x] Implement bearer verification, revocation and account projection.
+- [x] Compare HTTP success and refusal behavior across deployments.

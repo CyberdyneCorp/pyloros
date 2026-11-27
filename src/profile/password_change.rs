@@ -224,6 +224,7 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
+            oidc_enabled: false,
             registration: registration::Settings::configured().unwrap(),
             account_mail: crate::email_delivery::ConfirmationMailer::mock(),
             reset_quota: crate::login_throttle::LoginThrottle::new(0),

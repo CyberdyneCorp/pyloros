@@ -1,0 +1,1 @@
+Verify bearer credentials using the deployment verification key independently of token signing. Resolve the active account using the verified subject. Use the shared ID-token profile field mapping to preserve fallback behavior. Match the existing UserInfo claim disclosure contract, including client-bound user credentials.

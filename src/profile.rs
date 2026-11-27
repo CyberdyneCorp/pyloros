@@ -7,6 +7,7 @@ mod password_change;
 mod password_reset;
 mod registration;
 mod totp;
+mod userinfo;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
 use axum::{
@@ -136,12 +137,18 @@ impl Verifier {
 
 impl Claims {
     fn identity(&self) -> Option<Identity> {
-        if self.kind != "access"
-            || self
-                .client_id
-                .as_ref()
-                .is_some_and(|id| id.starts_with("dcr_"))
+        if self
+            .client_id
+            .as_ref()
+            .is_some_and(|id| id.starts_with("dcr_"))
         {
+            return None;
+        }
+        self.user_identity()
+    }
+
+    fn user_identity(&self) -> Option<Identity> {
+        if self.kind != "access" {
             return None;
         }
         Some(Identity {
@@ -188,6 +195,7 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
 }
 
 struct Profile {
+    oidc_enabled: bool,
     registration: registration::Settings,
     account_mail: crate::email_delivery::ConfirmationMailer,
     reset_quota: crate::login_throttle::LoginThrottle,
@@ -205,6 +213,7 @@ struct Profile {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        oidc_enabled: config::flag("OIDC_ENABLED")?,
         registration: registration::Settings::configured()?,
         account_mail: crate::email_delivery::ConfirmationMailer::configured()?,
         reset_quota: crate::login_throttle::LoginThrottle::with_window(
@@ -230,6 +239,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         production,
     };
     Ok(Router::new()
+        .route("/api/v1/auth/oauth2/userinfo", any(userinfo::handle))
         .route("/api/v1/auth/register", any(registration::handle))
         .route("/api/v1/users/me", any(current))
         .route("/api/v1/auth/verify-email", any(email_verification::handle))

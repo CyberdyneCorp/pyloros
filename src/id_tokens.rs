@@ -58,6 +58,18 @@ fn has_value(value: &Value) -> bool {
     }
 }
 
+pub(crate) fn profile_fields(doc: &mut Value, metadata: &Value) {
+    for (claim, fallback) in [("name", "full_name"), ("picture", "avatar_url")] {
+        if let Some(value) = [claim, fallback]
+            .into_iter()
+            .filter_map(|k| metadata.get(k))
+            .find(|v| has_value(v))
+        {
+            doc[claim] = value.clone();
+        }
+    }
+}
+
 pub(crate) fn authentication_fields(doc: &mut Value, grant: &crate::authorization_codes::Grant) {
     if let Some(time) = grant.auth_time {
         doc["auth_time"] = json!(time.timestamp());
@@ -115,15 +127,7 @@ impl GrantSessionIssuer {
             }
             if scopes.contains("profile") {
                 let metadata: Value = row.try_get("extra_metadata")?;
-                for (claim, fallback) in [("name", "full_name"), ("picture", "avatar_url")] {
-                    if let Some(value) = [claim, fallback]
-                        .into_iter()
-                        .filter_map(|k| metadata.get(k))
-                        .find(|v| has_value(v))
-                    {
-                        doc[claim] = value.clone();
-                    }
-                }
+                profile_fields(&mut doc, &metadata);
             }
         }
         if scopes.contains("roles")
