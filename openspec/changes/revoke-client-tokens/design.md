@@ -1,1 +1,5 @@
 Authenticate the calling OAuth client using its registered client type and active credentials. Apply the client and address quotas before processing tokens. Verify the token and determine its owner, using the refresh record for refresh tokens. Commit the revocation and its successful audit event together. Public responses must preserve token privacy across clients.
+
+A missing token is rejected before client authentication. An unknown token from an authenticated client gets an empty success response. Client errors, token errors and empty successes all carry cache prevention headers. The retry budget for unrecognized client identifiers is shared by address. When a recognized client exhausts its budget, record its refusal; exhaustion of the unidentified budget produces no additional audit row.
+
+An access or service token revocation inserts its identifier once and preserves the original expiration. A refresh token takes its client association from the stored refresh record. Revoke the session and its outstanding refresh tokens together. A correctly signed ID token remains an unsupported token type even after its expiration.
