@@ -77,6 +77,8 @@ impl Policy {
             || matches!(
                 req.uri().path(),
                 "/api/v1/auth/login"
+                    | "/api/v1/auth/password/reset-request"
+                    | "/api/v1/auth/password/reset-confirm"
                     | "/api/v1/auth/refresh"
                     | "/api/v1/auth/logout"
                     | "/api/v1/auth/oauth2/token"
@@ -146,6 +148,22 @@ mod tests {
         );
         updates.send_replace(BTreeSet::new());
         assert_eq!(policy.refusal(&req), Some("Origin not allowed"));
+    }
+
+    #[test]
+    fn recovery_with_stale_session_cookies_requires_only_the_reset_credential() {
+        let policy = Policy::new(watch::channel(BTreeSet::new()).1, "csrf".into());
+        let origin = "http://api.example.test";
+        for path in [
+            "/api/v1/auth/password/reset-request",
+            "/api/v1/auth/password/reset-confirm",
+        ] {
+            assert_eq!(policy.refusal(&request(path, origin, "")), None);
+        }
+        assert_eq!(
+            policy.refusal(&request("/api/v1/auth/password/change", origin, "")),
+            Some("CSRF token missing or invalid")
+        );
     }
 
     #[test]

@@ -29,20 +29,50 @@ fn string<'a>(body: &'a Value, field: &str, errors: &mut Vec<Value>) -> Option<&
     }
 }
 
+fn check_dots_and_hyphens(local: &str, domain: &str) -> Result<(), &'static str> {
+    if local.starts_with('.') {
+        return Err("An email address cannot start with a period.");
+    }
+    if local.ends_with('.') {
+        return Err("An email address cannot have a period immediately before the @-sign.");
+    }
+    if domain.starts_with('.') {
+        return Err("An email address cannot have a period immediately after the @-sign.");
+    }
+    if domain.starts_with('-') {
+        return Err("An email address cannot have a hyphen immediately after the @-sign.");
+    }
+    if domain.ends_with('-') {
+        return Err("An email address cannot end with a hyphen.");
+    }
+    if domain.contains("-.") || domain.contains(".-") {
+        return Err("An email address cannot have a period and a hyphen next to each other.");
+    }
+    if local.contains("..") || domain.contains("..") {
+        return Err("An email address cannot have two periods in a row.");
+    }
+    Ok(())
+}
+
 fn address(raw: &str) -> Result<String, &'static str> {
     let raw = raw.trim();
-    let (_, domain) = raw
+    let addr = raw
+        .strip_suffix('>')
+        .and_then(|display| display.rsplit_once('<'))
+        .map_or(raw, |(_, email)| email.trim());
+    let (local, domain) = addr
         .rsplit_once('@')
         .ok_or("An email address must have an @-sign.")?;
     if domain.is_empty() {
         return Err("There must be something after the @-sign.");
     }
-    if raw.starts_with('@') {
+    if local.is_empty() {
         return Err("There must be something before the @-sign.");
     }
-    if raw.ends_with('.') {
+    if domain.ends_with('.') {
         return Err("An email address cannot end with a period.");
     }
+    check_dots_and_hyphens(local, domain)?;
     let mailbox = raw
         .parse::<lettre::message::Mailbox>()
         .map_err(|_| "The email address is not valid.")?;
@@ -63,7 +93,7 @@ fn address(raw: &str) -> Result<String, &'static str> {
     Ok(format!("{}@{domain}", mailbox.email.user()))
 }
 
-pub(super) fn credentials(body: &Value) -> Result<(String, String), Vec<Value>> {
+pub(crate) fn email_field(body: &Value) -> Result<String, Vec<Value>> {
     let mut errors = Vec::new();
     let raw = string(body, "email", &mut errors);
     let email = raw.map(address).transpose();
@@ -77,8 +107,16 @@ pub(super) fn credentials(body: &Value) -> Result<(String, String), Vec<Value>> 
         error["ctx"] = json!({"reason":reason});
         errors.push(error);
     }
+    email.ok().flatten().ok_or(errors)
+}
+
+pub(super) fn credentials(body: &Value) -> Result<(String, String), Vec<Value>> {
+    let (email, mut errors) = match email_field(body) {
+        Ok(email) => (Some(email), Vec::new()),
+        Err(issues) => (None, issues),
+    };
     let password = string(body, "password", &mut errors);
-    match (email.ok().flatten(), password) {
+    match (email, password) {
         (Some(email), Some(password)) if errors.is_empty() => Ok((email, password.into())),
         _ => Err(errors),
     }
@@ -155,6 +193,19 @@ pub(super) async fn read<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn malformed_email_diagnostics_apply_to_the_address_inside_a_display_name() {
+        assert_eq!(
+            address("A <a..b@example.com>"),
+            Err("An email address cannot have two periods in a row.")
+        );
+        assert_eq!(
+            address("a@-example.com"),
+            Err("An email address cannot have a hyphen immediately after the @-sign.")
+        );
+        assert_eq!(address("A..B <a@example.com>").unwrap(), "a@example.com");
+    }
 
     #[tokio::test]
     async fn invalid_json_returns_a_validation_response_to_the_http_handler() {

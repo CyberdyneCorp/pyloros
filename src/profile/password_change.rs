@@ -36,13 +36,13 @@ fn is_password_symbol(c: char) -> bool {
     !(word || c == '_' || c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
 }
 
-fn fields(body: Value) -> Result<(String, String), Vec<Value>> {
+pub(super) fn fields(body: Value, proof_field: &str) -> Result<(String, String), Vec<Value>> {
     if !body.is_object() {
         return Err(vec![
-            token_field(body, "current_password", 0, usize::MAX).unwrap_err(),
+            token_field(body, proof_field, 0, usize::MAX).unwrap_err(),
         ]);
     }
-    let current = token_field(body.clone(), "current_password", 0, usize::MAX);
+    let current = token_field(body.clone(), proof_field, 0, usize::MAX);
     let new = token_field(body, "new_password", 8, 128).and_then(|password| {
         if valid_password(&password) {
             return Ok(password);
@@ -56,7 +56,7 @@ fn fields(body: Value) -> Result<(String, String), Vec<Value>> {
     }
 }
 
-fn invalid(issues: Vec<Value>) -> Response {
+pub(super) fn invalid(issues: Vec<Value>) -> Response {
     (
         StatusCode::UNPROCESSABLE_ENTITY,
         Json(json!({"detail":issues})),
@@ -64,45 +64,47 @@ fn invalid(issues: Vec<Value>) -> Response {
         .into_response()
 }
 
-pub(super) async fn handle(
-    State(state): State<Arc<Profile>>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    req: Request,
-) -> Response {
+pub(super) async fn read_body(req: Request) -> Result<(HeaderMap, Value), Box<Response>> {
     if req.method() != Method::POST {
         let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
         response
             .headers_mut()
             .insert(header::ALLOW, "POST".parse().unwrap());
-        return response;
+        return Err(Box::new(response));
     }
     let (parts, body) = req.into_parts();
     let Ok(bytes) = to_bytes(body, 2 * 1024 * 1024).await else {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        return Err(Box::new(StatusCode::PAYLOAD_TOO_LARGE.into_response()));
     };
     let body = match parse_body(&parts.headers, &bytes) {
         Ok(body) => body,
-        Err(issue) => return invalid(vec![issue]),
+        Err(issue) => return Err(Box::new(invalid(vec![issue]))),
     };
-    let Some(id) = credential(&parts.headers).and_then(|t| state.verify.as_ref()?.read(t)) else {
+    Ok((parts.headers, body))
+}
+
+pub(super) async fn handle(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
+) -> Response {
+    let (headers, body) = match read_body(req).await {
+        Ok(input) => input,
+        Err(response) => return *response,
+    };
+    let Some(id) = credential(&headers).and_then(|t| state.verify.as_ref()?.read(t)) else {
         return unauthorized();
     };
     if id.client_bound {
         return unauthorized();
     }
     let origin = SessionOrigin {
-        ip: client_ip(&parts.headers, peer.ip(), state.proxies),
-        user_agent: value(&parts.headers, "user-agent"),
+        ip: client_ip(&headers, peer.ip(), state.proxies),
+        user_agent: value(&headers, "user-agent"),
     };
-    change(
-        &state,
-        id,
-        body,
-        origin,
-        value(&parts.headers, "x-request-id"),
-    )
-    .await
-    .unwrap_or_else(|_| internal())
+    change(&state, id, body, origin, value(&headers, "x-request-id"))
+        .await
+        .unwrap_or_else(|_| internal())
 }
 
 type ChangeResult = Result<Response, Box<dyn Error + Send + Sync>>;
@@ -117,7 +119,7 @@ async fn change(
     if state.enforce && revoked(&mut tx, &id).await? {
         return Ok(unauthorized());
     }
-    let (current, new) = match fields(body) {
+    let (current, new) = match fields(body, "current_password") {
         Ok(inputs) => inputs,
         Err(issues) => return Ok(invalid(issues)),
     };
@@ -218,6 +220,8 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
+            reset_mail: crate::email_delivery::ConfirmationMailer::mock(),
+            reset_quota: crate::login_throttle::LoginThrottle::new(0),
             scheme: crate::passwords::PasswordScheme::Bcrypt,
             pool: pool.clone(),
             enforce: false,

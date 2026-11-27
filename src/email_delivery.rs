@@ -22,8 +22,13 @@ pub struct ConfirmationMailer {
     provider: Provider,
 }
 
+#[derive(Default)]
+struct Outbox {
+    confirmations: Mutex<Vec<ConfirmationEmail>>,
+    resets: Mutex<Vec<(String, String)>>,
+}
 enum Provider {
-    Mock(Mutex<Vec<ConfirmationEmail>>),
+    Mock(Outbox),
     Smtp {
         relay: Box<AsyncSmtpTransport<Tokio1Executor>>,
         from: Mailbox,
@@ -57,9 +62,15 @@ fn account_base(explicit: Option<String>, login: Option<String>) -> Result<Optio
 }
 
 impl ConfirmationMailer {
+    pub(crate) fn mock() -> Self {
+        Self {
+            provider: Provider::Mock(Outbox::default()),
+        }
+    }
+
     pub fn configured() -> Result<Self, MailError> {
         let provider = match setting("EMAIL_PROVIDER").as_deref().unwrap_or("mock") {
-            "mock" => Provider::Mock(Mutex::new(Vec::new())),
+            "mock" => return Ok(Self::mock()),
             "smtp" => smtp_provider()?,
             _ => return Err(MailError::Configuration("unsupported EMAIL_PROVIDER")),
         };
@@ -69,7 +80,11 @@ impl ConfirmationMailer {
     pub async fn send(&self, email: ConfirmationEmail) -> Result<(), MailError> {
         match &self.provider {
             Provider::Mock(outbox) => {
-                outbox.lock().expect("mock mail outbox").push(email);
+                outbox
+                    .confirmations
+                    .lock()
+                    .expect("mock mail outbox")
+                    .push(email);
                 Ok(())
             }
             Provider::Smtp { relay, from, base } => {
@@ -83,15 +98,64 @@ impl ConfirmationMailer {
         }
     }
 
-    /// Take captured messages from the development provider.
-    pub fn take_mock_messages(&self) -> Option<Vec<ConfirmationEmail>> {
+    pub(crate) async fn send_reset(&self, recipient: &str, token: &str) -> Result<(), MailError> {
+        match &self.provider {
+            Provider::Mock(outbox) => {
+                outbox
+                    .resets
+                    .lock()
+                    .expect("reset outbox")
+                    .push((recipient.into(), token.into()));
+            }
+            Provider::Smtp { relay, from, base } => {
+                let action = reset_action(base.as_ref(), token)?;
+                let body = format!(
+                    "Use this link or code to reset your password.\n\n{action}\n\nIf you did not request this, you can ignore this message."
+                );
+                let message = Message::builder()
+                    .from(from.clone())
+                    .to(recipient.parse().map_err(|_| MailError::Message)?)
+                    .subject("Reset your password")
+                    .header(ContentType::TEXT_PLAIN)
+                    .body(body)
+                    .map_err(|_| MailError::Message)?;
+                relay.send(message).await.map_err(MailError::Transport)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn take_mock_resets(&self) -> Option<Vec<(String, String)>> {
         match &self.provider {
             Provider::Mock(outbox) => Some(std::mem::take(
-                &mut *outbox.lock().expect("mock mail outbox"),
+                &mut *outbox.resets.lock().expect("reset outbox"),
             )),
             Provider::Smtp { .. } => None,
         }
     }
+
+    /// Take captured messages from the development provider.
+    pub fn take_mock_messages(&self) -> Option<Vec<ConfirmationEmail>> {
+        match &self.provider {
+            Provider::Mock(outbox) => Some(std::mem::take(
+                &mut *outbox.confirmations.lock().expect("mock mail outbox"),
+            )),
+            Provider::Smtp { .. } => None,
+        }
+    }
+}
+
+fn reset_action(base: Option<&Url>, token: &str) -> Result<String, MailError> {
+    let Some(base) = base else {
+        return Ok(token.into());
+    };
+    let mut link = base.clone();
+    link.path_segments_mut()
+        .map_err(|_| MailError::Configuration("invalid account link base"))?
+        .pop_if_empty()
+        .extend(["login", "reset"]);
+    link.query_pairs_mut().append_pair("token", token);
+    Ok(link.into())
 }
 
 fn smtp_provider() -> Result<Provider, MailError> {
@@ -171,6 +235,16 @@ fn confirmation_message(
 mod tests {
     use super::*;
 
+    #[test]
+    fn reset_links_preserve_mount_path_and_encode_query_values() {
+        let base = Url::parse("https://console.example/account/").unwrap();
+        assert_eq!(
+            reset_action(Some(&base), "test&token").unwrap(),
+            "https://console.example/account/login/reset?token=test%26token"
+        );
+        assert_eq!(reset_action(None, "manual-code").unwrap(), "manual-code");
+    }
+
     fn email() -> ConfirmationEmail {
         ConfirmationEmail {
             recipient: "member@example.test".into(),
@@ -205,7 +279,7 @@ mod tests {
     #[tokio::test]
     async fn mock_delivery_can_be_read_once() {
         let mailer = ConfirmationMailer {
-            provider: Provider::Mock(Mutex::default()),
+            provider: Provider::Mock(Outbox::default()),
         };
         mailer.send(email()).await.unwrap();
         let messages = mailer.take_mock_messages().unwrap();

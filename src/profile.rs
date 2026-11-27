@@ -3,6 +3,7 @@ mod edit;
 mod enrollment;
 mod logout_all;
 mod password_change;
+mod password_reset;
 mod totp;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
@@ -127,6 +128,8 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
 }
 
 struct Profile {
+    reset_mail: crate::email_delivery::ConfirmationMailer,
+    reset_quota: crate::login_throttle::LoginThrottle,
     scheme: crate::passwords::PasswordScheme,
     factor: Option<crate::enrolled_factor::FactorVerifier>,
     mfa_issuer: String,
@@ -141,6 +144,11 @@ struct Profile {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        reset_mail: crate::email_delivery::ConfirmationMailer::configured()?,
+        reset_quota: crate::login_throttle::LoginThrottle::with_window(
+            env::var("RATELIMIT_RESET_PER_HOUR").map_or(Ok(5), |s| s.parse())?,
+            std::time::Duration::from_secs(3600),
+        ),
         scheme: env::var("PASSWORD_SCHEME")
             .unwrap_or_else(|_| "argon2".into())
             .parse()?,
@@ -166,6 +174,14 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         .route("/api/v1/auth/mfa/totp/enable", any(totp::enable))
         .route("/api/v1/auth/mfa/totp/recovery-codes", any(totp::rotate))
         .route("/api/v1/auth/mfa/totp/disable", any(totp::disable))
+        .route(
+            "/api/v1/auth/password/reset-confirm",
+            any(password_reset::confirm),
+        )
+        .route(
+            "/api/v1/auth/password/reset-request",
+            any(password_reset::request),
+        )
         .route("/api/v1/auth/password/change", any(password_change::handle))
         .route("/api/v1/auth/logout-all", any(logout_all::handle))
         .route("/api/v1/users/me/entitlements", any(entitlements))

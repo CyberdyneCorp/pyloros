@@ -32,6 +32,7 @@ struct Sources {
 }
 
 pub struct LoginThrottle {
+    window: Duration,
     limit: u64,
     origin: Instant,
     sources: Mutex<Sources>,
@@ -53,10 +54,15 @@ impl LoginThrottle {
     }
 
     pub fn new(limit_per_minute: i64) -> Self {
+        Self::with_window(limit_per_minute, WINDOW)
+    }
+
+    pub(crate) fn with_window(limit: i64, window: Duration) -> Self {
         let origin = Instant::now();
         Self {
             origin,
-            limit: limit_per_minute.max(0) as u64,
+            window,
+            limit: limit.max(0) as u64,
             sources: Mutex::new(Sources {
                 buckets: HashMap::new(),
                 last_cleanup: origin,
@@ -105,10 +111,10 @@ impl LoginThrottle {
         let mut sources = self.sources.lock().expect("login quota lock");
         let now = clock();
         let seconds = now.duration_since(self.origin).as_secs_f64();
-        if now.duration_since(sources.last_cleanup) >= WINDOW {
+        if now.duration_since(sources.last_cleanup) >= self.window {
             sources
                 .buckets
-                .retain(|_, bucket| seconds - bucket.last < WINDOW.as_secs_f64());
+                .retain(|_, bucket| seconds - bucket.last < self.window.as_secs_f64());
             sources.last_cleanup = now;
         }
         let capacity = self.limit as f64;
@@ -117,7 +123,8 @@ impl LoginThrottle {
             last: seconds,
         });
         let elapsed = seconds - bucket.last;
-        bucket.tokens = (bucket.tokens + elapsed * (capacity / WINDOW.as_secs_f64())).min(capacity);
+        bucket.tokens =
+            (bucket.tokens + elapsed * (capacity / self.window.as_secs_f64())).min(capacity);
         bucket.last = seconds;
         if bucket.tokens < 1.0 {
             return false;

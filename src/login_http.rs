@@ -1,6 +1,7 @@
 //! Password login for the PostgreSQL identity backend.
 mod config;
 mod input;
+pub(crate) use input::email_field;
 mod logout;
 mod mfa;
 use crate::enrolled_factor::FactorVerifier;
