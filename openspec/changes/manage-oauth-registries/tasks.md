@@ -5,6 +5,7 @@
 - [x] Implement administrative protected-resource list and detail reads.
 - [x] Implement audited protected-resource deactivation and publish the change to token and registration consumers.
 - [x] Implement audited protected-resource creation and updates with scope validation.
-- [ ] Implement web-origin reads and audited mutations with redirect and origin validation.
+- [x] Implement administrative web-origin list and detail reads.
+- [ ] Implement audited web-origin mutations with redirect and origin validation.
 - [ ] Verify immediate post-commit policy on the writer, cross-replica refresh, rollback, concurrency and existing consumers.
 - [x] Publish previously committed protected-resource changes to dynamic client registration on a local scope write, including when polling is disabled.

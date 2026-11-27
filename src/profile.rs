@@ -232,6 +232,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    configured_origins: Vec<Value>,
     configured_resources: crate::token_runtime::ResourceRegistry,
     builtin_scopes: std::collections::BTreeMap<String, String>,
     client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeRegistry>,
@@ -321,6 +322,7 @@ fn build_routes(
     client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeRegistry>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        configured_origins: registries::origins::configured()?,
         configured_resources: crate::token_runtime::ResourceRegistry::from_env()?,
         builtin_scopes,
         client_scopes,
@@ -352,6 +354,14 @@ fn build_routes(
         production,
     };
     Ok(Router::new()
+        .route(
+            "/api/v1/admin/oauth/web-origins",
+            any(registries::list_origins),
+        )
+        .route(
+            "/api/v1/admin/oauth/web-origins/{origin_id}",
+            any(registries::get_origin),
+        )
         .route(
             "/api/v1/admin/oauth/protected-resources",
             axum::routing::post(registries::create_resource).fallback(registries::list_resources),

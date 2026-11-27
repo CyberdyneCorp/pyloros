@@ -1,5 +1,6 @@
 //! OAuth token endpoint for service and authorization-code grants.
 mod dcr;
+pub(crate) use dcr::configured_origins as configured_registration_origins;
 mod device;
 mod device_browser;
 mod device_poll;

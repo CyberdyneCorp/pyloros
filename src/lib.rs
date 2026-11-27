@@ -29,6 +29,7 @@ pub mod login_throttle;
 pub mod managed_wallet;
 pub mod mfa_challenges;
 pub mod oauth_refresh;
+mod oauth_uri;
 pub mod passkey_assertion;
 pub mod passkey_attestation;
 pub mod passkey_ceremonies;

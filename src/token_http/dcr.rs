@@ -56,7 +56,7 @@ pub(super) fn routes(
         .with_state(state))
 }
 
-pub(super) fn configured_origins() -> Result<BTreeSet<String>, Box<dyn Error>> {
+pub(crate) fn configured_origins() -> Result<BTreeSet<String>, Box<dyn Error>> {
     let raw = env::var("OAUTH_DCR_ALLOWED_REDIRECT_ORIGINS").unwrap_or_default();
     let entries: Vec<String> = if raw.trim_start().starts_with('[') {
         serde_json::from_str(&raw)?
@@ -68,11 +68,10 @@ pub(super) fn configured_origins() -> Result<BTreeSet<String>, Box<dyn Error>> {
     };
     let mut origins = BTreeSet::new();
     for value in entries {
-        let bare = value.trim_end_matches('/').to_ascii_lowercase();
-        if https_origin(&value).as_deref() != Some(bare.as_str()) {
+        if !crate::oauth_uri::is_https_origin(&value) {
             return Err("invalid dynamic registration redirect origin".into());
         }
-        origins.insert(bare);
+        origins.insert(value.trim_end_matches('/').to_lowercase());
     }
     Ok(origins)
 }
@@ -88,6 +87,10 @@ fn https_origin(uri: &str) -> Option<String> {
     let raw = rest.split(['/', '?']).next()?;
     if raw.contains('@') {
         return None;
+    }
+    if !raw.is_ascii() {
+        url::Url::parse(uri).ok()?;
+        return crate::oauth_uri::redirect_origin(uri);
     }
     let authority: axum::http::uri::Authority = raw.parse().ok()?;
     if authority.host().is_empty()
@@ -289,6 +292,16 @@ async fn persist(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn international_redirect_origins_keep_the_configured_name_and_port() {
+        assert_eq!(
+            https_origin("https://BÜCHER.example:8443/return").as_deref(),
+            Some("https://bücher.example:8443")
+        );
+        assert!(https_origin("https://name@bücher.example/return").is_none());
+        assert!(https_origin("https://bücher.example:bad/return").is_none());
+    }
 
     #[test]
     fn an_active_resource_cannot_grant_a_dynamic_client_privileged_scopes() {

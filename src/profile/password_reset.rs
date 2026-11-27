@@ -257,6 +257,7 @@ mod tests {
         let state = Profile {
             builtin_scopes: Default::default(),
             configured_resources: Default::default(),
+            configured_origins: Default::default(),
             client_scopes: Default::default(),
             admin_enabled: true,
             passkeys: passkeys::Inventory::new(None, 10),

@@ -80,3 +80,10 @@ The issuer SHALL support authenticated administrative reads, creation, partial u
 - **THEN** retain its URI, clear nullable display fields or audience when explicitly null, preserve omitted fields and retain its scopes when the supplied scope list is null.
 - **WHEN** the request supplies a scope list
 - **THEN** validate the names against the effective catalog, store distinct trimmed names and preserve the submitted list in the audit entry.
+
+#### Scenario: Inspect a configured browser origin
+
+- **WHEN** configured CORS, registration and fragment redirect settings refer to the same origin
+- **THEN** return one deployment entry with its flags and sorted redirect targets, alongside any managed entry for the same origin.
+- **WHEN** dynamic registration is disabled
+- **THEN** its configured origins remain visible in the administrative inventory.

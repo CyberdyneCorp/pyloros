@@ -69,6 +69,7 @@ pub(super) async fn catalog(
 }
 
 mod mutation;
+pub(super) mod origins;
 mod resources;
 pub(super) use mutation::{create, deactivate, update};
 pub(super) use resources::{
@@ -113,11 +114,28 @@ pub(super) async fn get_resource(
 ) -> Response {
     read(&state, method, &headers, Inventory::Resource(&id)).await
 }
+pub(super) async fn list_origins(
+    State(state): State<Arc<Profile>>,
+    method: Method,
+    headers: HeaderMap,
+) -> Response {
+    read(&state, method, &headers, Inventory::Origins).await
+}
+pub(super) async fn get_origin(
+    State(state): State<Arc<Profile>>,
+    method: Method,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    read(&state, method, &headers, Inventory::Origin(&id)).await
+}
 enum Inventory<'a> {
     Scopes(&'a str),
     Scope(&'a str),
     Resources,
     Resource(&'a str),
+    Origins,
+    Origin(&'a str),
 }
 async fn read(state: &Profile, method: Method, headers: &HeaderMap, op: Inventory<'_>) -> Response {
     if method != Method::GET {
@@ -134,6 +152,8 @@ async fn read(state: &Profile, method: Method, headers: &HeaderMap, op: Inventor
         Err(r) => return *r,
     };
     match op {
+        Inventory::Origins => origins::list(&mut tx, &state.configured_origins).await,
+        Inventory::Origin(id) => origins::get(&mut tx, id).await,
         Inventory::Resources => resources::list(&mut tx, &state.configured_resources).await,
         Inventory::Resource(id) => resources::get(&mut tx, id).await,
         Inventory::Scope(name) => get(&mut tx, &state.builtin_scopes, name).await,
