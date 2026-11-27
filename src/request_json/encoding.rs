@@ -22,8 +22,7 @@ pub(crate) fn text(bytes: &[u8]) -> Result<Cow<'_, str>, ()> {
         return Err(());
     }
     let text = if width == 2 {
-        let units = bytes.chunks_exact(2).map(|s| {
-            let pair = [s[0], s[1]];
+        let units = bytes.as_chunks::<2>().0.iter().map(|&pair| {
             if little {
                 u16::from_le_bytes(pair)
             } else {
@@ -35,9 +34,10 @@ pub(crate) fn text(bytes: &[u8]) -> Result<Cow<'_, str>, ()> {
             .map_err(|_| ())?
     } else {
         bytes
-            .chunks_exact(4)
-            .map(|s| {
-                let word = [s[0], s[1], s[2], s[3]];
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|&word| {
                 char::from_u32(if little {
                     u32::from_le_bytes(word)
                 } else {
@@ -67,6 +67,9 @@ mod tests {
         assert_eq!(text(&utf16).unwrap(), input);
         assert_eq!(text(&utf32).unwrap(), input);
         assert!(text(&utf16[..utf16.len() - 1]).is_err());
+        for missing in 1..4 {
+            assert!(text(&utf32[..utf32.len() - missing]).is_err());
+        }
         assert!(text(&[0, 0, 0xfe, 0xff, 0, 0x11, 0, 0]).is_err());
     }
 }
