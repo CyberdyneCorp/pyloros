@@ -2,7 +2,11 @@ use crate::{
     browser_client::grant::ResourceScopes, discovery::Provider, grant_sessions::GrantSessionIssuer,
 };
 use chrono::TimeDelta;
-use rsa::{RsaPrivateKey, pkcs1::DecodeRsaPrivateKey, pkcs8::DecodePrivateKey};
+use rsa::{
+    RsaPrivateKey,
+    pkcs1::DecodeRsaPrivateKey,
+    pkcs8::{DecodePrivateKey, EncodePublicKey, LineEnding},
+};
 use serde::Deserialize;
 use sqlx::PgPool;
 use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Duration};
@@ -17,6 +21,7 @@ pub(crate) struct ResourceRegistry {
 
 pub(crate) struct Runtime {
     pub pool: PgPool,
+    pub refresh_verifier: crate::mfa_challenges::ChallengeVerifier,
     pub verifier: crate::profile::Verifier,
     pub enforce_revocation: bool,
     pub login_url: Option<String>,
@@ -184,6 +189,12 @@ impl Runtime {
         )?;
         let admins = crate::config::admin_emails()?;
         Ok(Some(Self {
+            refresh_verifier: crate::mfa_challenges::ChallengeVerifier::rsa(
+                issuer,
+                key.to_public_key()
+                    .to_public_key_pem(LineEnding::LF)?
+                    .as_bytes(),
+            )?,
             consent_page: crate::consent_page::Page::configured()?,
             verifier: crate::profile::Verifier::configured(production)?
                 .ok_or("missing browser session verification key")?,

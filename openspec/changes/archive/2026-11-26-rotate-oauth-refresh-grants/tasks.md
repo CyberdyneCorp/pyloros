@@ -1,4 +1,4 @@
 - [x] Capture reference exchange and database behavior for client, resource, scope, session and replay cases.
 - [x] Rotate the stored refresh record transactionally, preserve original consent and terminate a replayed session family on PostgreSQL.
-- [ ] Implement the HTTP grant, client authentication, access and identity claims, and audit.
-- [ ] Compare both backend directions, legacy records, simultaneous use, replay, rollback, claim updates and supported deployment settings.
+- [x] Implement the HTTP grant, client authentication, access and identity claims, and audit.
+- [x] Compare both backend directions, legacy records, simultaneous use, replay, rollback, claim updates and supported deployment settings.

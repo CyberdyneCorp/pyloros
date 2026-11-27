@@ -1,4 +1,5 @@
 //! OAuth token endpoint for service and authorization-code grants.
+mod refresh;
 mod service;
 use crate::{
     browser_http::{self, method_not_allowed},
@@ -201,9 +202,6 @@ async fn exchange(
     if !endpoint.oidc {
         return (StatusCode::BAD_REQUEST,Json(json!({"error":"unsupported_grant_type","error_description":format!("grant_type '{grant}' is not enabled")}))).into_response();
     }
-    if grant != "authorization_code" {
-        return (StatusCode::BAD_REQUEST,Json(json!({"error":"unsupported_grant_type","error_description":format!("grant_type {grant:?} is not supported")}))).into_response();
-    }
     let Some(rt) = &endpoint.code else {
         return crate::login_http::problem(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -231,18 +229,31 @@ async fn exchange(
         require_verified_admin_email: rt.production,
         resources: &registry.audiences,
     };
-    match rt
-        .signer
-        .exchange_code(
-            &rt.pool,
-            &req,
+    let request_id = header(&headers, "x-request-id");
+    let now = chrono::Utc::now();
+    let decision = if grant == "refresh_token" {
+        refresh::exchange(
+            rt,
+            refresh::Request {
+                client,
+                secret,
+                token: get("refresh_token"),
+                scope: get("scope"),
+                resources: &resources,
+                registry: &registry.scopes,
+            },
             &settings,
             origin,
-            header(&headers, "x-request-id"),
-            chrono::Utc::now(),
+            request_id,
+            now,
         )
         .await
-    {
+    } else {
+        rt.signer
+            .exchange_code(&rt.pool, &req, &settings, origin, request_id, now)
+            .await
+    };
+    match decision {
         Ok(CodeDecision::Issued(body)) => (
             [("cache-control", "no-store"), ("pragma", "no-cache")],
             Json(body),
@@ -254,7 +265,7 @@ async fn exchange(
         )
             .into_response(),
         Err(_) => {
-            eprintln!("authorization code exchange failed");
+            eprintln!("OAuth token exchange failed");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),

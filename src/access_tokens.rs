@@ -83,7 +83,7 @@ impl GrantSessionIssuer {
         if let Some(aud) = audience {
             doc["aud"] = json!(aud);
         }
-        authentication_fields(&mut doc, grant);
+        authentication_fields(&mut doc, grant.auth_time, grant.amr.as_deref());
         Ok(doc)
     }
     pub(crate) async fn account_claims(

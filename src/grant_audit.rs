@@ -17,12 +17,12 @@ fn valid_request_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b".:_-".contains(&b))
 }
 
-fn grant_details(session: Uuid, scopes: &str) -> Value {
+fn grant_details(kind: &str, session: Uuid, scopes: &str) -> Value {
     let bounded: Vec<String> = scopes
         .split_ascii_whitespace()
         .map(|scope| scope.chars().take(200).collect())
         .collect();
-    let details = json!({"session_id":session.to_string(), "grant_type":"authorization_code", "scope":bounded});
+    let details = json!({"session_id":session.to_string(), "grant_type":kind, "scope":bounded});
     if details.to_string().len() > 2048 {
         json!({"truncated":true})
     } else {
@@ -44,28 +44,16 @@ impl GrantSessionIssuer {
         let response = self
             .issue_grant_response(tx, claimed, settings, origin, now)
             .await?;
-        let user = claimed.grant.user_id;
-        let (email, organization) = sqlx::query_as::<_, (Option<String>, Option<Uuid>)>(
-            "SELECT primary_email, organization_id FROM users WHERE id=$1",
-        )
-        .bind(user)
-        .fetch_one(&mut **tx)
-        .await?;
-        write_event(
-            &mut **tx,
-            GrantEvent {
-                user: Some(user),
-                email,
-                organization,
-                client: &claimed.grant.client_id,
-                reason: None,
-                details: grant_details(claimed.session_id, &response.scope),
-            },
-            origin,
-            request_id,
-            now,
+        let event = GrantEvent::issued(
+            tx,
+            claimed.grant.user_id,
+            &claimed.grant.client_id,
+            "authorization_code",
+            claimed.session_id,
+            &response.scope,
         )
         .await?;
+        write_event(&mut **tx, event, origin, request_id, now).await?;
         Ok(response)
     }
 }
@@ -77,6 +65,32 @@ pub(crate) struct GrantEvent<'a> {
     pub client: &'a str,
     pub reason: Option<&'static str>,
     pub details: Value,
+}
+
+impl<'a> GrantEvent<'a> {
+    pub(crate) async fn issued(
+        tx: &mut Transaction<'_, Postgres>,
+        user: Uuid,
+        client: &'a str,
+        kind: &str,
+        session: Uuid,
+        scope: &str,
+    ) -> Result<Self, sqlx::Error> {
+        let (email, organization) = sqlx::query_as::<_, (Option<String>, Option<Uuid>)>(
+            "SELECT primary_email, organization_id FROM users WHERE id=$1",
+        )
+        .bind(user)
+        .fetch_one(&mut **tx)
+        .await?;
+        Ok(Self {
+            user: Some(user),
+            email,
+            organization,
+            client,
+            reason: None,
+            details: grant_details(kind, session, scope),
+        })
+    }
 }
 
 pub(crate) async fn write_event<'e>(

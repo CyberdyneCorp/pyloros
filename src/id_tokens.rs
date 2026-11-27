@@ -70,18 +70,28 @@ pub(crate) fn profile_fields(doc: &mut Value, metadata: &Value) {
     }
 }
 
-pub(crate) fn authentication_fields(doc: &mut Value, grant: &crate::authorization_codes::Grant) {
-    if let Some(time) = grant.auth_time {
+pub(crate) fn authentication_fields(
+    doc: &mut Value,
+    auth_time: Option<DateTime<Utc>>,
+    amr: Option<&str>,
+) {
+    if let Some(time) = auth_time {
         doc["auth_time"] = json!(time.timestamp());
         doc["amr"] = json!(
-            grant
-                .amr
-                .as_deref()
-                .unwrap_or_default()
+            amr.unwrap_or_default()
                 .split_ascii_whitespace()
                 .collect::<BTreeSet<_>>()
         );
     }
+}
+
+pub(crate) struct IdentityGrant<'a> {
+    pub user_id: uuid::Uuid,
+    pub client_id: &'a str,
+    pub scopes: &'a str,
+    pub nonce: Option<&'a str>,
+    pub auth_time: Option<DateTime<Utc>>,
+    pub amr: Option<&'a str>,
 }
 
 impl GrantSessionIssuer {
@@ -93,7 +103,32 @@ impl GrantSessionIssuer {
         now: DateTime<Utc>,
         lifetime: TimeDelta,
     ) -> Result<Option<String>, SessionError> {
-        let grant = &claimed.grant;
+        let code = &claimed.grant;
+        self.issue_identity_token(
+            tx,
+            IdentityGrant {
+                user_id: code.user_id,
+                client_id: &code.client_id,
+                scopes: &code.scopes,
+                nonce: code.nonce.as_deref(),
+                auth_time: code.auth_time,
+                amr: code.amr.as_deref(),
+            },
+            auth,
+            now,
+            lifetime,
+        )
+        .await
+    }
+
+    pub(crate) async fn issue_identity_token(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        grant: IdentityGrant<'_>,
+        auth: Option<&AuthorizationClaims>,
+        now: DateTime<Utc>,
+        lifetime: TimeDelta,
+    ) -> Result<Option<String>, SessionError> {
         let scopes: BTreeSet<_> = grant.scopes.split_ascii_whitespace().collect();
         if !scopes.contains("openid") {
             return Ok(None);
@@ -106,10 +141,10 @@ impl GrantSessionIssuer {
             .ok_or(SessionError::InvalidLifetime)?;
         let mut doc = json!({"iss":self.issuer(),"sub":grant.user_id.to_string(),"aud":grant.client_id,
             "iat":now.timestamp(),"exp":exp.timestamp()});
-        if let Some(nonce) = grant.nonce.as_deref().filter(|n| !n.is_empty()) {
+        if let Some(nonce) = grant.nonce.filter(|n| !n.is_empty()) {
             doc["nonce"] = json!(nonce);
         }
-        authentication_fields(&mut doc, grant);
+        authentication_fields(&mut doc, grant.auth_time, grant.amr);
         if scopes.contains("email") || scopes.contains("profile") {
             let row = sqlx::query(
                 "SELECT primary_email, is_email_verified, extra_metadata FROM users WHERE id=$1",
@@ -133,7 +168,7 @@ impl GrantSessionIssuer {
         if scopes.contains("roles")
             && let Some(auth) = auth
         {
-            authorization_fields(&mut doc, &grant.client_id, auth);
+            authorization_fields(&mut doc, grant.client_id, auth);
         }
         Ok(Some(self.sign(&doc)?))
     }

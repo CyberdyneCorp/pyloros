@@ -150,7 +150,7 @@ impl GrantSessionIssuer {
                 "resource does not match the authorization grant",
             )));
         }
-        let session=sqlx::query("SELECT auth_time,amr FROM sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL FOR UPDATE")
+        let session=sqlx::query("SELECT auth_time,amr FROM sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL FOR NO KEY UPDATE")
             .bind(id.session).bind(id.user).fetch_optional(&mut **tx).await?;
         let Some(session) = session else {
             return Ok(Err(Refused::known(id, "revoked", "session revoked")));
@@ -353,11 +353,19 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        let mut gate = pool.begin().await.unwrap();
-        let pid = sqlx::query_scalar::<_, i32>("SELECT pg_backend_pid() FROM sessions FOR UPDATE")
-            .fetch_one(&mut *gate)
+        // Inserting a replacement on the other backend takes a foreign-key lock
+        // on its parent session until that transaction commits.
+        let mut parent = admin.begin().await.unwrap();
+        sqlx::query(&format!("SELECT id FROM {schema}.sessions FOR KEY SHARE"))
+            .fetch_one(&mut *parent)
             .await
             .unwrap();
+        let mut gate = pool.begin().await.unwrap();
+        let pid =
+            sqlx::query_scalar::<_, i32>("SELECT pg_backend_pid() FROM sessions FOR NO KEY UPDATE")
+                .fetch_one(&mut *gate)
+                .await
+                .unwrap();
         let issuer = GrantSessionIssuer::with_identity(
             SigningIdentity::hmac("issuer".into(), b"key").unwrap(),
             TimeDelta::days(1),
@@ -396,7 +404,12 @@ mod tests {
             }).await.unwrap();
             gate.commit().await.unwrap();
         };
-        let (one, two, ()) = tokio::join!(attempt(), attempt(), release);
+        let (one, two, ()) = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            tokio::join!(attempt(), attempt(), release)
+        })
+        .await
+        .expect("rotation must coexist with foreign-key checks on the session");
+        parent.commit().await.unwrap();
         let mut outcomes = [one, two];
         outcomes.sort();
         assert_eq!(outcomes, [None, Some("concurrent_refresh")]);

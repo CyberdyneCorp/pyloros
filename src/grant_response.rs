@@ -81,3 +81,91 @@ impl GrantSessionIssuer {
         })
     }
 }
+
+impl GrantSessionIssuer {
+    /// Build tokens against the same authorization snapshot as the rotation.
+    pub async fn issue_refresh_response(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        rotation: crate::oauth_refresh::Rotation,
+        calling_client: &str,
+        settings: &GrantSettings<'_>,
+        now: DateTime<Utc>,
+    ) -> Result<TokenResponse, SessionError> {
+        use crate::{
+            access_tokens::Subject,
+            id_tokens::{AuthorizationClaims, IdentityGrant, authentication_fields},
+        };
+        use serde_json::json;
+
+        let subject = Subject {
+            user: rotation.user,
+            session: rotation.session,
+            client: rotation.client.as_deref(),
+        };
+        let (mut claims, default_audience) = self
+            .account_claims(
+                tx,
+                subject,
+                settings.admin_emails,
+                settings.require_verified_admin_email,
+                now,
+                settings.access_lifetime,
+            )
+            .await?;
+        claims["scope"] = json!(rotation.scopes);
+        authentication_fields(&mut claims, rotation.auth_time, rotation.amr.as_deref());
+        let auth = if let Some(client) = rotation.client.as_deref() {
+            claims["client_id"] = json!(client);
+            let audience = match rotation.resource.as_deref() {
+                Some(resource) => Some(
+                    settings
+                        .resources
+                        .get(resource)
+                        .ok_or(SessionError::UnknownResource)?
+                        .as_deref()
+                        .filter(|aud| !aud.is_empty())
+                        .unwrap_or(resource),
+                ),
+                None => default_audience.as_deref(),
+            };
+            if let Some(aud) = audience {
+                claims["aud"] = json!(aud);
+            }
+            token_authorization::resolve(tx, rotation.user, client, audience).await?
+        } else {
+            token_authorization::profile_roles(tx, rotation.user)
+                .await?
+                .map(|roles| AuthorizationClaims {
+                    roles,
+                    permissions: None,
+                })
+        };
+        authorization_fields(&mut claims, auth.as_ref());
+        let access_token = self.sign(&claims)?;
+        let id_token = self
+            .issue_identity_token(
+                tx,
+                IdentityGrant {
+                    user_id: rotation.user,
+                    client_id: calling_client,
+                    scopes: &rotation.scopes,
+                    nonce: None,
+                    auth_time: rotation.auth_time,
+                    amr: rotation.amr.as_deref(),
+                },
+                auth.as_ref(),
+                now,
+                settings.id_lifetime,
+            )
+            .await?;
+        Ok(TokenResponse {
+            access_token,
+            token_type: "Bearer",
+            expires_in: settings.access_lifetime.num_seconds(),
+            scope: rotation.scopes,
+            id_token,
+            refresh_token: Some(rotation.token),
+        })
+    }
+}
