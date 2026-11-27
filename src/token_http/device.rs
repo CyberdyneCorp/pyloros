@@ -25,8 +25,8 @@ use std::{collections::BTreeSet, error::Error, net::SocketAddr, sync::Arc};
 use uuid::Uuid;
 
 const PATH: &str = "/api/v1/auth/oauth2/device_authorization";
-const GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
-const LETTERS: &[u8] = b"BCDFGHJKLMNPQRSTVWXZ";
+pub(super) const GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
+pub(super) const LETTERS: &[u8] = b"BCDFGHJKLMNPQRSTVWXZ";
 
 struct Device {
     pool: PgPool,
@@ -45,7 +45,8 @@ pub(super) fn routes(
     let Some(provider) = provider.filter(|p| p.device_authorization_enabled()) else {
         return Ok(Router::new().route(
             PATH,
-            post(|| async { crate::login_http::problem(StatusCode::NOT_FOUND, "Not found") }),
+            post(|| async { crate::login_http::problem(StatusCode::NOT_FOUND, "Not found") })
+                .fallback(super::post_only),
         ));
     };
     let lifetime = number("OAUTH_DEVICE_CODE_TTL_SECONDS", 600)?;
@@ -62,7 +63,7 @@ pub(super) fn routes(
         proxies,
     };
     Ok(Router::new()
-        .route(PATH, post(start))
+        .route(PATH, post(start).fallback(super::post_only))
         .with_state(Arc::new(config)))
 }
 

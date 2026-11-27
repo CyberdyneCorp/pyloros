@@ -85,11 +85,11 @@ async fn postgres_scope_refresh() {
         .connect(&std::env::var("DATABASE_URL").unwrap())
         .await
         .unwrap();
-    sqlx::query("CREATE TEMP TABLE oauth_scopes(name text, active boolean)")
+    sqlx::query("CREATE TEMP TABLE oauth_scopes(name text, active boolean, description text)")
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO oauth_scopes VALUES ('openid',true),('extra',true),('hidden',false)")
+    sqlx::query("INSERT INTO oauth_scopes(name,active) VALUES ('openid',true),('extra',true),('hidden',false)")
         .execute(&pool)
         .await
         .unwrap();

@@ -83,6 +83,8 @@ impl Policy {
                     | "/api/v1/auth/password/reset-confirm"
                     | "/api/v1/auth/refresh"
                     | "/api/v1/auth/logout"
+                    | "/api/v1/auth/oauth2/device_authorization"
+                    | "/api/v1/auth/oauth2/device/decision"
                     | crate::consent_http::PATH
                     | "/api/v1/auth/oauth2/token"
                     | "/api/v1/auth/oauth2/logout"
@@ -168,6 +170,29 @@ mod tests {
             policy.refusal(&request("/api/v1/auth/password/change", origin, "")),
             Some("CSRF token missing or invalid")
         );
+    }
+
+    #[test]
+    fn device_clients_and_signed_decision_forms_work_with_existing_browser_cookies() {
+        let policy = Policy::new(watch::channel(BTreeSet::new()).1, "csrf".into());
+        for path in [
+            "/api/v1/auth/oauth2/device_authorization",
+            "/api/v1/auth/oauth2/device/decision",
+        ] {
+            assert_eq!(
+                policy.refusal(&request(path, "http://api.example.test", "")),
+                None
+            );
+            assert!(
+                policy
+                    .refusal(&request(
+                        &format!("{path}/other"),
+                        "http://api.example.test",
+                        ""
+                    ))
+                    .is_some()
+            );
+        }
     }
 
     #[test]

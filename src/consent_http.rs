@@ -24,11 +24,11 @@ pub(crate) const PATH: &str = "/api/v1/auth/oauth2/authorize/consent";
 pub(crate) struct Ticket {
     #[serde(rename = "type")]
     pub kind: String,
-    sub: Uuid,
-    client_id: String,
-    resource: String,
-    scope: String,
-    authz: String,
+    pub(crate) sub: Uuid,
+    pub(crate) client_id: String,
+    pub(crate) resource: String,
+    pub(crate) scope: String,
+    pub(crate) authz: String,
 }
 
 pub(crate) fn routes(rt: Option<Arc<Runtime>>) -> Router {
@@ -141,7 +141,10 @@ async fn resolve(mut tx: Transaction<'_, Postgres>, ticket: Ticket, decision: &s
     (StatusCode::SEE_OTHER, [(header::LOCATION, location)]).into_response()
 }
 
-async fn grant(tx: &mut Transaction<'_, Postgres>, ticket: &Ticket) -> Result<(), sqlx::Error> {
+pub(crate) async fn grant(
+    tx: &mut Transaction<'_, Postgres>,
+    ticket: &Ticket,
+) -> Result<(), sqlx::Error> {
     let mut scopes = ticket.scope.split_whitespace().collect::<Vec<_>>();
     scopes.sort_unstable();
     scopes.dedup();

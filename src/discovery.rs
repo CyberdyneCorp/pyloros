@@ -1,5 +1,5 @@
 //! Read-only provider metadata for a configured issuer.
-use std::{collections::BTreeSet, env, error::Error, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Duration};
 
 use crate::config::flag;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
@@ -15,7 +15,7 @@ type Document = Result<Json<Value>, (StatusCode, Json<Value>)>;
 pub struct Provider {
     metadata: Value,
     keys: Value,
-    scopes: tokio::sync::watch::Receiver<BTreeSet<String>>,
+    scopes: tokio::sync::watch::Receiver<BTreeMap<String, String>>,
 }
 
 pub(crate) fn rsa_kid(n: &str, e: &str) -> String {
@@ -97,7 +97,10 @@ impl Provider {
             metadata["registration_endpoint"] = json!(format!("{oauth}/register"));
         }
         let scopes = tokio::sync::watch::channel(
-            scopes.split_ascii_whitespace().map(str::to_owned).collect(),
+            scopes
+                .split_ascii_whitespace()
+                .map(|name| (name.to_owned(), String::new()))
+                .collect(),
         )
         .1;
         Ok(Self {
@@ -105,6 +108,10 @@ impl Provider {
             keys,
             scopes,
         })
+    }
+
+    pub(crate) fn scope_catalog(&self) -> tokio::sync::watch::Receiver<BTreeMap<String, String>> {
+        self.scopes.clone()
     }
 
     pub(crate) fn device_authorization_enabled(&self) -> bool {
@@ -149,11 +156,13 @@ impl Provider {
 
 async fn load_scopes(
     pool: &sqlx::PgPool,
-    base: &BTreeSet<String>,
-    updates: &tokio::sync::watch::Sender<BTreeSet<String>>,
+    base: &BTreeMap<String, String>,
+    updates: &tokio::sync::watch::Sender<BTreeMap<String, String>>,
 ) {
-    let read = sqlx::query_scalar::<_, String>("SELECT name FROM oauth_scopes WHERE active")
-        .fetch_all(pool);
+    let read = sqlx::query_as::<_, (String, String)>(
+        "SELECT name,coalesce(description,'') FROM oauth_scopes WHERE active",
+    )
+    .fetch_all(pool);
     match tokio::time::timeout(Duration::from_secs(3), read).await {
         Ok(Ok(rows)) => {
             let mut effective = base.clone();
@@ -179,7 +188,7 @@ fn enabled(provider: &ProviderState) -> Result<&Provider, (StatusCode, Json<Valu
 async fn metadata(State(provider): State<ProviderState>) -> Document {
     let issuer = enabled(&provider)?;
     let mut document = issuer.metadata.clone();
-    document["scopes_supported"] = json!(*issuer.scopes.borrow());
+    document["scopes_supported"] = json!(issuer.scopes.borrow().keys().collect::<Vec<_>>());
     Ok(Json(document))
 }
 

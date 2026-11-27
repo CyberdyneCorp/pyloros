@@ -27,3 +27,18 @@ The issuer SHALL accept a signed-in user’s decision and allow the requesting c
 
 - **WHEN** the authorization is pending, polled too frequently, expired or denied
 - **THEN** return the corresponding polling response and persist any required interval change.
+
+#### Scenario: Verify a user code in the browser
+
+- **WHEN** a signed-in user opens a pending code
+- **THEN** show the requesting client, displayed code and requested scopes using the deployment's shared verification page. The decision ticket binds the form to that user and request.
+
+#### Scenario: Apply the user's decision
+
+- **WHEN** the signed-in user submits a valid approval or denial
+- **THEN** persist a single decision, its authentication context and audit event together. An untrusted client's approval also records the user's consent for the displayed scopes.
+
+#### Scenario: Refuse a stale form
+
+- **WHEN** the code has expired, the request already has a decision, or the ticket belongs to a different user
+- **THEN** show the corresponding error page and preserve the existing request and consent state.

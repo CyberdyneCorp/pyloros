@@ -1,5 +1,6 @@
 //! OAuth token endpoint for service and authorization-code grants.
 mod device;
+mod device_browser;
 mod refresh;
 mod service;
 use crate::{
@@ -40,6 +41,7 @@ pub async fn routes(
     };
     let proxies = crate::token_runtime::number("TRUSTED_PROXY_COUNT", 0)?.try_into()?;
     let device = device::routes(provider, pool.clone(), proxies)?;
+    let browser = device_browser::routes(provider, code.clone(), proxies)?;
     let state = Endpoint {
         service: service::Issuer::configured(pool, production)?,
         code: code.clone(),
@@ -49,7 +51,8 @@ pub async fn routes(
     let token = Router::new()
         .route("/api/v1/auth/oauth2/token", post(exchange))
         .with_state(Arc::new(state))
-        .merge(device);
+        .merge(device)
+        .merge(browser);
     if let Some(runtime) = code {
         return Ok(token
             .merge(
@@ -277,6 +280,16 @@ async fn exchange(
                 .into_response()
         }
     }
+}
+
+async fn post_only() -> Response {
+    let mut response =
+        crate::login_http::problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+    response.headers_mut().insert(
+        axum::http::header::ALLOW,
+        axum::http::HeaderValue::from_static("POST"),
+    );
+    response
 }
 
 fn internal() -> Response {

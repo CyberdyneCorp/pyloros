@@ -33,6 +33,88 @@ pub(crate) struct Approval<'a> {
 
 type PageError = Box<dyn Error + Send + Sync>;
 
+pub(crate) fn html_environment() -> Environment<'static> {
+    let mut templates = Environment::new();
+    templates.set_undefined_behavior(UndefinedBehavior::Strict);
+    templates.set_formatter(|out, _, value| {
+        let text = value.to_string();
+        let escaped = text
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#x27;");
+        out.write_str(&escaped)?;
+        Ok(())
+    });
+    templates
+}
+
+async fn scope_items(
+    tx: &mut Transaction<'_, Postgres>,
+    catalog: &BTreeMap<String, String>,
+    raw: &str,
+) -> Result<Vec<minijinja::Value>, sqlx::Error> {
+    let names: Vec<_> = raw.split_whitespace().collect();
+    let custom: Vec<_> = names
+        .iter()
+        .copied()
+        .filter(|s| !catalog.contains_key(*s))
+        .collect();
+    let mut descriptions = BTreeMap::new();
+    if !custom.is_empty() {
+        descriptions = sqlx::query_as::<_, (String, String)>(
+            "SELECT name,description FROM oauth_scopes WHERE active AND name=ANY($1)",
+        )
+        .bind(&custom)
+        .fetch_all(&mut **tx)
+        .await?
+        .into_iter()
+        .collect();
+    }
+    Ok(names
+        .iter()
+        .map(|&name| {
+            let description = catalog.get(name).or_else(|| descriptions.get(name));
+            context! {name, description => description.map_or("",String::as_str)}
+        })
+        .collect())
+}
+
+pub(crate) fn sign_ticket(
+    signer: &GrantSessionIssuer,
+    user: Uuid,
+    client: &str,
+    resource: &str,
+    scopes: &str,
+    query: &str,
+    now: DateTime<Utc>,
+) -> Result<String, PageError> {
+    Ok(signer.sign(&json!({
+        "iss": signer.issuer(),
+        "sub": user,
+        "jti": Uuid::new_v4(),
+        "type": "consent",
+        "client_id": client,
+        "resource": resource,
+        "scope": scopes,
+        "authz": query,
+        "iat": now.timestamp(),
+        "exp": now.timestamp() + 600,
+    }))?)
+}
+
+pub(crate) fn html_response(status: axum::http::StatusCode, html: String) -> Response {
+    let headers = [
+        (header::CACHE_CONTROL, "no-store"),
+        (
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+        ),
+    ];
+    (status, headers, Html(html)).into_response()
+}
+
 impl Page {
     pub(crate) fn configured() -> Result<Option<Self>, Box<dyn Error>> {
         let Some(path) = env::var_os("PYLOROS_CONSENT_UI_PATH") else {
@@ -43,19 +125,7 @@ impl Page {
     }
 
     fn new(bundle: Bundle) -> Result<Self, minijinja::Error> {
-        let mut templates = Environment::new();
-        templates.set_undefined_behavior(UndefinedBehavior::Strict);
-        templates.set_formatter(|out, _, value| {
-            let text = value.to_string();
-            let escaped = text
-                .replace('&', "&amp;")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;")
-                .replace('"', "&quot;")
-                .replace('\'', "&#x27;");
-            out.write_str(&escaped)?;
-            Ok(())
-        });
+        let mut templates = html_environment();
         templates.add_template_owned("consent", bundle.template)?;
         Ok(Self {
             templates,
@@ -71,45 +141,16 @@ impl Page {
         now: DateTime<Utc>,
     ) -> Result<Response, PageError> {
         let client = approval.client;
-        let names: Vec<_> = approval.scopes.split_whitespace().collect();
-        let custom: Vec<_> = names
-            .iter()
-            .copied()
-            .filter(|s| !self.descriptions.contains_key(*s))
-            .collect();
-        let mut descriptions = BTreeMap::new();
-        if !custom.is_empty() {
-            descriptions = sqlx::query_as::<_, (String, String)>(
-                "SELECT name,description FROM oauth_scopes WHERE active AND name=ANY($1)",
-            )
-            .bind(&custom)
-            .fetch_all(&mut **tx)
-            .await?
-            .into_iter()
-            .collect();
-        }
-        let scopes = names
-            .iter()
-            .map(|&name| {
-                let description = self
-                    .descriptions
-                    .get(name)
-                    .or_else(|| descriptions.get(name));
-                context! {name, description => description.map_or("",String::as_str)}
-            })
-            .collect::<Vec<_>>();
-        let ticket = signer.sign(&json!({
-            "iss": signer.issuer(),
-            "sub": approval.user,
-            "jti": Uuid::new_v4(),
-            "type": "consent",
-            "client_id": client.id,
-            "resource": approval.resource,
-            "scope": approval.scopes,
-            "authz": approval.query,
-            "iat": now.timestamp(),
-            "exp": now.timestamp() + 600,
-        }))?;
+        let scopes = scope_items(tx, &self.descriptions, approval.scopes).await?;
+        let ticket = sign_ticket(
+            signer,
+            approval.user,
+            &client.id,
+            approval.resource,
+            approval.scopes,
+            approval.query,
+            now,
+        )?;
         let host = client
             .callback
             .split_once("://")
@@ -124,14 +165,7 @@ impl Page {
             resource => approval.resource,
             scopes, ticket, action => consent_http::PATH,
         })?;
-        let headers = [
-            (header::CACHE_CONTROL, "no-store"),
-            (
-                header::CONTENT_SECURITY_POLICY,
-                "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
-            ),
-        ];
-        Ok((headers, Html(html)).into_response())
+        Ok(html_response(axum::http::StatusCode::OK, html))
     }
 }
 
