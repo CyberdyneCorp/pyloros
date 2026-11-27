@@ -23,6 +23,7 @@ mod provisioning;
 mod registration;
 pub(crate) use registration::enqueue_webhooks;
 mod totp;
+mod update_input;
 mod userinfo;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};

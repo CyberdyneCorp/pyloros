@@ -1,0 +1,3 @@
+- [x] Align decoding, type error payloads and authentication order.
+- [x] Compare profile edit requests on both backends and verify rollback and client behavior.
+- [ ] Reconcile response headers for authenticated non-JSON requests with the shared HTTP response policy.

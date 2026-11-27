@@ -1,58 +1,26 @@
-use super::{Profile, credential, internal, project, revoked, unauthorized};
+use super::{Profile, credential, internal, project, revoked, unauthorized, update_input};
 use crate::{
     grant_audit::{AuditActivity, AuditSubject, write_activity},
     grant_response::SessionOrigin,
     token_http::{client_ip, header},
 };
-use axum::{
-    Json,
-    body::to_bytes,
-    extract::Request,
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-};
+use axum::{body::to_bytes, extract::Request, http::HeaderMap, response::Response};
 use chrono::Utc;
-use serde_json::{Value, json};
+use serde_json::value::RawValue;
 use sqlx::{Postgres, Transaction};
 use std::net::IpAddr;
 use uuid::Uuid;
 
-fn validation(issue: Value) -> Response {
-    (
-        StatusCode::UNPROCESSABLE_ENTITY,
-        Json(json!({"detail":[issue]})),
-    )
-        .into_response()
-}
-
-fn phone(body: &Value) -> Result<Option<&str>, Value> {
-    if body.is_null() {
-        return Err(json!({"loc":["body"],"type":"missing","msg":"Field required","input":null}));
-    }
-    if !body.is_object() {
-        return Err(
-            json!({"loc":["body"],"type":"model_attributes_type","msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
-        );
-    }
-    match &body["phone"] {
-        Value::Null => Ok(None),
-        Value::String(value) => Ok(Some(value)),
-        other => Err(
-            json!({"loc":["body","phone"],"type":"string_type","msg":"Input should be a valid string","input":other}),
-        ),
-    }
-}
-
 pub(super) async fn handle(state: &Profile, peer: IpAddr, req: Request) -> Response {
     let (parts, stream) = req.into_parts();
-    let Ok(bytes) = to_bytes(stream, 2 * 1024 * 1024).await else {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    let Ok(bytes) = to_bytes(stream, usize::MAX).await else {
+        return internal();
     };
-    let body = match crate::request_json::parse_body(&parts.headers, &bytes) {
+    let body = match update_input::document(&parts.headers, &bytes) {
         Ok(value) => value,
-        Err(issue) => return validation(issue),
+        Err(response) => return *response,
     };
-    apply(state, &parts.headers, peer, &body)
+    apply(state, &parts.headers, peer, body.as_deref())
         .await
         .unwrap_or_else(|_| internal())
 }
@@ -61,7 +29,7 @@ async fn apply(
     state: &Profile,
     headers: &HeaderMap,
     peer: IpAddr,
-    body: &Value,
+    body: Option<&RawValue>,
 ) -> Result<Response, sqlx::Error> {
     let Some(id) = credential(headers).and_then(|raw| state.verify.as_ref()?.read(raw)) else {
         return Ok(unauthorized());
@@ -73,8 +41,11 @@ async fn apply(
     if state.enforce && revoked(&mut tx, &id).await? {
         return Ok(unauthorized());
     }
-    match phone(body) {
-        Err(issue) => return Ok(validation(issue)),
+    let Some(body) = body else {
+        return Ok(internal());
+    };
+    match update_input::nullable_string(body, "phone") {
+        Err(response) => return Ok(*response),
         Ok(Some(phone)) => {
             let origin = SessionOrigin {
                 ip: client_ip(headers, peer, state.proxies),
@@ -83,7 +54,7 @@ async fn apply(
             update(
                 &mut tx,
                 id.user,
-                phone,
+                &phone,
                 origin,
                 header(headers, "x-request-id"),
             )
@@ -104,7 +75,7 @@ async fn update(
     request_id: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     let row = sqlx::query_as::<_, (Option<String>, Option<String>, Option<Uuid>)>(
-        "SELECT primary_phone,primary_email,organization_id FROM users WHERE id=$1 FOR UPDATE",
+        "SELECT primary_phone,primary_email,organization_id FROM users WHERE id=$1",
     )
     .bind(user)
     .fetch_optional(&mut **tx)
@@ -143,6 +114,36 @@ async fn update(
 mod tests {
     use super::*;
     use sqlx::{Acquire, PgPool};
+
+    #[tokio::test]
+    async fn edit_decodes_json_before_requiring_a_session() {
+        use axum::{body::Body, extract::ConnectInfo, http::StatusCode};
+        use std::net::SocketAddr;
+        use tower::ServiceExt;
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://localhost/pyloros")
+            .unwrap();
+        let routes = super::super::routes(pool, false).unwrap();
+        for (payload, expected) in [
+            (vec![0xff, 0xfe, b'{', 0, b'}', 0], StatusCode::UNAUTHORIZED),
+            (vec![0xff], StatusCode::BAD_REQUEST),
+            (
+                br#"{"phone":"oops"#.to_vec(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+        ] {
+            let request = axum::http::Request::patch("/api/v1/users/me")
+                .header("content-type", "application/json")
+                .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 8000))))
+                .body(Body::from(payload))
+                .unwrap();
+            assert_eq!(
+                routes.clone().oneshot(request).await.unwrap().status(),
+                expected
+            );
+        }
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL; run just test-db"]

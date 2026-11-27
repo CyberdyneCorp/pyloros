@@ -1,0 +1,1 @@
+Decode the request using the shared JSON encoding support. Parse syntax before credential checks and validate the phone after authentication. Preserve submitted values in type errors, including integers outside the native range.

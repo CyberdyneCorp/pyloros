@@ -55,7 +55,73 @@ pub(crate) fn json_issue(bytes: &[u8], error: serde_json::Error) -> Value {
         }
         other => other,
     };
-    json!({"loc":["body",prefix.chars().count()],"type":"json_invalid","msg":"JSON decode error","input":{},"ctx":{"error":message}})
+    let (offset, message) = syntax_location(&text, end, reason, message);
+    json!({"loc":["body",offset],"type":"json_invalid","msg":"JSON decode error","input":{},"ctx":{"error":message}})
+}
+
+fn syntax_location<'a>(text: &str, end: usize, reason: &str, default: &'a str) -> (usize, &'a str) {
+    let prefix = &text[..text.floor_char_boundary(end)];
+    let string_error = matches!(reason, "EOF while parsing a string" | "invalid escape")
+        || reason.starts_with("control character")
+        || reason.contains("hex code");
+    if string_error && let Some(issue) = string_diagnostic(text) {
+        return issue;
+    }
+    if matches!(reason, "expected ident" | "EOF while parsing a value") {
+        let start = prefix.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+        let literal = &prefix[start.len()..];
+        if !literal.is_empty()
+            && ["true", "false", "null"]
+                .iter()
+                .any(|s| s.starts_with(literal))
+        {
+            return (start.chars().count(), "Expecting value");
+        }
+    }
+    if let Some(before) = prefix
+        .trim_end_matches([' ', '\n', '\t', '\r'])
+        .strip_suffix(',')
+    {
+        let message = match text.as_bytes().get(end) {
+            Some(b'}') => Some("Illegal trailing comma before end of object"),
+            Some(b']') => Some("Illegal trailing comma before end of array"),
+            _ => None,
+        };
+        if let Some(message) = message {
+            return (before.chars().count(), message);
+        }
+    }
+    (prefix.chars().count(), default)
+}
+
+// The wire error identifies the opening quote or escape, while the decoder can
+// stop at the later character that made it invalid. Offsets count Unicode scalars.
+fn string_diagnostic(text: &str) -> Option<(usize, &'static str)> {
+    let mut chars = text.chars().enumerate();
+    let mut opening = None;
+    while let Some((index, c)) = chars.next() {
+        match c {
+            '"' => opening = if opening.is_some() { None } else { Some(index) },
+            _ if opening.is_none() => continue,
+            '\u{0}'..='\u{1f}' => return Some((index, "Invalid control character at")),
+            '\\' => match chars.next() {
+                Some((escape, 'u')) => {
+                    if !(0..4).all(|_| {
+                        chars
+                            .next()
+                            .is_some_and(|(_, digit)| digit.is_ascii_hexdigit())
+                    }) {
+                        return Some((escape, r"Invalid \uXXXX escape"));
+                    }
+                }
+                Some((_, '"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't')) => {}
+                Some(_) => return Some((index, r"Invalid \escape")),
+                None => break,
+            },
+            _ => {}
+        }
+    }
+    opening.map(|index| (index, "Unterminated string starting at"))
 }
 
 pub(crate) fn token_field(
@@ -124,5 +190,33 @@ pub(crate) fn integer(input: &Value) -> Result<i128, (&'static str, &'static str
             }
         }
         _ => Err(("int_type", "Input should be a valid integer")),
+    }
+}
+
+#[cfg(test)]
+mod syntax_tests {
+    use super::*;
+
+    #[test]
+    fn string_errors_and_trailing_commas_use_character_offsets() {
+        for (input, offset, message) in [
+            (r#"["é","unfinished"#, 5, "Unterminated string starting at"),
+            (r#"["é","\q"]"#, 6, r"Invalid \escape"),
+            (
+                r#"["é", ]"#,
+                4,
+                "Illegal trailing comma before end of array",
+            ),
+            (
+                r#"{"é":1, }"#,
+                6,
+                "Illegal trailing comma before end of object",
+            ),
+        ] {
+            let error = serde_json::from_str::<Value>(input).unwrap_err();
+            let issue = json_issue(input.as_bytes(), error);
+            assert_eq!(issue["loc"], json!(["body", offset]), "{input}");
+            assert_eq!(issue["ctx"]["error"], message, "{input}");
+        }
     }
 }

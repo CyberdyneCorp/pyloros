@@ -81,10 +81,10 @@ pub(super) async fn user_update<T>(
     key: &str,
     parse: impl FnOnce(Value) -> Result<T, Value>,
 ) -> Result<UserUpdate<T>, Box<Response>> {
-    let body = input::document(headers, bytes)?;
+    let body = update_input::document(headers, bytes)?;
     let (tx, actor, email) = operator(state, headers).await?;
     let body = body.ok_or_else(|| Box::new(internal()))?;
-    let (user, input) = input::validate(raw, &body, key, parse)?;
+    let (user, input) = update_input::validate(raw, &body, key, parse)?;
     Ok(UserUpdate {
         tx,
         actor,
@@ -93,5 +93,3 @@ pub(super) async fn user_update<T>(
         input,
     })
 }
-
-mod input;
