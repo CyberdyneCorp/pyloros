@@ -19,16 +19,9 @@ pub(super) async fn store(
         if locked.is_none() {
             return Ok(delete_group::missing(group));
         }
-        let locked_policy =
-            sqlx::query_scalar::<_, Uuid>("SELECT id FROM iam_policies WHERE id=$1 FOR KEY SHARE")
-                .bind(policy)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if locked_policy.is_none() {
+        if !lock_policy(&mut tx, policy).await? {
             return Ok(writes::missing(policy));
         }
-        // Loading the policy also validates its historical statement data.
-        statements::policies(&mut tx, Some(policy)).await?;
         sqlx::query(
             "INSERT INTO iam_group_policies(group_id,policy_id) VALUES($1,$2)
              ON CONFLICT (group_id,policy_id) DO NOTHING",
@@ -57,4 +50,19 @@ pub(super) async fn store(
     .await?;
     tx.commit().await?;
     Ok(Json(json!({"ok":true})).into_response())
+}
+
+pub(super) async fn lock_policy(
+    tx: &mut Transaction<'_, Postgres>,
+    policy: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let locked =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM iam_policies WHERE id=$1 FOR KEY SHARE")
+            .bind(policy)
+            .fetch_optional(&mut **tx)
+            .await?;
+    if locked.is_some() {
+        statements::policies(tx, Some(policy)).await?;
+    }
+    Ok(locked.is_some())
 }

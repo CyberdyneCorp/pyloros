@@ -23,6 +23,8 @@ sol! {
     function createPolicy(string name,string description,Rule[] statements);
     function updatePolicy(uint256 id,string name,string description,Rule[] statements);
     function deletePolicy(uint256 id);
+    function attach(uint256 identityId,uint256 policyId);
+    function detach(uint256 identityId,uint256 policyId);
     function attachGroupPolicy(uint256 groupId,uint256 policyId);
     function detachGroupPolicy(uint256 groupId,uint256 policyId);
     function addMember(uint256 groupId,uint256 identityId);
@@ -44,6 +46,11 @@ pub(crate) enum IamMutation<'a> {
         group: Uuid,
         identity: u32,
         add: bool,
+    },
+    UserPolicy {
+        identity: u32,
+        policy: Uuid,
+        attach: bool,
     },
     GroupPolicy {
         group: Uuid,
@@ -126,6 +133,27 @@ impl IamMutation<'_> {
                     statements,
                 }
                 .abi_encode())
+            }
+            Self::UserPolicy {
+                identity,
+                policy,
+                attach,
+            } => {
+                let policy_id = chain.required_policy(*policy).await?.id;
+                let identity_id = TokenId::from(*identity);
+                Ok(if *attach {
+                    attachCall {
+                        identityId: identity_id,
+                        policyId: policy_id,
+                    }
+                    .abi_encode()
+                } else {
+                    detachCall {
+                        identityId: identity_id,
+                        policyId: policy_id,
+                    }
+                    .abi_encode()
+                })
             }
             Self::GroupPolicy {
                 group,

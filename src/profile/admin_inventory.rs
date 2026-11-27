@@ -10,10 +10,13 @@ mod group_policies;
 pub(super) use delete_group::delete_group;
 mod group_members;
 mod user_detail;
+mod user_identity;
+mod user_policies;
 pub(super) use user_detail::{user_iam, user_token};
 mod group_relations;
 pub(super) use group_relations::{
-    add_member, attach_group_policy, delete_only, detach_group_policy, remove_member,
+    add_member, attach_group_policy, attach_user_policy, delete_only, detach_group_policy,
+    detach_user_policy, remove_member,
 };
 mod input;
 pub(super) use create_group::create_group;

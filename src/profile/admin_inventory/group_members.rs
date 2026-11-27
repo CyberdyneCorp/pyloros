@@ -3,41 +3,7 @@ use super::*;
 use crate::{
     chain_settings::{Chain, IamMutation, PrepareError},
     grant_response::SessionOrigin,
-    login_http::problem,
 };
-
-struct Identity {
-    id: Uuid,
-    chain_token_id: Option<i32>,
-}
-
-async fn identity(
-    tx: &mut Transaction<'_, Postgres>,
-    user: Uuid,
-) -> Result<Option<Identity>, sqlx::Error> {
-    let row = sqlx::query_as::<_, (Uuid, Option<i32>, String, String)>(
-        "SELECT id, chain_token_id, status, transfer_mode FROM iam_identities
-         WHERE user_id=$1 FOR KEY SHARE",
-    )
-    .bind(user)
-    .fetch_optional(&mut **tx)
-    .await?;
-    let Some((id, chain_token_id, status, mode)) = row else {
-        return Ok(None);
-    };
-    validate_identity(&status, &mode)?;
-    Ok(Some(Identity { id, chain_token_id }))
-}
-
-pub(super) fn validate_identity(status: &str, mode: &str) -> Result<(), sqlx::Error> {
-    if matches!(status, "active" | "suspended" | "revoked")
-        && matches!(mode, "soulbound" | "transferable" | "restricted")
-    {
-        Ok(())
-    } else {
-        Err(sqlx::Error::Decode("invalid stored IAM identity".into()))
-    }
-}
 
 pub(super) async fn prepare_chain(
     chain: &Chain,
@@ -52,17 +18,9 @@ pub(super) async fn prepare_chain(
         Err(PrepareError::Catalog(error)) => return admin_client_roles::chain_error(error),
         Err(_) => return internal(),
     }
-    let Ok(record) = identity(&mut tx, user).await else {
-        return internal();
-    };
-    let Some(token) = record.and_then(|record| record.chain_token_id) else {
-        return problem(
-            StatusCode::BAD_REQUEST,
-            &format!("user {user} has no chain identity"),
-        );
-    };
-    let Ok(identity) = u32::try_from(token) else {
-        return internal();
+    let identity = match user_identity::chain_token(&mut tx, user).await {
+        Ok(token) => token,
+        Err(error) => return *error,
     };
     if tx.commit().await.is_err() {
         return internal();
@@ -94,18 +52,9 @@ pub(super) async fn store(
     if name.as_deref().is_some_and(|name| name.starts_with("rp:")) {
         return Ok(delete_group::protected());
     }
-    let account = sqlx::query_scalar::<_, String>(
-        "SELECT extra_metadata::text FROM users WHERE id=$1 FOR KEY SHARE",
-    )
-    .bind(user)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let Some(metadata) = account else {
-        return Ok(problem(StatusCode::NOT_FOUND, &user.to_string()));
-    };
-    admin_organizations::normalized_storage(&metadata)?;
-    let Some(identity) = identity(&mut tx, user).await? else {
-        return Ok(problem(StatusCode::BAD_REQUEST, &user.to_string()));
+    let identity = match user_identity::for_update(&mut tx, user).await {
+        Ok(id) => id,
+        Err(response) => return Ok(*response),
     };
     let action = if add {
         if name.is_none() {
@@ -116,7 +65,7 @@ pub(super) async fn store(
             ON CONFLICT(group_id,identity_id) DO NOTHING",
         )
         .bind(group)
-        .bind(identity.id)
+        .bind(identity)
         .execute(&mut *tx)
         .await?;
         "iam.user.group.add"
@@ -124,7 +73,7 @@ pub(super) async fn store(
         if name.is_some() {
             sqlx::query("DELETE FROM iam_group_members WHERE group_id=$1 AND identity_id=$2")
                 .bind(group)
-                .bind(identity.id)
+                .bind(identity)
                 .execute(&mut *tx)
                 .await?;
         }
@@ -141,15 +90,4 @@ pub(super) async fn store(
     .await?;
     tx.commit().await?;
     Ok(Json(json!({"ok":true})).into_response())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn historical_identity_states_and_transfer_modes_are_validated_before_a_membership_write() {
-        assert!(validate_identity("suspended", "restricted").is_ok());
-        assert!(validate_identity("retired", "soulbound").is_err());
-        assert!(validate_identity("revoked", "legacy").is_err());
-    }
 }

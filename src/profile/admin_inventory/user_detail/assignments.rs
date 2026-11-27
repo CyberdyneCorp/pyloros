@@ -17,7 +17,7 @@ pub(super) async fn remote(
     .await?;
     tx.commit().await?;
     if let Some((token, status, mode)) = record {
-        group_members::validate_identity(&status, &mode)?;
+        user_identity::validate_identity(&status, &mode)?;
         if token.is_some()
             && let Err(error) = chain.check_user_catalog().await
         {
@@ -39,7 +39,7 @@ pub(super) async fn postgres(
     let Some((id, mut identity, created, status, mode)) = row else {
         return Ok(empty());
     };
-    group_members::validate_identity(&status, &mode)?;
+    user_identity::validate_identity(&status, &mode)?;
     identity["status"] = json!(status);
     identity["transfer_mode"] = json!(mode);
     identity["created_at"] = json!(timestamp(created));

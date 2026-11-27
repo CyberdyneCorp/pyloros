@@ -1,3 +1,5 @@
-- [ ] Implement audited PostgreSQL direct policy attachment and detachment.
-- [ ] Compare decisions, client-visible assignments, audit rollback and mixed-writer overlaps.
-- [ ] Implement and verify chain-backed changes including confirmed outcomes.
+- [x] Implement audited PostgreSQL direct policy attachment and detachment.
+- [x] Compare decisions, client-visible assignments, audit rollback and mixed-writer overlaps.
+- [x] Verify unsigned chain preparation, lookup and provider failure responses.
+- [ ] Resolve overlapping edits and failed chain transaction reporting during mixed-writer operation.
+- [ ] Verify confirmed chain changes and post-confirmation audit records.
