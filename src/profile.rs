@@ -487,6 +487,10 @@ fn build_routes(
                 .post(admin_inventory::evaluation::evaluate)
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
+        .route(
+            "/api/v1/admin/roles/{role_id}/sessions",
+            any(admin_inventory::role_sessions::list),
+        )
         .route("/api/v1/admin/roles", any(admin_inventory::roles))
         .route(
             "/api/v1/admin/groups",

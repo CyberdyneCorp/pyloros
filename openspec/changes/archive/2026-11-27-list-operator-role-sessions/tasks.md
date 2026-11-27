@@ -1,0 +1,2 @@
+- [x] Implement provider-selected role session reads and verify validation, filtering and response fields.
+- [x] Compare the original clients, provider failures and changes to session activity.

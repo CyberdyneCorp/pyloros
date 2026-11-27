@@ -22,6 +22,7 @@ pub(super) use group_relations::{
 };
 mod input;
 pub(super) use create_group::create_group;
+pub(super) mod role_sessions;
 mod statements;
 mod writes;
 pub(super) use writes::{create, replace};
