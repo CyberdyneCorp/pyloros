@@ -415,6 +415,10 @@ fn build_routes(
             any(admin_users::detail).delete(erasure::remove),
         )
         .route(
+            "/api/v1/admin/organizations",
+            any(admin_organizations::list),
+        )
+        .route(
             "/api/v1/admin/users/{user_id}/organizations",
             any(admin_organizations::memberships)
                 .post(admin_organizations::add)

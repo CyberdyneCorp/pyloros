@@ -1,0 +1,2 @@
+- [x] Implement catalog projection, filters, ordering and pagination.
+- [x] Compare both services and verify the existing organization picker and CLI.

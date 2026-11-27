@@ -1,9 +1,11 @@
-//! Organization memberships shown in the operator user directory.
+//! Organization directory and user memberships for operators.
 use super::*;
 use axum::extract::Path;
 mod addition;
+mod catalog;
 mod metadata;
 pub(super) use addition::add;
+pub(super) use catalog::list;
 
 pub(super) async fn memberships(
     State(state): State<Arc<Profile>>,
@@ -33,17 +35,26 @@ async fn read(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> Result<Response
         ));
     }
 
-    let rows = sqlx::query_as::<_, (Value, String, DateTime<Utc>, DateTime<Utc>)>(
-        "SELECT jsonb_build_object('id', o.id, 'name', o.name, 'short_name', o.short_name,
+    let query = format!(
+        "SELECT {COLUMNS}
+         FROM user_organizations m JOIN organizations o ON o.id=m.organization_id
+         WHERE m.user_id=$1 AND o.is_active ORDER BY lower(o.short_name)"
+    );
+    let rows = sqlx::query_as::<_, DirectoryRow>(&query)
+        .bind(user)
+        .fetch_all(&mut **tx)
+        .await?;
+    Ok(Json(json!({"organizations": directory(rows)?})).into_response())
+}
+
+type DirectoryRow = (Value, String, DateTime<Utc>, DateTime<Utc>);
+
+const COLUMNS: &str = "jsonb_build_object('id', o.id, 'name', o.name, 'short_name', o.short_name,
                  'domain_name', o.domain_name, 'github_login', o.github_login,
                  'description', o.description, 'is_active', o.is_active),
-                o.extra_metadata::text, o.created_at, o.updated_at
-         FROM user_organizations m JOIN organizations o ON o.id=m.organization_id
-         WHERE m.user_id=$1 AND o.is_active ORDER BY lower(o.short_name)",
-    )
-    .bind(user)
-    .fetch_all(&mut **tx)
-    .await?;
+                o.extra_metadata::text, o.created_at, o.updated_at";
+
+fn directory(rows: Vec<DirectoryRow>) -> Result<Vec<Value>, sqlx::Error> {
     let mut organizations = Vec::with_capacity(rows.len());
     for (mut item, metadata, created, updated) in rows {
         item["metadata"] =
@@ -52,7 +63,7 @@ async fn read(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> Result<Response
         item["updated_at"] = json!(timestamp(updated));
         organizations.push(item);
     }
-    Ok(Json(json!({"organizations": organizations})).into_response())
+    Ok(organizations)
 }
 
 async fn user_exists(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> Result<bool, sqlx::Error> {

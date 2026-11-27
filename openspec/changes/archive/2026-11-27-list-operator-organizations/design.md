@@ -1,0 +1,1 @@
+Reuse membership directory field serialization and operator authorization. Apply the same filters to the count and requested page. Order entries by organization name and use literal case-insensitive substring matching for search.
