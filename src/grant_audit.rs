@@ -201,6 +201,7 @@ pub(crate) enum AuditActivity<'a> {
     PasskeyRevoked(Uuid),
     PasskeyEnrolled(Uuid),
     LogoffAll(u64),
+    ServiceUserCreated(&'a str),
     UserCreated {
         operator: Uuid,
         row: Option<usize>,
@@ -248,6 +249,15 @@ type Classification<'a> = (
 
 fn classify(activity: AuditActivity<'_>) -> Classification<'_> {
     match activity {
+        AuditActivity::ServiceUserCreated(client) => (
+            "account_lifecycle",
+            "user_create",
+            None,
+            client,
+            "success",
+            None,
+            json!({}),
+        ),
         AuditActivity::UserCreated { row, .. } => (
             "account_lifecycle",
             "user_create",
@@ -723,7 +733,7 @@ pub(crate) async fn write_activity<'e>(
         event["subject_issuer"] = json!(provider.chars().take(255).collect::<String>());
         event["subject_identifier"] = json!(identifier.chars().take(255).collect::<String>());
     }
-    if activity == "token_revoke" && !client.is_empty() {
+    if matches!(activity, "token_revoke" | "user_create") && !client.is_empty() {
         event["actor_type"] = json!("client");
         event["actor_user_id"] = Value::Null;
         event["actor_client_id"] = event["client_id"].clone();

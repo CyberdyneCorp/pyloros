@@ -19,6 +19,7 @@ pub(crate) mod passkeys;
 pub use passkeys::limit_passkey_body;
 mod password_change;
 mod password_reset;
+mod provisioning;
 mod registration;
 pub(crate) use registration::enqueue_webhooks;
 mod totp;
@@ -246,6 +247,7 @@ struct Profile {
     admin_enabled: bool,
     passkeys: passkeys::Inventory,
     oidc_enabled: bool,
+    provisioning: provisioning::Settings,
     registration: registration::Settings,
     erasure: erasure::Settings,
     account_mail: crate::email_delivery::ConfirmationMailer,
@@ -337,6 +339,7 @@ fn build_routes(
         admin_enabled: config::flag_with_default("ADMIN_API_ENABLED", true)?,
         passkeys: passkeys::Inventory::configured()?,
         oidc_enabled: config::flag("OIDC_ENABLED")?,
+        provisioning: provisioning::Settings::configured()?,
         registration: registration::Settings::configured()?,
         erasure: erasure::Settings::configured()?,
         account_mail: crate::email_delivery::ConfirmationMailer::configured()?,
@@ -471,6 +474,12 @@ fn build_routes(
         .route("/api/v1/auth/passkeys", any(passkeys::list))
         .route("/api/v1/auth/passkeys/{passkey_id}", any(passkeys::modify))
         .route("/api/v1/auth/register", any(registration::handle))
+        .route(
+            "/api/v1/users/provision",
+            any(crate::token_http::post_only)
+                .post(provisioning::handle)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route("/api/v1/users/me", any(current))
         .route("/api/v1/auth/verify-email", any(email_verification::handle))
         .route("/api/v1/auth/mfa/status", any(enrollment::handle))

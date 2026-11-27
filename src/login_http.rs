@@ -6,7 +6,7 @@ mod end_session;
 mod federated;
 mod input;
 mod introspect;
-mod service_identity;
+pub(crate) mod service_identity;
 pub(crate) use input::email_field;
 mod logout;
 mod mfa;

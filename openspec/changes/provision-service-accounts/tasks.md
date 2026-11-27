@@ -1,0 +1,4 @@
+- [x] Verify service credentials, current client permissions, input and quotas.
+- [x] Implement transactional account, wallet, token, audit and webhook changes and post-commit mail.
+- [x] Compare reference responses, SMTP links, token redemption and concurrent writers.
+- [ ] Verify registration-hook delivery during coexistence.

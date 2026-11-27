@@ -16,7 +16,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::{RngCore, rngs::OsRng};
 
 pub(super) struct Settings {
-    key: Option<KeyEncryptionKey>,
+    pub(super) key: Option<KeyEncryptionKey>,
     quota: LoginThrottle,
     pub(super) hooks: bool,
     pub(super) webhooks: bool,

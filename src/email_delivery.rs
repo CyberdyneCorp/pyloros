@@ -140,6 +140,49 @@ impl ConfirmationMailer {
         Ok(())
     }
 
+    pub(crate) async fn send_invitation(
+        &self,
+        recipient: &str,
+        token: &str,
+        new_account: bool,
+    ) -> Result<(), MailError> {
+        let Provider::Smtp { relay, from, base } = &self.provider else {
+            return self.send_reset(recipient, token).await;
+        };
+        let mut action = reset_action(base.as_ref(), token)?;
+        let (subject, body) = if new_account {
+            if base.is_some() {
+                action.push_str("&invite=1");
+            }
+            (
+                "Activate your account",
+                format!(
+                    "An account was requested for this address. Choose a password to activate it.\n\n{action}"
+                ),
+            )
+        } else {
+            let sign_in = match base {
+                Some(url) => format!("Sign in at {}/login. ", url.as_str().trim_end_matches('/')),
+                None => String::new(),
+            };
+            (
+                "Your account already exists",
+                format!(
+                    "An account already exists for this address. {sign_in}Use the following link or code if you need to reset your password.\n\n{action}"
+                ),
+            )
+        };
+        let message = Message::builder()
+            .from(from.clone())
+            .to(recipient.parse().map_err(|_| MailError::Message)?)
+            .subject(subject)
+            .header(ContentType::TEXT_PLAIN)
+            .body(body)
+            .map_err(|_| MailError::Message)?;
+        relay.send(message).await.map_err(MailError::Transport)?;
+        Ok(())
+    }
+
     pub(crate) async fn send_verification(
         &self,
         recipient: &str,

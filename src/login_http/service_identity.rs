@@ -25,7 +25,7 @@ pub(super) async fn handle(State(login): State<Option<Arc<Login>>>, req: Request
     }
 }
 
-fn unauthorized(reason: &str) -> Box<Response> {
+pub(crate) fn unauthorized(reason: &str) -> Box<Response> {
     let mut response = problem(StatusCode::UNAUTHORIZED, reason);
     response
         .headers_mut()
@@ -33,20 +33,21 @@ fn unauthorized(reason: &str) -> Box<Response> {
     Box::new(response)
 }
 
-pub(super) struct Registration {
+pub(crate) struct Registration {
+    pub(crate) allowed_scopes: String,
     name: String,
     audiences: Option<BTreeSet<String>>,
 }
 
-pub(super) async fn registration(
+pub(crate) async fn registration(
     pool: &PgPool,
     client: &str,
     id: Uuid,
     enforce: bool,
 ) -> Result<Result<Registration, &'static str>, sqlx::Error> {
     type StoredAudiences = sqlx::types::Json<Option<BTreeSet<String>>>;
-    let row = sqlx::query_as::<_, (String, Option<StoredAudiences>, bool)>(
-        "SELECT name,allowed_audiences,$3 AND EXISTS(SELECT 1 FROM revoked_tokens WHERE jti=$2)
+    let row = sqlx::query_as::<_, (String, Option<StoredAudiences>, String, bool)>(
+        "SELECT name,allowed_audiences,allowed_scopes,$3 AND EXISTS(SELECT 1 FROM revoked_tokens WHERE jti=$2)
            FROM oauth_clients WHERE client_id=$1 AND active",
     )
     .bind(client)
@@ -56,9 +57,10 @@ pub(super) async fn registration(
     .await?;
     Ok(match row {
         None => Err("Client disabled or unknown"),
-        Some((_, _, true)) => Err("Invalid service token"),
-        Some((name, list, false)) => Ok(Registration {
+        Some((_, _, _, true)) => Err("Invalid service token"),
+        Some((name, list, allowed_scopes, false)) => Ok(Registration {
             name,
+            allowed_scopes,
             audiences: list.and_then(|list| list.0),
         }),
     })
@@ -119,9 +121,9 @@ mod tests {
             .connect(&env::var("DATABASE_URL").unwrap())
             .await
             .unwrap();
-        sqlx::raw_sql("CREATE TEMP TABLE oauth_clients(client_id text, name text, active boolean, allowed_audiences jsonb);
+        sqlx::raw_sql("CREATE TEMP TABLE oauth_clients(client_id text, name text, active boolean, allowed_audiences jsonb, allowed_scopes text);
             CREATE TEMP TABLE revoked_tokens(jti uuid);
-            INSERT INTO oauth_clients VALUES ('svc','Service',true,'[\"b\",\"a\",\"a\"]');")
+            INSERT INTO oauth_clients VALUES ('svc','Service',true,'[\"b\",\"a\",\"a\"]','users:provision');")
             .execute(&pool).await.unwrap();
         let id = Uuid::new_v4();
         sqlx::query("INSERT INTO revoked_tokens VALUES ($1)")

@@ -178,7 +178,7 @@ pub(crate) fn quoted_string(s: &str) -> String {
     out
 }
 
-fn unprintable(c: char) -> bool {
+pub(crate) fn unprintable(c: char) -> bool {
     use unicode_general_category::GeneralCategory::*;
     c != ' '
         && matches!(
