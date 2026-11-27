@@ -1,6 +1,6 @@
 //! One-time disclosure of a replacement OAuth client secret.
 use super::*;
-use crate::{passwords::PasswordScheme, request_json};
+use crate::passwords::PasswordScheme;
 use axum::body::Bytes;
 
 pub(in crate::profile) async fn rotate(
@@ -14,19 +14,9 @@ pub(in crate::profile) async fn rotate(
     if method != Method::POST {
         return crate::token_http::post_only().await;
     }
-    let body = if bytes.is_empty() || request_json::is_json(&headers) {
-        let Ok(text) = request_json::encoding::text(&bytes) else {
-            return problem(
-                StatusCode::BAD_REQUEST,
-                "There was an error parsing the body",
-            );
-        };
-        match request_json::parse_body(&headers, text.as_bytes()) {
-            Ok(value) => Some(value),
-            Err(issue) => return invalid(issue),
-        }
-    } else {
-        None
+    let body = match super::body(&headers, &bytes) {
+        Ok(body) => body,
+        Err(response) => return *response,
     };
     let origin = SessionOrigin {
         ip: client_ip(&headers, peer.ip(), state.proxies),
@@ -42,39 +32,6 @@ fn invalid(issue: Value) -> Response {
     )
         .into_response()
 }
-fn integer(input: &Value) -> Result<i128, (&'static str, &'static str)> {
-    match input {
-        Value::Bool(v) => Ok(i128::from(*v)),
-        Value::String(s) => {
-            let digits = crate::query::integer(s)?;
-            Ok(digits.parse().unwrap_or_else(|_| {
-                if digits.starts_with('-') {
-                    i128::MIN
-                } else {
-                    i128::MAX
-                }
-            }))
-        }
-        Value::Number(n) => {
-            if let Some(v) = n.as_i64() {
-                return Ok(i128::from(v));
-            }
-            if let Some(v) = n.as_u64() {
-                return Ok(i128::from(v));
-            }
-            let v = n.as_f64().unwrap_or(f64::NAN);
-            if v.fract() == 0.0 {
-                Ok(v as i128)
-            } else {
-                Err((
-                    "int_from_float",
-                    "Input should be a valid integer, got a number with a fractional part",
-                ))
-            }
-        }
-        _ => Err(("int_type", "Input should be a valid integer")),
-    }
-}
 fn grace(body: Value) -> Result<i32, Value> {
     if body.is_null() {
         return Ok(300);
@@ -88,7 +45,7 @@ fn grace(body: Value) -> Result<i32, Value> {
         return Ok(300);
     };
     let error = |kind: &str, msg: &str| json!({"type":kind,"loc":["body","grace_seconds"],"msg":msg,"input":value});
-    let n = integer(value).map_err(|(k, m)| error(k, m))?;
+    let n = crate::request_json::integer(value).map_err(|(k, m)| error(k, m))?;
     let (mut issue, ctx) = match n {
         0..=3600 => return Ok(n as i32),
         ..0 => (

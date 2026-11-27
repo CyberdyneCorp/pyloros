@@ -144,18 +144,30 @@ impl Provider {
             return;
         }
         let base = self.scopes.borrow().clone();
-        let (updates, snapshot) = tokio::sync::watch::channel(base.clone());
-        self.scopes = snapshot;
-        load_scopes(&pool, &base, &updates).await;
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = updates.closed() => break,
-                    _ = tokio::time::sleep(interval) => load_scopes(&pool, &base, &updates).await,
-                }
-            }
-        });
+        self.scopes = watch_scopes(pool, base, interval).await;
     }
+}
+pub(crate) type ScopeCatalog = tokio::sync::watch::Receiver<BTreeMap<String, String>>;
+
+pub(crate) async fn watch_scopes(
+    pool: sqlx::PgPool,
+    base: BTreeMap<String, String>,
+    interval: Duration,
+) -> ScopeCatalog {
+    let (updates, snapshot) = tokio::sync::watch::channel(base.clone());
+    if interval.is_zero() {
+        return snapshot;
+    }
+    load_scopes(&pool, &base, &updates).await;
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = updates.closed() => break,
+                _ = tokio::time::sleep(interval) => load_scopes(&pool, &base, &updates).await,
+            }
+        }
+    });
+    snapshot
 }
 
 async fn load_scopes(

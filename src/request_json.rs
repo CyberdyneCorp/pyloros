@@ -92,3 +92,37 @@ pub(crate) fn token_field(
         _ => Ok(token.into()),
     }
 }
+
+pub(crate) fn integer(input: &Value) -> Result<i128, (&'static str, &'static str)> {
+    match input {
+        Value::Bool(v) => Ok(i128::from(*v)),
+        Value::String(s) => {
+            let digits = crate::query::integer(s)?;
+            Ok(digits.parse().unwrap_or_else(|_| {
+                if digits.starts_with('-') {
+                    i128::MIN
+                } else {
+                    i128::MAX
+                }
+            }))
+        }
+        Value::Number(n) => {
+            if let Some(v) = n.as_i64() {
+                return Ok(i128::from(v));
+            }
+            if let Some(v) = n.as_u64() {
+                return Ok(i128::from(v));
+            }
+            let v = n.as_f64().unwrap_or(f64::NAN);
+            if v.fract() == 0.0 {
+                Ok(v as i128)
+            } else {
+                Err((
+                    "int_from_float",
+                    "Input should be a valid integer, got a number with a fractional part",
+                ))
+            }
+        }
+        _ => Err(("int_type", "Input should be a valid integer")),
+    }
+}

@@ -229,6 +229,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeCatalog>,
     admin_enabled: bool,
     passkeys: passkeys::Inventory,
     oidc_enabled: bool,
@@ -248,7 +249,29 @@ struct Profile {
 }
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
+    build_routes(pool, production, Default::default())
+}
+
+pub async fn routes_with_admin_registry(
+    pool: PgPool,
+    production: bool,
+    interval: std::time::Duration,
+) -> Result<Router, Box<dyn Error>> {
+    let catalog = admin_clients::creation::scope_catalog(pool.clone(), interval).await;
+    build_routes(
+        pool,
+        production,
+        tokio::sync::OnceCell::new_with(Some(catalog)),
+    )
+}
+
+fn build_routes(
+    pool: PgPool,
+    production: bool,
+    client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeCatalog>,
+) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        client_scopes,
         admin_enabled: config::flag_with_default("ADMIN_API_ENABLED", true)?,
         passkeys: passkeys::Inventory::configured()?,
         oidc_enabled: config::flag("OIDC_ENABLED")?,
@@ -281,7 +304,10 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
             "/api/v1/admin/oauth/clients/{client_id}/rotate-secret",
             any(admin_clients::rotate),
         )
-        .route("/api/v1/admin/oauth/clients", any(admin_clients::list))
+        .route(
+            "/api/v1/admin/oauth/clients",
+            axum::routing::post(admin_clients::create).fallback(admin_clients::list),
+        )
         .route(
             "/api/v1/admin/oauth/clients/{client_id}",
             any(admin_clients::detail),

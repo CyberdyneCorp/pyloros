@@ -27,7 +27,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let token =
         pyloros::token_http::routes(provider.as_ref(), pool.clone(), environment == "production")
             .await?;
-    let profile = pyloros::profile::routes(pool.clone(), environment == "production")?;
+    let profile = pyloros::profile::routes_with_admin_registry(
+        pool.clone(),
+        environment == "production",
+        Duration::from_secs(seconds),
+    )
+    .await?;
     let login_methods = pyloros::login_methods::routes(&environment)?;
     let login = pyloros::login_http::routes_with_external(
         pool.clone(),

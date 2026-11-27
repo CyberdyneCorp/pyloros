@@ -43,3 +43,23 @@ The issuer SHALL allow an authorized operator to create, update, rotate the secr
 
 - **WHEN** two rotations of the same registration commit on Pyloros
 - **THEN** the second replacement is current, and only the immediately preceding replacement is eligible for its grace period.
+
+#### Scenario: Create a service client with browser sign-in disabled
+
+- **WHEN** an authorized operator registers a valid service application with OIDC disabled
+- **THEN** create the client and its audit entry and return the issued credential.
+
+#### Scenario: Apply changes to the scope catalog
+
+- **WHEN** the active custom scope catalog refreshes
+- **THEN** creation accepts newly active scopes and rejects scopes removed from the effective catalog.
+
+#### Scenario: Distinguish an omitted field from an explicit null
+
+- **WHEN** an operator submits a partial update
+- **THEN** retain omitted values, apply the established null semantics of each submitted field and audit the names of recognized submitted fields.
+
+#### Scenario: Preserve the limits of a self-registered client
+
+- **WHEN** an operator edits a dynamic client
+- **THEN** enforce the public-client, consent, grant and scope restrictions while allowing eligible changes.

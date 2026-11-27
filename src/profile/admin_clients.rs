@@ -1,5 +1,8 @@
 //! Administrative access to the OAuth client registry.
+pub(super) mod creation;
+mod metadata;
 mod page;
+use crate::request_json;
 mod rotation;
 use super::*;
 use crate::{
@@ -17,6 +20,45 @@ const COLUMNS: &str = "id,client_id,name,description,allowed_scopes,allowed_audi
     max_token_ttl_s,grant_types,client_type,redirect_uris,post_logout_redirect_uris,
     access_token_audience,trusted,registration_source,active,created_by_user_id,
     created_at,updated_at,last_used_at";
+
+fn body(headers: &HeaderMap, bytes: &[u8]) -> Result<Option<Value>, Box<Response>> {
+    if !bytes.is_empty() && !request_json::is_json(headers) {
+        return Ok(None);
+    }
+    let text = request_json::encoding::text(bytes).map_err(|_| {
+        Box::new(problem(
+            StatusCode::BAD_REQUEST,
+            "There was an error parsing the body",
+        ))
+    })?;
+    request_json::parse_body(headers, text.as_bytes())
+        .map(Some)
+        .map_err(|issue| {
+            Box::new(
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({"detail":[issue]})),
+                )
+                    .into_response(),
+            )
+        })
+}
+pub(super) async fn create(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    bytes: axum::body::Bytes,
+) -> Response {
+    let data = match body(&headers, &bytes) {
+        Ok(data) => data,
+        Err(r) => return *r,
+    };
+    let origin = SessionOrigin {
+        ip: client_ip(&headers, peer.ip(), state.proxies),
+        user_agent: header_value(&headers, "user-agent"),
+    };
+    handle(&state, &headers, Operation::Create(data, origin)).await
+}
 
 pub(super) async fn list(
     State(state): State<Arc<Profile>>,
@@ -64,6 +106,7 @@ fn method_refused() -> Response {
     response
 }
 enum Operation<'a> {
+    Create(Option<Value>, SessionOrigin<'a>),
     Page(&'a str),
     Client(&'a str),
     Deactivate(&'a str, SessionOrigin<'a>),
@@ -76,6 +119,19 @@ async fn handle(state: &Profile, headers: &HeaderMap, op: Operation<'_>) -> Resp
     else {
         return unauthorized();
     };
+    if matches!(op, Operation::Create(_, _)) && state.client_scopes.get().is_none() {
+        let Ok(seconds) = crate::token_runtime::number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)
+            .and_then(|n| Ok(u64::try_from(n)?))
+        else {
+            return internal();
+        };
+        state
+            .client_scopes
+            .get_or_init(|| {
+                creation::scope_catalog(state.pool.clone(), std::time::Duration::from_secs(seconds))
+            })
+            .await;
+    }
     authorized_operation(state, &id, op)
         .await
         .unwrap_or_else(|_| internal())
@@ -110,6 +166,9 @@ async fn authorized_operation(
         return Ok(problem(StatusCode::FORBIDDEN, "Admin access required"));
     }
     match op {
+        Operation::Create(body, origin) => {
+            creation::apply(state, tx, (id.user, email.as_deref()), body, origin).await
+        }
         Operation::Rotate(target, body, origin) => {
             rotation::apply(tx, (id.user, email.as_deref()), target, body, origin).await
         }
