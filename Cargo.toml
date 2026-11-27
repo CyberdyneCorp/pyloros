@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+tower = { version = "0.5", features = ["util"] }
 jsonwebtoken = "9"
 argon2 = "0.5"
 chrono = "0.4"
@@ -58,6 +59,3 @@ alloy-sol-types = { version = "1", default-features = false }
 [target.'cfg(unix)'.dependencies]
 dns-lookup = "4"
 libc = "0.2"
-
-[dev-dependencies]
-tower = { version = "0.5", features = ["util"] }

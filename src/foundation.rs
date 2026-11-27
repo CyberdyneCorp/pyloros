@@ -28,6 +28,37 @@ where
         )
 }
 
+/// Check alternate paths against the application's routes without running their handlers.
+pub(crate) fn canonical_paths(router: Router) -> Router {
+    use axum::{http::StatusCode, middleware, response::IntoResponse};
+    use tower::ServiceExt;
+
+    let paths = router.clone().route_layer(middleware::from_fn(
+        |_: Request, _: middleware::Next| async { StatusCode::NO_CONTENT },
+    ));
+    let peers = crate::config::forwarded_peers();
+    router.fallback(move |req: Request| {
+        let paths = paths.clone();
+        let peers = peers.clone();
+        async move {
+            let path = req.uri().path();
+            let canonical = path.trim_end_matches('/');
+            if canonical.is_empty() || canonical == path {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            let probe = Request::builder()
+                .uri(canonical)
+                .body(axum::body::Body::empty())
+                .expect("path from parsed URI");
+            let matched = paths.oneshot(probe).await.expect("infallible router");
+            if matched.status() != StatusCode::NO_CONTENT {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            Redirect::temporary(&canonical_location(&req, canonical, &peers)).into_response()
+        }
+    })
+}
+
 fn canonical_location(req: &Request, path: &str, peers: &[ipnet::IpNet]) -> String {
     let mut location =
         origin(req.headers(), req.uri(), req.extensions(), peers).unwrap_or_default();
@@ -89,6 +120,39 @@ fn origin(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn redirect_lookup_preserves_the_query_and_never_executes_a_write() {
+        use axum::{body::Body, http::StatusCode, routing::post};
+        use tower::ServiceExt;
+        async fn mutation() -> StatusCode {
+            panic!("route lookup executed a mutation")
+        }
+        let routes = Router::new().route("/products/{id}", post(mutation));
+        let app = canonical_paths(routes);
+        for method in ["GET", "POST", "DELETE"] {
+            let request = Request::builder()
+                .method(method)
+                .uri("/products/item///?q=a%20b")
+                .header("host", "auth.example")
+                .body(Body::empty())
+                .unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+            assert_eq!(
+                response.headers()["location"],
+                "http://auth.example/products/item?q=a%20b"
+            );
+        }
+        let unknown = Request::builder()
+            .uri("/unknown/")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            app.oneshot(unknown).await.unwrap().status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+
     #[test]
     fn only_trusted_peers_supply_the_redirect_scheme() {
         let peers = ["127.0.0.1/32".parse().unwrap()];

@@ -1,0 +1,1 @@
+Use the same route table for recognizing canonical paths and dispatching normal requests. A separate lookup returns a match marker without running the handler. Construct the redirect using the configured proxy trust policy.

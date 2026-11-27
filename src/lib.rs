@@ -103,7 +103,7 @@ pub async fn application(
         .merge(methods)
         .merge(email_link_http::routes(pool)?)
         .merge(discovery::routes(provider));
-    cors::apply_origins(app, cors_origins)
+    cors::apply_origins(foundation::canonical_paths(app), cors_origins)
 }
 
 pub fn router(environment: String, pool: PgPool) -> Router {

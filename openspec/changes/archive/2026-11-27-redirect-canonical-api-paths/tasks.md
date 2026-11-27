@@ -1,0 +1,2 @@
+- [x] Implement canonical path detection and exercise read and write routes.
+- [x] Compare redirects for the REST compatibility inventory.
