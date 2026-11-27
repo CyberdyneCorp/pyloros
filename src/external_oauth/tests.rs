@@ -20,7 +20,7 @@ async fn only_valid_cli_requests_persist_callback_state() {
     let (_, allowed) = watch::channel(Redirects::new());
     let service = Arc::new(Service {
         pool: pool.clone(),
-        providers: [("google", Provider::Stub("https://issuer.example/cb".into()))].into(),
+        providers: [("google", Provider::test_google("https://issuer.example/cb"))].into(),
         allowed,
         ttl: 60,
         cli: true,

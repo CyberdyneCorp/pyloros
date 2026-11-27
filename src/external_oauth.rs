@@ -1,6 +1,6 @@
 //! External identity provider authorization and shared callback state.
 mod input;
-mod provider;
+pub mod provider;
 pub mod state;
 
 use crate::{config::flag, login_http::problem};
@@ -41,10 +41,14 @@ pub async fn routes(
     interval: Duration,
 ) -> Result<Router, Box<dyn Error>> {
     let stub = flag("OAUTH_STUB_ENABLED")?;
-    let providers = ["google", "microsoft"]
-        .into_iter()
-        .filter_map(|name| Provider::configured(name, stub).map(|p| (name, p)))
-        .collect();
+    let mut providers = HashMap::new();
+    if !(stub && environment == "production") {
+        for name in ["google", "microsoft"] {
+            if let Some(provider) = Provider::configured(name, stub)? {
+                providers.insert(name, provider);
+            }
+        }
+    }
     let raw = env::var("OAUTH_CLIENT_REDIRECT_ALLOWLIST").unwrap_or_default();
     let entries: Vec<String> = if raw.trim_start().starts_with('[') {
         serde_json::from_str(&raw)?
