@@ -311,3 +311,12 @@ rolled out independently. For an organization grant the event carries its
 organization ID and a null user ID. Renewing a grant or repeating a withdrawal
 delivers an event for each committed administrator action. The audit record,
 entitlement change and queued deliveries commit together.
+
+### Deliver PostgreSQL role hooks
+
+Enable `HOOKS_ENABLED=true` and `PYLOROS_ROLE_HOOK_DISPATCH=true` on the
+deployment writing PostgreSQL role assignments. Bind each active role hook to
+its component. Administrator and delegated writes queue an event with the
+subject user, resolved client and role key. Scoped assignments also include
+the organization ID. Removing an organization membership queues one revocation
+per withdrawn scoped role. Audit, membership and delivery changes commit together.

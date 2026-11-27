@@ -1,0 +1,2 @@
+- [x] Integrate PostgreSQL role grants, withdrawals and organization membership cleanup with the shared worker.
+- [x] Verify administrator and delegated events, independent configuration, repeated operations and rollback.

@@ -1,0 +1,1 @@
+Construct the event from the resolved assignment so delegated writes use the authenticated client. Store the selected component and the assignment event in the membership transaction. The organization is included only on scoped events. A missing binding leaves the mutation retryable.

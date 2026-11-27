@@ -1,4 +1,4 @@
-//! Persist the exact component version and permitted entitlement event fields at commit.
+//! Persist the exact component version and permitted event fields at commit.
 use super::*;
 
 pub(super) mod worker;
@@ -7,12 +7,14 @@ pub(super) mod worker;
 pub(in crate::profile) enum Producer {
     Store,
     Administrator,
+    Role,
 }
 
 impl Producer {
     fn enabled(self) -> Result<bool, Box<dyn Error>> {
         let name = match self {
             Self::Store => "PYLOROS_STORE_HOOK_DISPATCH",
+            Self::Role => "PYLOROS_ROLE_HOOK_DISPATCH",
             Self::Administrator => "PYLOROS_ADMIN_ENTITLEMENT_HOOK_DISPATCH",
         };
         config::flag_with_default(name, false)
@@ -49,7 +51,7 @@ impl Entitlement<'_> {
     }
 }
 
-async fn enqueue(
+pub(in crate::profile) async fn enqueue(
     tx: &mut Transaction<'_, Postgres>,
     producer: Producer,
     event: &str,

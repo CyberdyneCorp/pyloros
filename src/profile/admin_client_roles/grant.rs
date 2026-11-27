@@ -148,7 +148,7 @@ impl Assignment {
             }
             id = scoped_group(&mut tx, &format!("{name}@{org}"), description.as_deref()).await?;
         }
-        if state.registration.hooks && registration::pending_hook(&mut tx, "role_granted").await? {
+        if state.registration.hooks && !self.queue_hook(&mut tx, "role_granted").await? {
             return Ok(problem(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Role grant hook dispatcher unavailable",

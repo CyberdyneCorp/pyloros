@@ -2,4 +2,5 @@
 - [x] Verify scoped input, client isolation, repeated requests, operator access, audits, webhook deliveries, and rollback.
 - [x] Exercise the existing CLI, browser requests and concurrent requests on both backends.
 - [x] Compare chain group selection, identity lookup, unsigned transaction data and provider failures.
-- [ ] Verify configured hook dispatch, confirmed chain mutations, and migration contracts for provider rejection and commit-time rollback.
+- [x] Verify version-pinned PostgreSQL role hook dispatch for configured delegated writers.
+- [ ] Verify confirmed chain mutations and migration contracts for provider rejection and commit-time rollback.

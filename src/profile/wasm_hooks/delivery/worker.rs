@@ -5,12 +5,13 @@ use tokio::{
     time::{Duration, Instant, sleep, timeout},
 };
 
-pub struct EntitlementHookWorker(JoinHandle<()>);
-impl EntitlementHookWorker {
+pub struct ComponentHookWorker(JoinHandle<()>);
+impl ComponentHookWorker {
     pub fn start(pool: PgPool) -> Result<Option<Self>, Box<dyn Error>> {
-        if !(Producer::Store.enabled()? || Producer::Administrator.enabled()?)
-            || !config::flag_with_default("HOOKS_ENABLED", true)?
-        {
+        let store = Producer::Store.enabled()?;
+        let administrator = Producer::Administrator.enabled()?;
+        let role = Producer::Role.enabled()?;
+        if !(store || administrator || role) || !config::flag_with_default("HOOKS_ENABLED", true)? {
             return Ok(None);
         }
         Ok(Some(Self(tokio::spawn(async move {
@@ -19,7 +20,7 @@ impl EntitlementHookWorker {
                     Ok(true) => continue,
                     Ok(false) => sleep(Duration::from_millis(250)).await,
                     Err(error) => {
-                        eprintln!("entitlement hook delivery failed: {error}");
+                        eprintln!("component hook delivery failed: {error}");
                         sleep(Duration::from_secs(2)).await;
                     }
                 }
@@ -27,7 +28,7 @@ impl EntitlementHookWorker {
         }))))
     }
 }
-impl Drop for EntitlementHookWorker {
+impl Drop for ComponentHookWorker {
     fn drop(&mut self) {
         self.0.abort();
     }

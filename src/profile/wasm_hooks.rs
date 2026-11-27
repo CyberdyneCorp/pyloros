@@ -22,7 +22,7 @@ pub(super) async fn validate(State(state): State<Arc<Profile>>, req: Request) ->
 
 pub(super) mod binding;
 pub(super) mod delivery;
-pub use delivery::worker::EntitlementHookWorker;
+pub use delivery::worker::ComponentHookWorker;
 mod dry_run;
 pub(super) use dry_run::dry_run;
 mod storage;

@@ -34,6 +34,21 @@ impl Assignment {
         item
     }
 
+    async fn queue_hook(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        event: &str,
+    ) -> sqlx::Result<bool> {
+        wasm_hooks::delivery::enqueue(
+            tx,
+            wasm_hooks::delivery::Producer::Role,
+            event,
+            Some(self.user),
+            self.metadata(),
+        )
+        .await
+    }
+
     async fn check_target(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -338,6 +353,26 @@ mod tests {
                 .unwrap()
                 .status(),
             StatusCode::NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn assignment_event_fields_include_the_organization_only_for_scoped_roles() {
+        let mut assignment = Assignment {
+            user: Uuid::new_v4(),
+            client: "service".into(),
+            key: "reader".into(),
+            org: None,
+        };
+        let global = json!({"client_id":"service","role_key":"reader"});
+        assert_eq!(assignment.metadata(), global);
+        let org = Uuid::new_v4();
+        assignment.org = Some(org);
+        assert_eq!(
+            assignment.metadata(),
+            json!({
+                "client_id":"service","role_key":"reader","organization_id":org
+            })
         );
     }
 

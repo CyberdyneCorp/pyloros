@@ -133,7 +133,7 @@ impl Assignment {
         let Some(identity) = identity else {
             return Ok(Some(no_identity()));
         };
-        if state.registration.hooks && registration::pending_hook(tx, "role_revoked").await? {
+        if state.registration.hooks && !self.queue_hook(tx, "role_revoked").await? {
             return Ok(Some(problem(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Role revocation hook dispatcher unavailable",
