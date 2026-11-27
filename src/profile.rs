@@ -3,6 +3,7 @@ mod edit;
 mod email_verification;
 mod enrollment;
 mod logout_all;
+mod passkeys;
 mod password_change;
 mod password_reset;
 mod registration;
@@ -194,7 +195,17 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
         .bind(id.user).bind(id.iat).bind(id.jti).bind(id.sid).fetch_one(&mut **tx).await
 }
 
+fn timestamp(created: DateTime<Utc>) -> String {
+    let precision = if created.timestamp_subsec_micros() == 0 {
+        SecondsFormat::Secs
+    } else {
+        SecondsFormat::Micros
+    };
+    created.to_rfc3339_opts(precision, true)
+}
+
 struct Profile {
+    passkeys: passkeys::Inventory,
     oidc_enabled: bool,
     registration: registration::Settings,
     account_mail: crate::email_delivery::ConfirmationMailer,
@@ -213,6 +224,7 @@ struct Profile {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        passkeys: passkeys::Inventory::configured()?,
         oidc_enabled: config::flag("OIDC_ENABLED")?,
         registration: registration::Settings::configured()?,
         account_mail: crate::email_delivery::ConfirmationMailer::configured()?,
@@ -240,6 +252,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     };
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/userinfo", any(userinfo::handle))
+        .route("/api/v1/auth/passkeys", any(passkeys::list))
         .route("/api/v1/auth/register", any(registration::handle))
         .route("/api/v1/users/me", any(current))
         .route("/api/v1/auth/verify-email", any(email_verification::handle))
@@ -362,12 +375,7 @@ async fn project(
     let Some((mut doc, created)) = row else {
         return Ok((StatusCode::NOT_FOUND,Json(json!({"type":"about:blank","status":404,"title":"User not found","detail":"User not found"}))).into_response());
     };
-    let precision = if created.timestamp_subsec_micros() == 0 {
-        SecondsFormat::Secs
-    } else {
-        SecondsFormat::Micros
-    };
-    doc["created_at"] = json!(created.to_rfc3339_opts(precision, true));
+    doc["created_at"] = json!(timestamp(created));
     doc["is_admin"] = json!(config::effective_admin(
         doc["is_admin"] == true,
         doc["email"].as_str(),

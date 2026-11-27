@@ -68,7 +68,7 @@ fn configured_origins(key: &str) -> Vec<String> {
         .collect()
 }
 
-fn passkey_rp(dev: bool) -> Result<Option<String>, Box<dyn Error>> {
+pub(crate) fn passkey_rp(dev: bool) -> Result<Option<String>, Box<dyn Error>> {
     if !crate::config::flag("PASSKEYS_ENABLED")? {
         return Ok(None);
     }

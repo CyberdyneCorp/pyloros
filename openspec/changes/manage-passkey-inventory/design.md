@@ -1,0 +1,1 @@
+Check the first-party credential and current session, then constrain inventory queries to the account and configured relying party. Apply per-operation admission limits. Publish only display fields. Serialize destructive changes with account recovery checks and audit them in the same transaction.
