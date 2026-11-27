@@ -1,0 +1,3 @@
+- [x] Capture reference exchange and database behavior for client, resource, scope, session and replay cases.
+- [ ] Implement the Rust HTTP grant, atomic rotation, claims and audit on PostgreSQL.
+- [ ] Compare both backend directions, legacy records, simultaneous use, replay, rollback, claim updates and supported deployment settings.
