@@ -23,6 +23,7 @@ sol! {
     function createPolicy(string name,string description,Rule[] statements);
     function updatePolicy(uint256 id,string name,string description,Rule[] statements);
     function deletePolicy(uint256 id);
+    function deleteGroup(uint256 id);
     function createGroup(string name,string description);
 }
 
@@ -30,14 +31,17 @@ fn empty_if_null<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Er
     Ok(Option::<String>::deserialize(d)?.unwrap_or_default())
 }
 
-pub(crate) enum PolicyMutation<'a> {
-    Create(&'a Value),
-    Replace(Uuid, &'a Value),
-    Delete(Uuid),
+pub(crate) enum IamMutation<'a> {
+    CreatePolicy(&'a Value),
+    ReplacePolicy(Uuid, &'a Value),
+    DeletePolicy(Uuid),
+    DeleteGroup(Uuid),
 }
 
 pub(crate) enum PrepareError {
-    Missing(Uuid),
+    MissingPolicy(Uuid),
+    MissingGroup(Uuid),
+    ProtectedGroup,
     Catalog(SnapshotError),
     Reverted(String),
     Unavailable,
@@ -72,10 +76,10 @@ impl PolicyFields {
     }
 }
 
-impl PolicyMutation<'_> {
+impl IamMutation<'_> {
     async fn calldata(&self, chain: &Chain) -> Result<Vec<u8>, PrepareError> {
         match self {
-            Self::Create(body) => {
+            Self::CreatePolicy(body) => {
                 let PolicyFields {
                     name,
                     description,
@@ -88,7 +92,7 @@ impl PolicyMutation<'_> {
                 }
                 .abi_encode())
             }
-            Self::Replace(id, body) => {
+            Self::ReplacePolicy(id, body) => {
                 let target = chain.required_policy(*id).await?.id;
                 // Re-read metadata immediately before encoding a replacement.
                 let prior = chain
@@ -109,7 +113,16 @@ impl PolicyMutation<'_> {
                 }
                 .abi_encode())
             }
-            Self::Delete(id) => Ok(deletePolicyCall {
+            Self::DeleteGroup(id) => {
+                // Group deletion checks namespace ownership and then resolves the current chain ID.
+                chain.deletable_group(*id).await?;
+                let group = chain
+                    .deletable_group(*id)
+                    .await?
+                    .ok_or(PrepareError::MissingGroup(*id))?;
+                Ok(deleteGroupCall { id: group.id }.abi_encode())
+            }
+            Self::DeletePolicy(id) => Ok(deletePolicyCall {
                 id: chain.required_policy(*id).await?.id,
             }
             .abi_encode()),
@@ -141,11 +154,24 @@ fn quantity(value: &Value) -> Result<TokenId, PrepareError> {
 }
 
 impl Chain {
+    async fn deletable_group(&self, id: Uuid) -> Result<Option<Group>, PrepareError> {
+        let group = self
+            .snapshot()
+            .await
+            .map_err(PrepareError::Catalog)?
+            .groups
+            .into_iter()
+            .find(|g| chain_uuid("group", g.id) == id);
+        if group.as_ref().is_some_and(|g| g.name.starts_with("rp:")) {
+            return Err(PrepareError::ProtectedGroup);
+        }
+        Ok(group)
+    }
     async fn required_policy(&self, id: Uuid) -> Result<CatalogEntry, PrepareError> {
         self.policy_entry(id)
             .await
             .map_err(PrepareError::Catalog)?
-            .ok_or(PrepareError::Missing(id))
+            .ok_or(PrepareError::MissingPolicy(id))
     }
 
     async fn quantity(&self, method: &str, params: Value) -> Result<TokenId, PrepareError> {
@@ -171,12 +197,16 @@ impl Chain {
         }
     }
 
-    pub(crate) async fn prepare_policy(
+    pub(crate) async fn prepare_mutation(
         &self,
-        mutation: &PolicyMutation<'_>,
+        mutation: &IamMutation<'_>,
     ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
         let call = mutation.calldata(self).await?;
-        self.prepare_contract(self.policy.as_deref(), call).await
+        let address = match mutation {
+            IamMutation::DeleteGroup(_) => self.group.as_deref(),
+            _ => self.policy.as_deref(),
+        };
+        self.prepare_contract(address, call).await
     }
 
     pub(crate) async fn prepare_group_creation(
@@ -314,7 +344,7 @@ mod tests {
         });
         let doc = json!({"name":"tools","description":null,"statements":[{"effect":"allow","actions":["use"],"resources":["tool"],"conditions":[{"operator":"IpAddress","key":"network","value":"local"}],"sid":null}]});
         let tx = chain
-            .prepare_policy(&PolicyMutation::Create(&doc))
+            .prepare_mutation(&IamMutation::CreatePolicy(&doc))
             .await
             .ok()
             .unwrap();

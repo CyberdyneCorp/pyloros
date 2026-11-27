@@ -6,7 +6,7 @@ pub(crate) use health::Monitor;
 use k256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
 pub(crate) use membership::{
     Chain, SnapshotError,
-    policy_transaction::{PolicyMutation, PrepareError},
+    policy_transaction::{IamMutation, PrepareError},
 };
 use serde::Serialize;
 use tokio::sync::RwLock;

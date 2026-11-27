@@ -1,6 +1,6 @@
 //! Store ordered policy statements and their operator audit atomically.
 use super::*;
-use crate::chain_settings::{Chain, PolicyMutation, PrepareError};
+use crate::chain_settings::{Chain, IamMutation, PrepareError};
 use crate::{grant_response::SessionOrigin, request_json::fields};
 
 pub(in crate::profile) async fn create(
@@ -53,8 +53,8 @@ async fn write(
             return internal();
         }
         let mutation = match id {
-            Some(id) => PolicyMutation::Replace(id, &policy),
-            None => PolicyMutation::Create(&policy),
+            Some(id) => IamMutation::ReplacePolicy(id, &policy),
+            None => IamMutation::CreatePolicy(&policy),
         };
         return prepare_chain_write(&chain, mutation).await;
     }
@@ -67,13 +67,15 @@ async fn write(
         .unwrap_or_else(|_| internal())
 }
 
-pub(super) async fn prepare_chain_write(chain: &Chain, mutation: PolicyMutation<'_>) -> Response {
-    match chain.prepare_policy(&mutation).await {
-        Err(PrepareError::Missing(id)) => missing(id),
+pub(super) async fn prepare_chain_write(chain: &Chain, mutation: IamMutation<'_>) -> Response {
+    match chain.prepare_mutation(&mutation).await {
+        Err(PrepareError::MissingGroup(id)) => delete_group::missing(id),
+        Err(PrepareError::MissingPolicy(id)) => missing(id),
+        Err(PrepareError::ProtectedGroup)=>delete_group::protected(),
         Err(PrepareError::Catalog(error)) => admin_client_roles::chain_error(error),
         Err(PrepareError::Invalid) => internal(),
         Err(PrepareError::Unavailable | PrepareError::Reverted(_))
-            if matches!(mutation, PolicyMutation::Create(_)) =>
+            if matches!(mutation, IamMutation::CreatePolicy(_)) =>
         {
             internal()
         }

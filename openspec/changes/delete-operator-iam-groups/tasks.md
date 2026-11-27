@@ -1,3 +1,5 @@
-- [ ] Implement PostgreSQL group deletion, namespace protection and auditing.
-- [ ] Verify relationship cleanup, access decisions, rollback, concurrency and both original clients.
-- [ ] Implement and verify chain-backed deletion and provider switches.
+- [x] Implement PostgreSQL group deletion, namespace protection and auditing.
+- [x] Verify relationship cleanup, access decisions, rollback, concurrency and both original clients.
+- [x] Verify unsigned chain deletion preparation, namespace protection and switching back to PostgreSQL.
+- [ ] Verify confirmed chain deletion, its audit and access after confirmation.
+- [ ] Resolve behavior during coexistence when two operators delete a group or a concurrent rename reserves it for a client role.

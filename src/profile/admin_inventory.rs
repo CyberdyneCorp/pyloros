@@ -5,6 +5,8 @@ use serde::Serialize;
 mod removal;
 pub(super) use removal::remove;
 mod create_group;
+mod delete_group;
+pub(super) use delete_group::delete_group;
 mod input;
 pub(super) use create_group::create_group;
 mod statements;

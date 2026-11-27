@@ -428,6 +428,10 @@ fn build_routes(
                 .post(admin_inventory::create)
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
+        .route(
+            "/api/v1/admin/groups/{group_id}",
+            any(admin_inventory::delete_group),
+        )
         .route("/api/v1/admin/roles", any(admin_inventory::roles))
         .route(
             "/api/v1/admin/groups",

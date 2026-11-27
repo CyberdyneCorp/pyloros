@@ -25,7 +25,7 @@ pub(in crate::profile) async fn remove(
         }
         return writes::prepare_chain_write(
             &chain,
-            crate::chain_settings::PolicyMutation::Delete(id),
+            crate::chain_settings::IamMutation::DeletePolicy(id),
         )
         .await;
     }
@@ -74,11 +74,21 @@ async fn delete(
         .bind(id)
         .execute(&mut *tx)
         .await?;
+    commit_deletion(tx, actor, "iam.policy.delete", ("iam_policy", id), origin).await
+}
+
+pub(super) async fn commit_deletion(
+    mut tx: Transaction<'_, Postgres>,
+    actor: (Uuid, Option<&str>),
+    action: &str,
+    target: (&str, Uuid),
+    origin: SessionOrigin<'_>,
+) -> Result<Response, sqlx::Error> {
     crate::admin_audit::append(
         &mut tx,
-        "iam.policy.delete",
+        action,
         Some(actor),
-        ("iam_policy", &id.to_string()),
+        (target.0, &target.1.to_string()),
         json!({}),
         origin,
     )
