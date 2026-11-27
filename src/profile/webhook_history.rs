@@ -39,18 +39,7 @@ pub(super) fn routes() -> Router<Arc<Profile>> {
         )
 }
 
-async fn operator(
-    state: &Profile,
-    method: Method,
-    headers: &HeaderMap,
-) -> Result<Tx<'static>, Box<Response>> {
-    if method != Method::GET {
-        return Err(Box::new(crate::browser_http::method_not_allowed().await));
-    }
-    administrator::operator(state, headers)
-        .await
-        .map(|(tx, _, _)| tx)
-}
+use administrator::read as operator;
 
 const FIELDS: &str = "id,name,url,description,is_active,event_types::text AS events,
     timestamptz_send(previous_secret_expires_at) AS expires,timestamptz_send(created_at) AS created,

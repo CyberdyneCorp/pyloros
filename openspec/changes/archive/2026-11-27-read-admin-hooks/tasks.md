@@ -1,0 +1,2 @@
+- [x] Implement configuration inventory, individual lookup and execution history.
+- [x] Verify access loss, pagination, historical values and the existing clients.

@@ -65,6 +65,17 @@ pub(super) async fn operator(
     Ok((tx, identity.user, email))
 }
 
+pub(super) async fn read(
+    state: &Profile,
+    method: Method,
+    headers: &HeaderMap,
+) -> Result<Transaction<'static, Postgres>, Box<Response>> {
+    if method != Method::GET {
+        return Err(Box::new(crate::browser_http::method_not_allowed().await));
+    }
+    operator(state, headers).await.map(|(tx, _, _)| tx)
+}
+
 pub(super) async fn put_required() -> Response {
     let mut r = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
     r.headers_mut()

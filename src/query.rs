@@ -109,6 +109,10 @@ pub(crate) fn pagination(
 }
 
 pub(crate) fn bounded(name: &str, raw: &str, max: Option<i128>) -> Result<i128, Value> {
+    range(name, raw, 1, max)
+}
+
+pub(crate) fn range(name: &str, raw: &str, min: i128, max: Option<i128>) -> Result<i128, Value> {
     let error =
         |kind: &str, msg: &str| json!({"loc":["query",name],"type":kind,"msg":msg,"input":raw});
     let digits = crate::query::integer(raw).map_err(|(k, m)| error(k, m))?;
@@ -119,11 +123,11 @@ pub(crate) fn bounded(name: &str, raw: &str, max: Option<i128>) -> Result<i128, 
             i128::MAX
         }
     });
-    let (kind, msg, ctx) = if n < 1 {
+    let (kind, msg, ctx) = if n < min {
         (
             "greater_than_equal",
-            "Input should be greater than or equal to 1".to_owned(),
-            json!({"ge":"1"}),
+            format!("Input should be greater than or equal to {min}"),
+            json!({"ge":min.to_string()}),
         )
     } else if let Some(limit) = max.filter(|m| n > *m) {
         (

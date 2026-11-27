@@ -45,6 +45,7 @@ mod password_reset;
 mod provisioning;
 mod registration;
 pub(crate) use registration::enqueue_webhooks;
+mod hook_inventory;
 mod totp;
 mod update_input;
 mod userinfo;
@@ -450,6 +451,7 @@ fn build_routes(
         .merge(project_usage::routes())
         .merge(subject_export::routes())
         .merge(webhook_history::routes())
+        .merge(hook_inventory::routes())
         .merge(store_products::routes())
         .route(
             "/api/v1/billing/apple/validate",

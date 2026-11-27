@@ -1,0 +1,1 @@
+Use the current administrator session and database privileges on every read. Return the stored source and settings verbatim and preserve historical privacy and network flags. Page the execution records newest first and expose the recorded outcome, output and timing. The context snapshot is internal. These reads are independent of the execution runtime.
