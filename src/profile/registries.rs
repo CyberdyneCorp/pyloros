@@ -71,6 +71,7 @@ pub(super) async fn catalog(
 mod mutation;
 mod resources;
 pub(super) use mutation::{create, deactivate, update};
+pub(super) use resources::deactivate as deactivate_resource;
 
 pub(super) async fn list_scopes(
     State(state): State<Arc<Profile>>,

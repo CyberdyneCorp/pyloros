@@ -358,7 +358,8 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/oauth/protected-resources/{entry_id}",
-            any(registries::get_resource),
+            axum::routing::delete(registries::deactivate_resource)
+                .fallback(registries::get_resource),
         )
         .route(
             "/api/v1/admin/oauth/scopes",
