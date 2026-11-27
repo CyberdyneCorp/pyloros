@@ -52,14 +52,8 @@ async fn write(
             return internal();
         }
         if let Some(id) = id {
-            return match chain.operator_policy(id).await {
-                Ok(None) => missing(id),
-                Err(e) => admin_client_roles::chain_error(e),
-                Ok(Some(_)) => crate::login_http::problem(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "Blockchain policy update unavailable",
-                ),
-            };
+            return unavailable_chain_write(&chain, id, "Blockchain policy update unavailable")
+                .await;
         }
         return crate::login_http::problem(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -75,7 +69,19 @@ async fn write(
         .unwrap_or_else(|_| internal())
 }
 
-fn missing(id: Uuid) -> Response {
+pub(super) async fn unavailable_chain_write(
+    chain: &crate::chain_settings::Chain,
+    id: Uuid,
+    detail: &str,
+) -> Response {
+    match chain.operator_policy(id).await {
+        Ok(None) => missing(id),
+        Err(error) => admin_client_roles::chain_error(error),
+        Ok(Some(_)) => crate::login_http::problem(StatusCode::SERVICE_UNAVAILABLE, detail),
+    }
+}
+
+pub(super) fn missing(id: Uuid) -> Response {
     crate::login_http::problem(StatusCode::NOT_FOUND, &format!("policy {id}"))
 }
 

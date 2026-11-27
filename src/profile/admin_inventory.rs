@@ -2,6 +2,8 @@
 use super::*;
 use serde::Serialize;
 
+mod removal;
+pub(super) use removal::remove;
 mod policy_input;
 mod statements;
 mod writes;
