@@ -1,0 +1,2 @@
+- [ ] Implement primary assignment and clearing through the operator endpoint.
+- [ ] Compare validation, memberships, entitlements, audit rollback and concurrent assignments with the reference.
