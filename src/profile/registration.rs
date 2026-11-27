@@ -18,8 +18,8 @@ use rand::{RngCore, rngs::OsRng};
 pub(super) struct Settings {
     key: Option<KeyEncryptionKey>,
     quota: LoginThrottle,
-    hooks: bool,
-    webhooks: bool,
+    pub(super) hooks: bool,
+    pub(super) webhooks: bool,
 }
 
 impl Settings {
@@ -218,14 +218,19 @@ async fn insert_user(
 }
 
 async fn needs_dispatcher(tx: &mut Transaction<'_, Postgres>) -> Result<bool, sqlx::Error> {
+    pending_hook(tx, "user_registered").await
+}
+pub(super) async fn pending_hook(
+    tx: &mut Transaction<'_, Postgres>,
+    event: &str,
+) -> Result<bool, sqlx::Error> {
     sqlx::query("LOCK TABLE hooks IN SHARE MODE")
         .execute(&mut **tx)
         .await?;
-    sqlx::query_scalar(
-        "SELECT EXISTS(SELECT FROM hooks WHERE is_active AND event_type='user_registered')",
-    )
-    .fetch_one(&mut **tx)
-    .await
+    sqlx::query_scalar("SELECT EXISTS(SELECT FROM hooks WHERE is_active AND event_type=$1)")
+        .bind(event)
+        .fetch_one(&mut **tx)
+        .await
 }
 
 pub(crate) async fn enqueue_webhooks(
@@ -233,16 +238,31 @@ pub(crate) async fn enqueue_webhooks(
     user: Uuid,
     now: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
+    enqueue_account_event(tx, user, now, "user.registered").await
+}
+pub(super) async fn enqueue_account_event(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    now: DateTime<Utc>,
+    kind: &str,
+) -> Result<(), sqlx::Error> {
     let event = Uuid::new_v4();
-    let body=json!({"type":"user.registered","timestamp":now.to_rfc3339_opts(SecondsFormat::Secs,true),"data":{"user_id":user}}).to_string();
-    sqlx::query("WITH subscriptions AS (
-        SELECT id FROM webhook_subscriptions WHERE is_active AND event_types::jsonb ? 'user.registered'
+    let body=json!({"type":kind,"timestamp":now.to_rfc3339_opts(SecondsFormat::Secs,true),"data":{"user_id":user}}).to_string();
+    sqlx::query(
+        "WITH subscriptions AS (
+        SELECT id FROM webhook_subscriptions WHERE is_active AND event_types::jsonb ? $4
     ), event AS (
         INSERT INTO webhook_events(id,type,body,occurred_at)
-        SELECT $1,'user.registered',$2,$3 WHERE EXISTS(SELECT FROM subscriptions) RETURNING id
+        SELECT $1,$4,$2,$3 WHERE EXISTS(SELECT FROM subscriptions) RETURNING id
     ) INSERT INTO webhook_deliveries(id,event_id,subscription_id,next_attempt_at)
-        SELECT gen_random_uuid(),event.id,subscriptions.id,$3 FROM event CROSS JOIN subscriptions")
-        .bind(event).bind(body).bind(now).execute(&mut **tx).await?;
+        SELECT gen_random_uuid(),event.id,subscriptions.id,$3 FROM event CROSS JOIN subscriptions",
+    )
+    .bind(event)
+    .bind(body)
+    .bind(now)
+    .bind(kind)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 

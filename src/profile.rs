@@ -10,6 +10,7 @@ mod administrator;
 mod auth_policy;
 mod edit;
 mod email_verification;
+mod erasure;
 mod registries;
 pub(crate) use email_verification::verify_account;
 mod enrollment;
@@ -246,6 +247,7 @@ struct Profile {
     passkeys: passkeys::Inventory,
     oidc_enabled: bool,
     registration: registration::Settings,
+    erasure: erasure::Settings,
     account_mail: crate::email_delivery::ConfirmationMailer,
     reset_quota: crate::login_throttle::LoginThrottle,
     scheme: crate::passwords::PasswordScheme,
@@ -336,6 +338,7 @@ fn build_routes(
         passkeys: passkeys::Inventory::configured()?,
         oidc_enabled: config::flag("OIDC_ENABLED")?,
         registration: registration::Settings::configured()?,
+        erasure: erasure::Settings::configured()?,
         account_mail: crate::email_delivery::ConfirmationMailer::configured()?,
         reset_quota: crate::login_throttle::LoginThrottle::with_window(
             env::var("RATELIMIT_RESET_PER_HOUR").map_or(Ok(5), |s| s.parse())?,
@@ -372,7 +375,10 @@ fn build_routes(
             "/api/v1/admin/users/bulk",
             any(registration::bulk::handle).layer(axum::extract::DefaultBodyLimit::disable()),
         )
-        .route("/api/v1/admin/users/{user_id}", any(admin_users::detail))
+        .route(
+            "/api/v1/admin/users/{user_id}",
+            any(admin_users::detail).delete(erasure::remove),
+        )
         .route(
             "/api/v1/admin/users/{user_id}/passkeys",
             any(passkeys::admin_list),

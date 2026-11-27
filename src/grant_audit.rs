@@ -177,6 +177,14 @@ pub(crate) enum AuditActivity<'a> {
         operator: Uuid,
         sessions: u64,
     },
+    AccountErased {
+        operator: Uuid,
+        totals: Value,
+    },
+    EventsPseudonymised {
+        operator: Uuid,
+        count: i64,
+    },
     AdminRole {
         operator: Uuid,
         grant: bool,
@@ -421,6 +429,24 @@ fn classify(activity: AuditActivity<'_>) -> Classification<'_> {
             None,
             json!({"sessions_revoked":sessions}),
         ),
+        AuditActivity::AccountErased { totals, .. } => (
+            "account_lifecycle",
+            "user_delete",
+            None,
+            "",
+            "success",
+            None,
+            totals,
+        ),
+        AuditActivity::EventsPseudonymised { count, .. } => (
+            "account_lifecycle",
+            "auth_events_pseudonymised",
+            None,
+            "",
+            "success",
+            None,
+            json!({"rows":count}),
+        ),
         AuditActivity::AdminRole {
             grant, previous, ..
         } => (
@@ -632,6 +658,8 @@ pub(crate) async fn write_activity<'e>(
     let operator = match &activity {
         AuditActivity::SessionRevoked { operator, .. }
         | AuditActivity::AdminPasswordReset { operator, .. }
+        | AuditActivity::AccountErased { operator, .. }
+        | AuditActivity::EventsPseudonymised { operator, .. }
         | AuditActivity::AdminRole { operator, .. }
         | AuditActivity::AdminMfaReset { operator, .. }
         | AuditActivity::AdminPasskeyRevoked { operator, .. }

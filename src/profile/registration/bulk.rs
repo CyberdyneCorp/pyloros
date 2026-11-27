@@ -10,6 +10,15 @@ pub(in crate::profile) async fn handle(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
+    if req.method() == Method::DELETE {
+        return erasure::remove(
+            State(state),
+            ConnectInfo(peer),
+            req.headers().clone(),
+            axum::extract::Path("bulk".into()),
+        )
+        .await;
+    }
     if req.method() == Method::GET {
         return admin_users::detail(
             State(state),

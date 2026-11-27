@@ -46,3 +46,21 @@ async fn administrative_oauth_routes_advertise_methods_only_on_method_errors() {
         }
     }
 }
+
+#[tokio::test]
+async fn deleting_an_invalid_account_requires_an_operator_even_on_the_bulk_path() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    for target in ["bulk", "invalid"] {
+        let request = Request::delete(format!("/api/v1/admin/users/{target}"))
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            routes.clone().oneshot(request).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+}

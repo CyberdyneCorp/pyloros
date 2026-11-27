@@ -232,6 +232,7 @@ mod tests {
             passkeys: passkeys::Inventory::new(None, 10),
             oidc_enabled: false,
             registration: registration::Settings::configured().unwrap(),
+            erasure: erasure::Settings::configured().unwrap(),
             account_mail: crate::email_delivery::ConfirmationMailer::mock(),
             reset_quota: crate::login_throttle::LoginThrottle::new(0),
             scheme: crate::passwords::PasswordScheme::Bcrypt,

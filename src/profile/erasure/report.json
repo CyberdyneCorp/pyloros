@@ -1,0 +1,16 @@
+{
+  "retained": {
+    "admin_action_logs": "Operator actions remain in the verified audit chain until audit retention expires.",
+    "webhook_events": "Account notifications remain available for delivery until webhook retention expires.",
+    "oauth_token_issuance_log": "Service credential issuance belongs to the client and is retained under the audit policy."
+  },
+  "processors": [
+    {"name":"Stripe","holds":"Customer and subscription records","action":"Review the customer record with the payment provider.","reached":false},
+    {"name":"Apple App Store","holds":"Purchase history","action":"Review the store's purchase retention policy.","reached":false},
+    {"name":"Google Play","holds":"Purchase history","action":"Review the store's purchase retention policy.","reached":false},
+    {"name":"Public blockchain","holds":"Published identity records","action":"Review the on-chain identity and any revocation requirements.","reached":false},
+    {"name":"Email delivery provider","holds":"Delivery history","action":"Review delivery logs with the configured email provider.","reached":false},
+    {"name":"Sentry","holds":"Error monitoring records","action":"Review events associated with the account.","reached":false},
+    {"name":"Relying parties","holds":"Account records held by subscribers","action":"Subscribers process account deletion notifications.","reached":true}
+  ]
+}
