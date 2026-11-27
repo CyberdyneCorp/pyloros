@@ -1,0 +1,1 @@
+Keep provider execution, persisted user metadata and the operator audit distinguishable. The local provider maintains process-local token identifiers and status. The deployed provider uses the identity contract and an empty email argument when minting. Expose the provider outcome and record the operator action for completed attempts.

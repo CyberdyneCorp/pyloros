@@ -1,0 +1,5 @@
+- [ ] Implement mint retries and status updates, including input validation and provider selection.
+- [ ] Exercise local provider lifecycle, token reads, metadata and audit rollback.
+- [ ] Compare deployed provider call preparation and failures.
+- [ ] Verify existing CLI and browser workflows.
+- [ ] Verify confirmed chain operations.
