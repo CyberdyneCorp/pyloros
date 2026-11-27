@@ -68,14 +68,13 @@ pub(super) async fn catalog(
         .await
 }
 
+mod deactivate;
 mod mutation;
 pub(super) mod origins;
 mod resources;
+pub(super) use deactivate::{origin as deactivate_origin, resource as deactivate_resource};
 pub(super) use mutation::{create, deactivate, update};
-pub(super) use resources::{
-    deactivate as deactivate_resource,
-    write::{create as create_resource, update as update_resource},
-};
+pub(super) use resources::write::{create as create_resource, update as update_resource};
 
 pub(super) async fn list_scopes(
     State(state): State<Arc<Profile>>,

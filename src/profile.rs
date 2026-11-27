@@ -360,7 +360,7 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/oauth/web-origins/{origin_id}",
-            any(registries::get_origin),
+            axum::routing::delete(registries::deactivate_origin).fallback(registries::get_origin),
         )
         .route(
             "/api/v1/admin/oauth/protected-resources",

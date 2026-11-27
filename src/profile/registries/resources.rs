@@ -63,68 +63,6 @@ pub(super) async fn get(
     })
 }
 
-pub(in crate::profile) async fn deactivate(
-    State(state): State<Arc<Profile>>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    Path(path): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    let Some(id) = administrator::identity(&state, &headers) else {
-        return unauthorized();
-    };
-    let Ok(registry) = catalog(&state).await else {
-        return internal();
-    };
-    let (tx, email) = match administrator::session(&state, &id).await {
-        Ok(session) => session,
-        Err(response) => return *response,
-    };
-    let entry = match crate::query::path_uuid(&path, "entry_id") {
-        Ok(entry) => entry,
-        Err(issue) => return passkeys::validation(vec![issue]),
-    };
-    let origin = crate::grant_response::SessionOrigin {
-        ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
-        user_agent: crate::token_http::header(&headers, "user-agent"),
-    };
-    deactivate_entry(tx, registry, entry, (id.user, email.as_deref()), origin)
-        .await
-        .unwrap_or_else(|_| internal())
-}
-
-async fn deactivate_entry(
-    mut tx: Transaction<'static, Postgres>,
-    registry: &crate::discovery::ScopeRegistry,
-    entry: Uuid,
-    actor: (Uuid, Option<&str>),
-    origin: crate::grant_response::SessionOrigin<'_>,
-) -> Result<Response, sqlx::Error> {
-    let result = sqlx::query(
-        "UPDATE oauth_protected_resources SET active=false,
-         updated_at=CASE WHEN active THEN now() ELSE updated_at END WHERE id=$1",
-    )
-    .bind(entry)
-    .execute(&mut *tx)
-    .await?;
-    if result.rows_affected() == 0 {
-        return Ok(problem(
-            StatusCode::NOT_FOUND,
-            &format!("not found: {entry}"),
-        ));
-    }
-    crate::admin_audit::append(
-        &mut tx,
-        "oauth_protected_resource.delete",
-        Some(actor),
-        ("oauth_protected_resource", &entry.to_string()),
-        json!({}),
-        origin,
-    )
-    .await?;
-    registry.commit(tx).await?;
-    Ok(StatusCode::NO_CONTENT.into_response())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
