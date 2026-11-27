@@ -40,7 +40,7 @@ pub(crate) fn ascii_json(value: &Value) -> String {
     ascii(&value.to_string())
 }
 
-fn ascii(text: &str) -> String {
+pub(crate) fn ascii(text: &str) -> String {
     let mut ascii = String::new();
     for c in text.chars() {
         if c < '\u{7f}' {

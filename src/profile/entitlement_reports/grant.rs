@@ -3,17 +3,12 @@ use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem, request_json::fields};
 mod input;
 
-struct Expiry {
-    utc: DateTime<Utc>,
-    local: bool,
-}
-
 struct Grant {
     user: Option<Uuid>,
     org: Option<Uuid>,
     product: String,
     plan: Option<String>,
-    expires: Option<Expiry>,
+    expires: Option<datetime::ParsedDateTime>,
 }
 
 pub(super) async fn create(
@@ -129,6 +124,9 @@ async fn save(
     g: &Grant,
     actor: Uuid,
 ) -> sqlx::Result<(PgRow, bool)> {
+    if let Some(expiry) = &g.expires {
+        expiry.check_utc_year()?;
+    }
     let expires = g.expires.as_ref().map(|v| v.utc);
     let rows = sqlx::query(
         "SELECT *, extra_metadata::text AS metadata FROM entitlements

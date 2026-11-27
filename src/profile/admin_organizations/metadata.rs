@@ -64,41 +64,48 @@ struct Entry {
 
 // Historical pair lists can contain non-string keys. Their original types determine
 // comparison order before JSON encodes the keys as strings.
-pub(crate) fn audit_object(raw: &str) -> sqlx::Result<Option<String>> {
+pub(crate) fn audit_object(raw: &str, sorted: bool) -> sqlx::Result<Option<String>> {
     if !raw.starts_with('[') {
         return normalized_storage(raw);
     }
     let mut fields = serde_json::from_str(raw)
         .and_then(legacy_entries)
         .map_err(|e| sqlx::Error::Decode(e.into()))?;
-    if let Some(((kind, _), _)) = fields.first()
-        && fields.keys().any(|(k, _)| k != kind)
-    {
-        return Err(sqlx::Error::Decode(
-            "incomparable audit metadata keys".into(),
-        ));
-    }
-    fields.sort_by(|(kind, a), _, (_, b), _| {
-        if *kind == 'n' {
-            compare_numbers(a, b)
-        } else {
-            a.cmp(b)
+    if sorted {
+        if let Some(((kind, _), _)) = fields.first()
+            && fields.keys().any(|(k, _)| k != kind)
+        {
+            return Err(sqlx::Error::Decode(
+                "incomparable audit metadata keys".into(),
+            ));
         }
-    });
-    let values: indexmap::IndexMap<_, _> = fields
-        .into_iter()
-        .map(|((kind, _), f)| {
-            let key = match (kind, f.json_key.as_str()) {
-                ('n', "inf") => "Infinity".into(),
-                ('n', "-inf") => "-Infinity".into(),
-                _ => f.json_key,
-            };
-            (key, f.value)
-        })
-        .collect();
-    serde_json::to_string(&values)
-        .map(Some)
-        .map_err(|e| sqlx::Error::Encode(e.into()))
+        fields.sort_by(|(kind, a), _, (_, b), _| {
+            if *kind == 'n' {
+                compare_numbers(a, b)
+            } else {
+                a.cmp(b)
+            }
+        });
+    }
+    // Distinct historical keys can have the same JSON string spelling.
+    // Serialize each entry directly to preserve both in the downloaded file.
+    let mut bytes = Vec::new();
+    let mut serializer = serde_json::Serializer::new(&mut bytes);
+    use serde::ser::{SerializeMap, Serializer};
+    let mut map = serializer
+        .serialize_map(Some(fields.len()))
+        .map_err(|e| sqlx::Error::Encode(e.into()))?;
+    for ((kind, _), f) in fields {
+        let key = match (kind, f.json_key.as_str()) {
+            ('n', "inf") => "Infinity".into(),
+            ('n', "-inf") => "-Infinity".into(),
+            _ => f.json_key,
+        };
+        map.serialize_entry(&key, &f.value)
+            .map_err(|e| sqlx::Error::Encode(e.into()))?;
+    }
+    map.end().map_err(|e| sqlx::Error::Encode(e.into()))?;
+    Ok(Some(String::from_utf8(bytes).expect("JSON is UTF-8")))
 }
 
 fn compare_numbers(a: &str, b: &str) -> std::cmp::Ordering {

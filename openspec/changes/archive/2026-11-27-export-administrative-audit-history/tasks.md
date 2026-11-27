@@ -1,0 +1,2 @@
+- [x] Implement the operator export with inclusive bounds and bounded database reads.
+- [x] Compare file bytes, validation, partial streams, concurrent changes and original clients with the reference.

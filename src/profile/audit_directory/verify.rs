@@ -32,7 +32,7 @@ struct Verdict {
 
 async fn verify(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<Verdict> {
     let mut rows = sqlx::query(
-        "SELECT id,action,actor_client_id,actor_email,actor_user_id,created_at,
+        "SELECT id,action,actor_client_id,actor_email,actor_user_id,timestamptz_send(created_at) AS event_time,
         host(ip_address) AS ip, masklen(ip_address) AS prefix,extra_metadata::text AS metadata,
         prev_hash,row_hash,target_id,target_type,user_agent FROM admin_action_logs",
     )
@@ -44,11 +44,12 @@ async fn verify(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<Verdict> {
     while let Some(row) = rows.try_next().await? {
         checked += 1;
         crate::stored_json::check_integers(row.try_get("metadata")?)?;
+        let created = EventTime::read(&row)?;
         if broken_at.is_some() {
             continue;
         }
         let hash: String = row.try_get("row_hash")?;
-        if content_digest(&row)? != hash {
+        if content_digest(&row, created)? != hash {
             broken_at = Some(row.try_get("id")?);
         } else {
             links.insert(row.try_get("prev_hash")?, hash);
@@ -90,21 +91,20 @@ fn link_error(checked: usize, links: &HashMap<String, String>) -> Option<String>
     (walked != checked).then(|| "unreachable rows (mid-chain deletion or reorder)".into())
 }
 
-fn content_digest(row: &PgRow) -> sqlx::Result<String> {
+fn content_digest(row: &PgRow, created: EventTime) -> sqlx::Result<String> {
     let raw: &str = row.try_get("metadata")?;
-    let object = admin_organizations::audit_object(raw)?;
+    let object = admin_organizations::audit_object(raw, true)?;
     let metadata: &RawValue = serde_json::from_str(object.as_deref().unwrap_or(raw))
         .map_err(|e| sqlx::Error::Decode(e.into()))?;
     let metadata = crate::admin_audit::compact_metadata(metadata, raw.starts_with('['))
         .map_err(|e| sqlx::Error::Decode(e.into()))?;
     let ip = address(row.try_get("ip")?, row.try_get("prefix")?)?;
-    let created_at: DateTime<Utc> = row.try_get("created_at")?;
     Record {
         action: row.try_get("action")?,
         actor_client_id: row.try_get("actor_client_id")?,
         actor_user_id: row.try_get("actor_user_id")?,
         actor_email: row.try_get("actor_email")?,
-        created_at: created_at.format("%Y-%m-%dT%H:%M:%S%.6f").to_string(),
+        created_at: created.utc.format("%Y-%m-%dT%H:%M:%S%.6f").to_string(),
         id: row.try_get("id")?,
         ip_address: ip.as_deref(),
         metadata: &metadata,

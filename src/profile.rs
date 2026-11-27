@@ -17,6 +17,7 @@ mod administrator;
 mod analytics;
 mod auth_policy;
 mod blockchain;
+mod datetime;
 mod delegated;
 mod edit;
 mod email_verification;

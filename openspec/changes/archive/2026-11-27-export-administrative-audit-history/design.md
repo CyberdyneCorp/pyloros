@@ -1,0 +1,1 @@
+Authorize the request before opening the stream. Fetch bounded pages ordered by time and identifier. Preserve the stored metadata ordering and the export representation of dates, Unicode and numbers so existing consumers can process the downloaded file.

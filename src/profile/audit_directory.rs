@@ -5,11 +5,15 @@ use serde::Serialize;
 use serde_json::value::RawValue;
 use sqlx::{QueryBuilder, Row, postgres::PgRow};
 
+mod event_time;
+mod export;
+use event_time::EventTime;
 mod verify;
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
         .route("/api/v1/admin/audit", any(list))
+        .route("/api/v1/admin/audit/export", any(export::read))
         .route("/api/v1/admin/audit/verify", any(verify::read))
 }
 
@@ -116,7 +120,7 @@ impl Filters {
             })?;
         let mut sql = self.query(
             "SELECT id,actor_user_id,actor_email,actor_type,actor_client_id,action,
-            target_type,target_id,extra_metadata::text AS metadata,created_at,
+            target_type,target_id,extra_metadata::text AS metadata,timestamptz_send(created_at) AS event_time,
             host(ip_address) AS ip,masklen(ip_address) AS prefix",
         );
         sql.push(" ORDER BY created_at DESC LIMIT ")
@@ -173,7 +177,7 @@ fn entry(row: &PgRow) -> sqlx::Result<Entry> {
         target_id: row.try_get("target_id")?,
         metadata: metadata(row.try_get("metadata")?)?,
         ip_address: address(row.try_get("ip")?, row.try_get("prefix")?)?,
-        created_at: timestamp(row.try_get("created_at")?),
+        created_at: EventTime::read(row)?.display("Z"),
     })
 }
 
