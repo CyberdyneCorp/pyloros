@@ -234,9 +234,6 @@ fn timestamp(created: DateTime<Utc>) -> String {
 struct Profile {
     configured_resources: crate::token_runtime::ResourceRegistry,
     builtin_scopes: std::collections::BTreeMap<String, String>,
-    patch_resources: tokio::sync::OnceCell<
-        tokio::sync::watch::Receiver<Arc<crate::token_runtime::ResourceRegistry>>,
-    >,
     client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeRegistry>,
     admin_enabled: bool,
     passkeys: passkeys::Inventory,
@@ -279,20 +276,42 @@ pub async fn routes_with_scope_registry(
     interval: std::time::Duration,
     provider: Option<&mut crate::discovery::Provider>,
 ) -> Result<Router, Box<dyn Error>> {
+    Ok(
+        routes_with_policy(pool, production, interval, provider, None)
+            .await?
+            .0,
+    )
+}
+
+pub(crate) async fn routes_with_policy(
+    pool: PgPool,
+    production: bool,
+    interval: std::time::Duration,
+    provider: Option<&mut crate::discovery::Provider>,
+    browser: Option<crate::browser_policy::BrowserPolicy>,
+) -> Result<(Router, crate::token_runtime::ResourceCatalog), Box<dyn Error>> {
     let builtin_scopes = registries::configured_scopes()?;
+    let resources = crate::token_http::configured_resources(provider.as_deref())?;
     let catalog = crate::discovery::ScopeRegistry::start(
         pool.clone(),
         builtin_scopes.clone(),
         provider,
+        Some(resources),
+        browser,
         interval,
     )
     .await;
-    build_routes(
+    let resources = catalog
+        .resources
+        .clone()
+        .expect("resource catalog configured");
+    let router = build_routes(
         pool,
         production,
         builtin_scopes,
         tokio::sync::OnceCell::new_with(Some(catalog)),
-    )
+    )?;
+    Ok((router, resources))
 }
 
 fn build_routes(
@@ -304,7 +323,6 @@ fn build_routes(
     let state = Profile {
         configured_resources: crate::token_runtime::ResourceRegistry::from_env()?,
         builtin_scopes,
-        patch_resources: Default::default(),
         client_scopes,
         admin_enabled: config::flag_with_default("ADMIN_API_ENABLED", true)?,
         passkeys: passkeys::Inventory::configured()?,

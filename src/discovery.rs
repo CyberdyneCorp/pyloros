@@ -1,7 +1,10 @@
 //! Read-only provider metadata for a configured issuer.
 use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Duration};
 
-use crate::config::flag;
+use crate::{
+    config::flag,
+    token_runtime::{ResourceCatalog, ResourceRegistry},
+};
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rsa::{RsaPublicKey, pkcs8::DecodePublicKey, traits::PublicKeyParts};
@@ -141,7 +144,7 @@ impl Provider {
 
     pub async fn refresh_scopes(&mut self, pool: sqlx::PgPool, interval: Duration) {
         let base = self.scopes.borrow().clone();
-        let registry = ScopeRegistry::start(pool, base, None, interval).await;
+        let registry = ScopeRegistry::start(pool, base, None, None, None, interval).await;
         self.scopes = registry.catalog;
     }
 }
@@ -152,11 +155,17 @@ type Projection = (ScopeMap, tokio::sync::watch::Sender<ScopeMap>);
 
 pub(crate) struct ScopeRegistry {
     pub catalog: ScopeCatalog,
+    pub resources: Option<ResourceCatalog>,
     publisher: Arc<ScopePublisher>,
 }
 
 struct ScopePublisher {
+    browser: Option<crate::browser_policy::BrowserPolicy>,
     projections: Vec<Projection>,
+    resources: Option<(
+        ResourceRegistry,
+        tokio::sync::watch::Sender<Arc<ResourceRegistry>>,
+    )>,
     publication: tokio::sync::Mutex<()>,
 }
 
@@ -170,10 +179,18 @@ impl ScopeRegistry {
         pool: sqlx::PgPool,
         base: ScopeMap,
         provider: Option<&mut Provider>,
+        configured: Option<ResourceRegistry>,
+        browser: Option<crate::browser_policy::BrowserPolicy>,
         interval: Duration,
     ) -> Self {
         let (admin, catalog) = projection(base);
         let mut projections = vec![admin];
+        let (resource_projection, resources) = configured
+            .map(|base| {
+                let (sender, receiver) = tokio::sync::watch::channel(Arc::new(base.clone()));
+                ((base, sender), receiver)
+            })
+            .unzip();
         if let Some(provider) = provider {
             let base = provider.scopes.borrow().clone();
             let (discovery, receiver) = projection(base);
@@ -182,6 +199,8 @@ impl ScopeRegistry {
         }
         let publisher = Arc::new(ScopePublisher {
             projections,
+            resources: resource_projection,
+            browser,
             publication: Default::default(),
         });
         if !interval.is_zero() {
@@ -196,7 +215,11 @@ impl ScopeRegistry {
                 }
             });
         }
-        Self { catalog, publisher }
+        Self {
+            catalog,
+            publisher,
+            resources,
+        }
     }
 
     pub(crate) async fn commit(
@@ -206,9 +229,9 @@ impl ScopeRegistry {
         let publisher = self.publisher.clone();
         tokio::spawn(async move {
             let _guard = publisher.publication.lock().await;
-            let rows = ScopePublisher::rows(&mut tx).await?;
+            let rows = publisher.snapshot(&mut tx).await?;
             tx.commit().await?;
-            publisher.publish(&rows);
+            publisher.publish(rows);
             Ok(())
         })
         .await
@@ -216,26 +239,58 @@ impl ScopeRegistry {
     }
 }
 
+struct Snapshot {
+    scopes: ScopeMap,
+    resources: Option<ResourceRegistry>,
+    browser: Option<crate::browser_policy::BrowserOrigins>,
+}
+
 impl ScopePublisher {
-    async fn rows(conn: &mut sqlx::PgConnection) -> Result<Vec<(String, String)>, sqlx::Error> {
-        sqlx::query_as("SELECT name,coalesce(description,'') FROM oauth_scopes WHERE active")
-            .fetch_all(conn)
-            .await
+    async fn snapshot(&self, conn: &mut sqlx::PgConnection) -> Result<Snapshot, sqlx::Error> {
+        let rows = sqlx::query_as::<_, (String, String)>(
+            "SELECT name,coalesce(description,'') FROM oauth_scopes WHERE active",
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        let resources = match &self.resources {
+            Some((base, _)) => Some(base.read(conn).await?),
+            None => None,
+        };
+        let browser = match &self.browser {
+            Some(policy) => Some(policy.read(conn).await?),
+            None => None,
+        };
+        Ok(Snapshot {
+            scopes: rows.into_iter().collect(),
+            resources,
+            browser,
+        })
     }
 
-    fn publish(&self, rows: &[(String, String)]) {
+    fn publish(&self, snapshot: Snapshot) {
+        if let (Some(policy), Some(origins)) = (&self.browser, snapshot.browser) {
+            policy.publish(origins);
+        }
+        if let (Some((_, updates)), Some(resources)) = (&self.resources, snapshot.resources) {
+            updates.send_replace(Arc::new(resources));
+        }
         for (base, updates) in &self.projections {
             let mut effective = base.clone();
-            effective.extend(rows.iter().cloned());
+            effective.extend(snapshot.scopes.clone());
             updates.send_replace(effective);
         }
     }
 
     async fn refresh(&self, pool: &sqlx::PgPool) {
         let load = async {
-            let mut conn = pool.acquire().await?;
+            let mut tx = pool.begin().await?;
+            sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                .execute(&mut *tx)
+                .await?;
             let _guard = self.publication.lock().await;
-            self.publish(&Self::rows(&mut conn).await?);
+            let rows = self.snapshot(&mut tx).await?;
+            tx.commit().await?;
+            self.publish(rows);
             Ok::<(), sqlx::Error>(())
         };
         match tokio::time::timeout(Duration::from_secs(3), load).await {
@@ -288,8 +343,18 @@ mod tests {
             .connect(&env::var("DATABASE_URL").unwrap())
             .await
             .unwrap();
-        let registry =
-            ScopeRegistry::start(pool.clone(), BTreeMap::new(), None, Duration::ZERO).await;
+        let (browser, origins, redirects) =
+            crate::browser_policy::BrowserPolicy::configured().unwrap();
+        let registry = ScopeRegistry::start(
+            pool.clone(),
+            BTreeMap::new(),
+            None,
+            Some(ResourceRegistry::default()),
+            Some(browser),
+            Duration::ZERO,
+        )
+        .await;
+        let resources = registry.resources.as_ref().unwrap();
         let mut tx = pool.begin().await.unwrap();
         sqlx::query("CREATE TEMP TABLE oauth_scopes (name text, description text, active boolean, UNIQUE(name) DEFERRABLE INITIALLY DEFERRED)")
             .execute(&mut *tx).await.unwrap();
@@ -297,8 +362,18 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
+        sqlx::query("CREATE TEMP TABLE oauth_protected_resources (resource text, scopes text, audience text, active bool)").execute(&mut *tx).await.unwrap();
+        sqlx::query("CREATE TEMP TABLE oauth_web_origins (origin text, cors bool, fragment_redirect_uris text, active bool)").execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO oauth_protected_resources VALUES ('https://api.example','reports','first',true)").execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO oauth_web_origins VALUES ('https://ui.example',true,'https://ui.example/finish',true)").execute(&mut *tx).await.unwrap();
         registry.commit(tx).await.unwrap();
         assert_eq!(registry.catalog.borrow().get("reports").unwrap(), "Reports");
+        assert!(origins.borrow().contains("https://ui.example"));
+        assert!(redirects.borrow().contains("https://ui.example/finish"));
+        assert_eq!(
+            resources.borrow().audiences["https://api.example"].as_deref(),
+            Some("first")
+        );
         let mut tx = pool.begin().await.unwrap();
         sqlx::query(
             "INSERT INTO oauth_scopes VALUES ('reports','Changed',true),('other','Other',true)",
@@ -306,7 +381,21 @@ mod tests {
         .execute(&mut *tx)
         .await
         .unwrap();
+        sqlx::query("UPDATE oauth_web_origins SET active=false")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE oauth_protected_resources SET audience='second'")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         assert!(registry.commit(tx).await.is_err());
+        assert!(origins.borrow().contains("https://ui.example"));
+        assert!(redirects.borrow().contains("https://ui.example/finish"));
+        assert_eq!(
+            resources.borrow().audiences["https://api.example"].as_deref(),
+            Some("first")
+        );
         assert_eq!(registry.catalog.borrow().len(), 1);
         assert_eq!(registry.catalog.borrow().get("reports").unwrap(), "Reports");
     }

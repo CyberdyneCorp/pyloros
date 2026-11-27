@@ -83,7 +83,7 @@ Administrators can list OAuth scopes with `GET /api/v1/admin/oauth/scopes` and i
 
 Administrators can list protected resources with `GET /api/v1/admin/oauth/protected-resources`. The list includes deployment-configured resources and all managed entries, ordered by resource URI. Use `GET /api/v1/admin/oauth/protected-resources/{entry_id}` to inspect a managed entry by UUID, including a deactivated entry.
 
-Use `POST /api/v1/admin/oauth/scopes` with a name and description to register a scope. Use `PATCH /api/v1/admin/oauth/scopes/{name}` to edit its description or active flag. Omitted and null fields preserve their stored values. A successful write commits the operator audit entry before publishing the catalog to discovery and client registration.
+Use `POST /api/v1/admin/oauth/scopes` with a name and description to register a scope. Use `PATCH /api/v1/admin/oauth/scopes/{name}` to edit its description or active flag. Omitted and null fields preserve their stored values. After the scope and its audit entry commit, the writing replica publishes the current scopes, protected resources and browser origins. Discovery, token issuance, dynamic registration, browser origin checks and OAuth redirects use the committed policy even when periodic refresh is disabled.
 
 Use `DELETE /api/v1/admin/oauth/scopes/{name}` to deactivate a managed scope. Existing client grants retain it. Once the change and its audit entry commit, the writer stops advertising the scope and accepting it for new clients. Other replicas update on their configured refresh interval. Built-in scopes are read-only.
 

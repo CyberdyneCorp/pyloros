@@ -6,4 +6,4 @@
 - [ ] Implement audited protected-resource mutations with scope validation.
 - [ ] Implement web-origin reads and audited mutations with redirect and origin validation.
 - [ ] Verify immediate post-commit policy on the writer, cross-replica refresh, rollback, concurrency and existing consumers.
-- [ ] Publish previously committed protected-resource changes to dynamic client registration on a local scope write, including when polling is disabled.
+- [x] Publish previously committed protected-resource changes to dynamic client registration on a local scope write, including when polling is disabled.

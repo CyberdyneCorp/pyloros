@@ -59,27 +59,7 @@ pub(crate) async fn with_login(
     interval: Duration,
     login: Option<Arc<crate::login_http::Login>>,
 ) -> Result<Router, Box<dyn Error>> {
-    let stub = flag("OAUTH_STUB_ENABLED")?;
-    let mut providers = HashMap::new();
-    if !(stub && environment == "production") {
-        for name in ["google", "microsoft"] {
-            if let Some(provider) = Provider::configured(name, stub)? {
-                providers.insert(name, provider);
-            }
-        }
-    }
-    let raw = env::var("OAUTH_CLIENT_REDIRECT_ALLOWLIST").unwrap_or_default();
-    let entries: Vec<String> = if raw.trim_start().starts_with('[') {
-        serde_json::from_str(&raw)?
-    } else {
-        raw.split(',').map(str::to_owned).collect()
-    };
-    let base: Redirects = entries
-        .iter()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .collect();
+    let base = configured_redirects()?;
     let (updates, allowed) = watch::channel(base.clone());
     if !interval.is_zero() {
         refresh(&pool, &base, &updates).await;
@@ -92,6 +72,40 @@ pub(crate) async fn with_login(
                 }
             }
         });
+    }
+    with_redirects(pool, environment, login, allowed)
+}
+
+pub(crate) fn configured_redirects() -> Result<Redirects, Box<dyn Error>> {
+    let raw = env::var("OAUTH_CLIENT_REDIRECT_ALLOWLIST").unwrap_or_default();
+    let entries: Vec<String> = if raw.trim_start().starts_with('[') {
+        serde_json::from_str(&raw)?
+    } else {
+        raw.split(',').map(str::to_owned).collect()
+    };
+    let base: Redirects = entries
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect();
+    Ok(base)
+}
+
+pub(crate) fn with_redirects(
+    pool: PgPool,
+    environment: &str,
+    login: Option<Arc<crate::login_http::Login>>,
+    allowed: watch::Receiver<Redirects>,
+) -> Result<Router, Box<dyn Error>> {
+    let stub = flag("OAUTH_STUB_ENABLED")?;
+    let mut providers = HashMap::new();
+    if !(stub && environment == "production") {
+        for name in ["google", "microsoft"] {
+            if let Some(provider) = Provider::configured(name, stub)? {
+                providers.insert(name, provider);
+            }
+        }
     }
     let service = Service {
         pool,

@@ -59,6 +59,8 @@ pub(super) async fn catalog(
                 state.pool.clone(),
                 state.builtin_scopes.clone(),
                 None,
+                Some(state.configured_resources.clone()),
+                None,
                 std::time::Duration::from_secs(seconds),
             )
             .await)

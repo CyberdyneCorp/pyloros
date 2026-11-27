@@ -9,7 +9,7 @@ use crate::{
     login_http::problem,
     login_throttle::LoginThrottle,
     passwords::PasswordScheme,
-    token_runtime::{ResourceRegistry, Runtime, number, resource_registry},
+    token_runtime::{ResourceCatalog, ResourceRegistry, number},
 };
 use axum::{
     Json, Router,
@@ -23,28 +23,22 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::{collections::BTreeSet, env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::sync::watch;
 use uuid::Uuid;
 
 const PATH: &str = "/api/v1/auth/oauth2/register";
 struct Registration {
     pool: PgPool,
-    resources: watch::Receiver<Arc<ResourceRegistry>>,
+    resources: ResourceCatalog,
     quota: LoginThrottle,
     proxies: usize,
 }
-pub(super) async fn routes(
-    configured: ResourceRegistry,
-    rt: Option<&Runtime>,
+pub(super) fn routes(
+    enabled: bool,
+    resources: ResourceCatalog,
     pool: PgPool,
     proxies: usize,
 ) -> Result<Router, Box<dyn Error>> {
-    let state = if configured.registration_origins.is_some() {
-        let seconds = number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)?.try_into()?;
-        let resources = match rt {
-            Some(rt) => rt.resources.clone(),
-            None => resource_registry(pool.clone(), configured, seconds).await,
-        };
+    let state = if enabled {
         Some(Arc::new(Registration {
             pool,
             resources,

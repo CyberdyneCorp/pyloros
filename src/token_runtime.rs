@@ -18,6 +18,7 @@ use std::{
 };
 use tokio::sync::watch;
 
+pub(crate) type ResourceCatalog = watch::Receiver<Arc<ResourceRegistry>>;
 type Audiences = BTreeMap<String, Option<String>>;
 #[derive(Clone, Default)]
 pub(crate) struct ResourceRegistry {
@@ -144,32 +145,40 @@ async fn load_resources(
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
         .await?;
-    let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
-        "SELECT resource, scopes, audience FROM oauth_protected_resources WHERE active",
-    )
-    .fetch_all(&mut *tx)
-    .await?;
-    let mut registry = base.clone();
-    for (uri, scopes, audience) in rows {
-        if !base.scopes.contains_key(&uri) {
-            registry.scopes.insert(
-                uri.clone(),
-                scopes.split_whitespace().map(str::to_owned).collect(),
-            );
-            registry.audiences.insert(uri, audience);
-        }
-    }
-    if let Some(origins) = &mut registry.registration_origins {
-        origins.extend(
-            sqlx::query_scalar::<_, String>(
-                "SELECT origin FROM oauth_web_origins WHERE active AND dcr_redirect",
-            )
-            .fetch_all(&mut *tx)
-            .await?,
-        );
-    }
+    let registry = base.read(&mut tx).await?;
     tx.commit().await?;
     Ok(registry)
+}
+
+impl ResourceRegistry {
+    pub(crate) async fn read(&self, conn: &mut sqlx::PgConnection) -> Result<Self, sqlx::Error> {
+        let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
+            "SELECT resource, scopes, audience FROM oauth_protected_resources WHERE active",
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        let mut registry = self.clone();
+        for (uri, scopes, audience) in rows {
+            if !self.scopes.contains_key(&uri) {
+                registry.scopes.insert(
+                    uri.clone(),
+                    scopes.split_whitespace().map(str::to_owned).collect(),
+                );
+                registry.audiences.insert(uri, audience);
+            }
+        }
+        if let Some(origins) = &mut registry.registration_origins {
+            origins.extend(
+                sqlx::query_scalar::<_, String>(
+                    "SELECT origin FROM oauth_web_origins WHERE active AND dcr_redirect",
+                )
+                .fetch_all(&mut *conn)
+                .await?,
+            );
+        }
+
+        Ok(registry)
+    }
 }
 
 pub(crate) async fn resource_registry(
@@ -210,7 +219,7 @@ impl Runtime {
         provider: &Provider,
         pool: PgPool,
         production: bool,
-        configured: ResourceRegistry,
+        resources: ResourceCatalog,
     ) -> Result<Option<Self>, Box<dyn Error>> {
         let Some(pem) = crate::config::pem("JWT_PRIVATE_KEY_PATH", "JWT_PRIVATE_KEY")? else {
             return Ok(None);
@@ -247,12 +256,7 @@ impl Runtime {
             id_ttl: lifetime("OIDC_ID_TOKEN_TTL_MINUTES", 15, 60)?,
             admins,
             production,
-            resources: resource_registry(
-                pool.clone(),
-                configured,
-                number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)?.try_into()?,
-            )
-            .await,
+            resources,
             pool,
             signer,
         }))

@@ -1,9 +1,6 @@
 //! Atomic partial changes to administrator-managed and self-registered clients.
 use super::*;
-use crate::{
-    browser_prompt::quoted_list,
-    token_runtime::{ResourceRegistry, resource_registry},
-};
+use crate::{browser_prompt::quoted_list, token_runtime::ResourceRegistry};
 use serde_json::Map;
 
 pub(in crate::profile) async fn update(
@@ -22,16 +19,6 @@ pub(in crate::profile) async fn update(
         user_agent: header_value(&headers, "user-agent"),
     };
     handle(&state, &headers, Operation::Patch(&target, data, origin)).await
-}
-
-pub(super) async fn init_resources(state: &Profile) -> Result<(), Box<dyn Error>> {
-    let seconds = crate::token_runtime::number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)?.try_into()?;
-    let base = state.configured_resources.clone();
-    state
-        .patch_resources
-        .get_or_init(|| resource_registry(state.pool.clone(), base, seconds))
-        .await;
-    Ok(())
 }
 
 fn strings(value: &Value) -> BTreeSet<String> {
@@ -113,8 +100,9 @@ fn validate(
     let dynamic = old["registration_source"] == "dynamic";
     if dynamic {
         let resources = state
-            .patch_resources
+            .client_scopes
             .get()
+            .and_then(|registry| registry.resources.as_ref())
             .ok_or("Resource registry unavailable")?;
         dynamic_limits(old, patch, &resources.borrow())?;
     }

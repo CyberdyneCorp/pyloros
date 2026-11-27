@@ -65,3 +65,11 @@ The issuer SHALL support authenticated administrative reads, creation, partial u
 - **GIVEN** another writer has registered a protected resource since this replica last refreshed its policy
 - **WHEN** a local administrative scope mutation commits with polling disabled
 - **THEN** dynamic client registration on this replica uses the current protected-resource scope ceiling before the next request.
+
+#### Scenario: Apply resource and browser policy on the same writer
+
+- **GIVEN** protected-resource and browser-origin changes are committed in shared storage and periodic refresh is disabled
+- **WHEN** the writer commits a scope registration, update or deactivation
+- **THEN** token issuance, registration redirects, browser origin checks and OAuth fragment redirects use the current policy.
+- **WHEN** the scope transaction rolls back
+- **THEN** those consumers retain their previous policy.

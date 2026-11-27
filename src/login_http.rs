@@ -85,6 +85,22 @@ pub async fn routes_with_external(
     Ok(router.merge(crate::external_oauth::with_login(pool, environment, interval, login).await?))
 }
 
+pub(crate) fn routes_with_redirects(
+    pool: PgPool,
+    environment: &str,
+    allowed: crate::browser_policy::OriginCatalog,
+) -> Result<Router, Box<dyn Error>> {
+    let login = Login::configured(pool.clone(), environment == "production")?.map(Arc::new);
+    Ok(
+        with_state(login.clone())?.merge(crate::external_oauth::with_redirects(
+            pool,
+            environment,
+            login,
+            allowed,
+        )?),
+    )
+}
+
 fn with_state(login: Option<Arc<Login>>) -> Result<Router, Box<dyn Error>> {
     let end_session = if crate::config::flag("OIDC_ENABLED")? {
         any(end_session::handle)

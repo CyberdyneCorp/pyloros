@@ -15,35 +15,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("Pyloros listening on {}", listener.local_addr()?);
     let environment = env::var("APP_ENV").unwrap_or_else(|_| "dev".into());
     let secure_transport = pyloros::session_cookies::secure_transport(environment == "production")?;
-    let mut provider = pyloros::discovery::Provider::from_env()?;
     let seconds: u64 = env::var("OAUTH_REGISTRY_REFRESH_SECONDS")
         .unwrap_or_else(|_| "30".into())
         .parse()?;
-    let profile = pyloros::profile::routes_with_scope_registry(
-        pool.clone(),
-        environment == "production",
-        Duration::from_secs(seconds),
-        provider.as_mut(),
-    )
-    .await?;
-    let token =
-        pyloros::token_http::routes(provider.as_ref(), pool.clone(), environment == "production")
-            .await?;
-    let login_methods = pyloros::login_methods::routes(&environment)?;
-    let login = pyloros::login_http::routes_with_external(
-        pool.clone(),
-        &environment,
-        Duration::from_secs(seconds),
-    )
-    .await?;
-    let app = pyloros::router(environment, pool.clone())
-        .merge(token)
-        .merge(login_methods)
-        .merge(login)
-        .merge(pyloros::email_link_http::routes(pool.clone())?)
-        .merge(profile);
-    let app = app.merge(pyloros::discovery::routes(provider));
-    let app = pyloros::cors::apply(app, pool, Duration::from_secs(seconds)).await?;
+    let app = pyloros::application(environment, pool, Duration::from_secs(seconds)).await?;
     let app = app.layer(axum::middleware::from_fn(
         pyloros::profile::limit_passkey_body,
     ));

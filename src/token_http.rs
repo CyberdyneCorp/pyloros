@@ -34,12 +34,29 @@ pub async fn routes(
     pool: PgPool,
     production: bool,
 ) -> Result<Router, Box<dyn Error>> {
-    let mut configured = ResourceRegistry::from_env()?;
-    if provider.is_some_and(Provider::dynamic_registration_enabled) {
-        configured.registration_origins = Some(dcr::configured_origins()?);
-    }
+    let configured = configured_resources(provider)?;
+    let resources = if provider.is_some() {
+        crate::token_runtime::resource_registry(
+            pool.clone(),
+            configured,
+            crate::token_runtime::number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)?.try_into()?,
+        )
+        .await
+    } else {
+        tokio::sync::watch::channel(Arc::new(configured)).1
+    };
+    routes_with_resources(provider, pool, production, resources).await
+}
+
+pub(crate) async fn routes_with_resources(
+    provider: Option<&Provider>,
+    pool: PgPool,
+    production: bool,
+    resources: crate::token_runtime::ResourceCatalog,
+) -> Result<Router, Box<dyn Error>> {
+    let register = provider.is_some_and(Provider::dynamic_registration_enabled);
     let code = match provider {
-        Some(provider) => Runtime::load(provider, pool.clone(), production, configured.clone())
+        Some(provider) => Runtime::load(provider, pool.clone(), production, resources.clone())
             .await?
             .map(Arc::new),
         None => None,
@@ -47,7 +64,7 @@ pub async fn routes(
     let proxies = crate::token_runtime::number("TRUSTED_PROXY_COUNT", 0)?.try_into()?;
     let device = device::routes(provider, pool.clone(), proxies)?;
     let browser = device_browser::routes(provider, code.clone(), proxies)?;
-    let registration = dcr::routes(configured, code.as_deref(), pool.clone(), proxies).await?;
+    let registration = dcr::routes(register, resources, pool.clone(), proxies)?;
     let state = Endpoint {
         service: service::Issuer::configured(pool, production)?,
         code: code.clone(),
@@ -84,6 +101,16 @@ pub async fn routes(
             .head(method_not_allowed)
             .fallback(method_not_allowed),
     ))
+}
+
+pub(crate) fn configured_resources(
+    provider: Option<&Provider>,
+) -> Result<ResourceRegistry, Box<dyn Error>> {
+    let mut configured = ResourceRegistry::from_env()?;
+    if provider.is_some_and(Provider::dynamic_registration_enabled) {
+        configured.registration_origins = Some(dcr::configured_origins()?);
+    }
+    Ok(configured)
 }
 
 struct Endpoint {

@@ -2,6 +2,7 @@ pub mod access_tokens;
 pub mod authorization_codes;
 pub mod browser_client;
 mod browser_http;
+mod browser_policy;
 pub mod browser_prompt;
 mod client_auth;
 pub mod code_decision;
@@ -55,6 +56,37 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 struct App {
     environment: String,
     pool: PgPool,
+}
+
+pub async fn application(
+    environment: String,
+    pool: PgPool,
+    interval: Duration,
+) -> Result<Router, Box<dyn std::error::Error>> {
+    let production = environment == "production";
+    let mut provider = discovery::Provider::from_env()?;
+    let (browser, cors_origins, redirects) = browser_policy::BrowserPolicy::configured()?;
+    let (profile, resources) = profile::routes_with_policy(
+        pool.clone(),
+        production,
+        interval,
+        provider.as_mut(),
+        Some(browser),
+    )
+    .await?;
+    let token =
+        token_http::routes_with_resources(provider.as_ref(), pool.clone(), production, resources)
+            .await?;
+    let login = login_http::routes_with_redirects(pool.clone(), &environment, redirects)?;
+    let methods = login_methods::routes(&environment)?;
+    let app = router(environment, pool.clone())
+        .merge(profile)
+        .merge(token)
+        .merge(login)
+        .merge(methods)
+        .merge(email_link_http::routes(pool)?)
+        .merge(discovery::routes(provider));
+    cors::apply_origins(app, cors_origins)
 }
 
 pub fn router(environment: String, pool: PgPool) -> Router {

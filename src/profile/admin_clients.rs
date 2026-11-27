@@ -102,12 +102,6 @@ async fn handle(state: &Profile, headers: &HeaderMap, op: Operation<'_>) -> Resp
     {
         return internal();
     }
-    if matches!(op, Operation::Patch(..))
-        && state.patch_resources.get().is_none()
-        && update::init_resources(state).await.is_err()
-    {
-        return internal();
-    }
     authorized_operation(state, &id, op)
         .await
         .unwrap_or_else(|_| internal())

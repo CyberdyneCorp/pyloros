@@ -18,16 +18,7 @@ pub async fn apply(
     pool: PgPool,
     interval: Duration,
 ) -> Result<Router, Box<dyn Error>> {
-    let raw = env::var("CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| "http://localhost:3001".into());
-    let entries: Vec<String> = if raw.trim_start().starts_with('[') {
-        serde_json::from_str(&raw)?
-    } else {
-        raw.split(',').map(str::trim).map(str::to_string).collect()
-    };
-    let base: Origins = entries.into_iter().filter(|v| !v.is_empty()).collect();
-    if base.iter().any(|v| v.trim() == "*") {
-        return Err("CORS_ALLOWED_ORIGINS requires explicit origins".into());
-    }
+    let base = configured_origins()?;
     let (updates, state) = watch::channel(base.clone());
     if !interval.is_zero() {
         refresh(&pool, &base, &updates).await;
@@ -40,6 +31,27 @@ pub async fn apply(
             }
         });
     }
+    apply_origins(router, state)
+}
+
+pub(crate) fn configured_origins() -> Result<Origins, Box<dyn Error>> {
+    let raw = env::var("CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| "http://localhost:3001".into());
+    let entries: Vec<String> = if raw.trim_start().starts_with('[') {
+        serde_json::from_str(&raw)?
+    } else {
+        raw.split(',').map(str::trim).map(str::to_string).collect()
+    };
+    let base: Origins = entries.into_iter().filter(|v| !v.is_empty()).collect();
+    if base.iter().any(|v| v.trim() == "*") {
+        return Err("CORS_ALLOWED_ORIGINS requires explicit origins".into());
+    }
+    Ok(base)
+}
+
+pub(crate) fn apply_origins(
+    router: Router,
+    state: watch::Receiver<Origins>,
+) -> Result<Router, Box<dyn Error>> {
     let cookie = crate::session_cookies::csrf_name()?;
     let csrf = crate::csrf::Policy::new(state.clone(), cookie);
     Ok(router
