@@ -1,0 +1,3 @@
+- [x] Implement and compare PostgreSQL role creation and audit rollback.
+- [x] Prepare role creation calldata for the configured provider.
+- [ ] Compare confirmed chain creation and auditing.

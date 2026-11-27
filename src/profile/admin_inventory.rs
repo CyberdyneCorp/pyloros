@@ -5,6 +5,7 @@ use serde::Serialize;
 mod removal;
 pub(super) use removal::remove;
 mod create_group;
+pub(super) mod create_role;
 mod delete_group;
 mod group_policies;
 pub(super) use delete_group::delete_group;

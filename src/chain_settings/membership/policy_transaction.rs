@@ -32,6 +32,7 @@ sol! {
     function addMember(uint256 groupId,uint256 identityId);
     function removeMember(uint256 groupId,uint256 identityId);
     function deleteGroup(uint256 id);
+    function createRole(string name,string description,uint256 duration);
     function createGroup(string name,string description);
 }
 
@@ -330,6 +331,21 @@ impl Chain {
             _ => self.policy.as_deref(),
         };
         self.prepare_contract(address, call).await
+    }
+
+    pub(crate) async fn prepare_role_creation(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        seconds: &str,
+    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+        let call = createRoleCall {
+            name: name.into(),
+            description: description.unwrap_or_default().into(),
+            duration: TokenId::from_str_radix(seconds, 10).map_err(|_| PrepareError::Invalid)?,
+        };
+        self.prepare_contract(self.policy.as_deref(), call.abi_encode())
+            .await
     }
 
     pub(crate) async fn prepare_group_creation(

@@ -1,0 +1,1 @@
+Use the configured IAM provider. Validate the role fields with the shared IAM input projection. Commit PostgreSQL role creation and its audit together. Prepare the chain transaction through the existing contract adapter.

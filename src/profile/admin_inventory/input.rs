@@ -269,6 +269,15 @@ pub(super) fn evaluation(raw: &RawValue) -> Result<super::evaluation::Request, B
     serde_json::from_value(doc).map_err(|_| Box::new(internal()))
 }
 
+pub(super) fn role(raw: &RawValue) -> Result<Value, Box<Response>> {
+    const ROLE: Shape = Object(&[
+        Field("name", &Text, Required),
+        Field("description", &Text, Nullable),
+        Field("max_session_duration_s", &Shape::Integer, Required),
+    ]);
+    project(raw, &ROLE, None).map(|(_, body)| body)
+}
+
 pub(super) fn group(raw: &RawValue) -> Result<Value, Box<Response>> {
     const GROUP: Shape = Object(&[
         Field("name", &Text, Required),

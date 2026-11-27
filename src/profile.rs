@@ -500,7 +500,12 @@ fn build_routes(
                 .post(admin_inventory::assume_role::create)
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
-        .route("/api/v1/admin/roles", any(admin_inventory::roles))
+        .route(
+            "/api/v1/admin/roles",
+            any(admin_inventory::roles)
+                .post(admin_inventory::create_role::create)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route(
             "/api/v1/admin/groups",
             any(admin_inventory::groups)
