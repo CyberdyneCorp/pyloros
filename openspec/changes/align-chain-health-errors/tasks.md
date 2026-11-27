@@ -1,0 +1,3 @@
+- [x] Share RPC reads and diagnostics while retaining the health deadline.
+- [x] Verify operator access, configuration selection, retries, recovery, large replies and existing clients.
+- [ ] Match connection failure diagnostics for hostnames with multiple resolved addresses.

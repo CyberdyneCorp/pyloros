@@ -3,7 +3,6 @@ mod health;
 mod identity_tokens;
 mod membership;
 use data_encoding::HEXLOWER_PERMISSIVE;
-pub(crate) use health::Monitor;
 pub(crate) use identity_tokens::TokenProvider;
 use k256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
 pub(crate) use membership::{

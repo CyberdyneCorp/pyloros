@@ -235,7 +235,6 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
-    chain_health: crate::chain_settings::Monitor,
     blockchain: Arc<crate::chain_settings::ChainSettings>,
     configured_origins: Vec<Value>,
     configured_resources: crate::token_runtime::ResourceRegistry,
@@ -338,7 +337,6 @@ fn build_routes(
     blockchain: Arc<crate::chain_settings::ChainSettings>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
-        chain_health: crate::chain_settings::Monitor::configured()?,
         blockchain,
         configured_origins: registries::origins::configured()?,
         configured_resources: crate::token_runtime::ResourceRegistry::from_env()?,

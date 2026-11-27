@@ -99,13 +99,14 @@ mod tests {
     fn a_node_error_stays_distinct_from_a_contract_failure() {
         let transport = rpc_response::decode(
             br#"{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"node busy"}}"#,
+            RpcRead::Contract,
         )
         .unwrap_err();
         assert!(matches!(
             estimate_error(transport),
             PrepareError::Rpc(text) if text == "{'code': -32000, 'message': 'node busy'}"
         ));
-        let returned = rpc_response::decode(br#"{"jsonrpc":"2.0","id":1,"error":{"code":3,"message":"execution reverted: denied","data":"0x"}}"#).unwrap_err();
+        let returned = rpc_response::decode(br#"{"jsonrpc":"2.0","id":1,"error":{"code":3,"message":"execution reverted: denied","data":"0x"}}"#,RpcRead::Contract).unwrap_err();
         let PrepareError::Reverted(detail) = estimate_error(returned) else {
             panic!("expected contract rejection")
         };

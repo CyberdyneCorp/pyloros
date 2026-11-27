@@ -1,23 +1,10 @@
 use super::ChainSettings;
-use reqwest::Client;
 use serde_json::{Value, json};
-use std::{error::Error, time::Duration};
+use std::time::Duration;
 
-pub(crate) struct Monitor {
-    client: Client,
-    timeout: Duration,
-}
-
-impl Monitor {
-    pub(crate) fn configured() -> Result<Self, Box<dyn Error>> {
-        Ok(Self {
-            client: Client::builder().build()?,
-            timeout: super::rpc_timeout()?.min(Duration::from_secs(5)),
-        })
-    }
-
-    pub(crate) async fn read(&self, settings: &ChainSettings) -> Result<Value, ()> {
-        let Some(target) = settings.provider().await else {
+impl ChainSettings {
+    pub(crate) async fn health(&self) -> Result<Value, ()> {
+        let Some(target) = self.provider().await else {
             return Ok(
                 json!({"enabled":false,"available":false,"identity_contract_address":null,
                 "rpc_endpoint":null,"error":"null provider (no RPC configured)"}),
@@ -26,110 +13,49 @@ impl Monitor {
         if target.validate_signer().is_err() {
             return Err(());
         }
-        let error = self.block_number(&target.endpoint).await.err();
+        let error = match tokio::time::timeout(Duration::from_secs(5), target.health_block()).await
+        {
+            Err(_) => Some(String::new()),
+            Ok(result) => result.and_then(|value| block_result(&value)).err(),
+        };
         Ok(
             json!({"enabled":true,"available":error.is_none(),"identity_contract_address":target.identity,
                 "rpc_endpoint":target.endpoint,"error":error}),
         )
     }
-
-    async fn block_number(&self, rpc: &str) -> Result<(), String> {
-        let mut response = self
-            .client
-            .post(rpc)
-            .header("Content-Type", "application/json")
-            .body(r#"{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}"#)
-            .timeout(self.timeout)
-            .send()
-            .await
-            .map_err(transport)?;
-        let status = response.status();
-        if status.is_client_error() || status.is_server_error() {
-            let reason = status.canonical_reason().unwrap_or("");
-            return Err(format!(
-                "{}, message={}, url={}",
-                status.as_u16(),
-                diagnostic(&json!(reason)),
-                diagnostic(&json!(rpc))
-            ));
-        }
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(transport)? {
-            if chunk.len() > 1024 * 1024 - bytes.len() {
-                return Err("RPC response exceeds size limit".into());
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        let doc = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-        block_result(&doc)
-    }
 }
 
-fn transport(e: reqwest::Error) -> String {
-    if e.is_timeout() {
-        String::new()
-    } else {
-        e.without_url().to_string()
-    }
-}
-
-fn block_result(doc: &Value) -> Result<(), String> {
-    if doc["jsonrpc"] != "2.0" || doc["id"] != 1 {
-        return Err("Invalid JSON-RPC response".into());
-    }
-    if let Some(err) = doc.get("error") {
-        return Err(diagnostic(err));
-    }
-    let result = doc.get("result").ok_or("Missing JSON-RPC result")?;
-    if let Some(raw) = result.as_str() {
-        let trimmed = raw.trim();
-        let number = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
-        let digits = number
-            .strip_prefix("0x")
-            .or_else(|| number.strip_prefix("0X"))
-            .unwrap_or(number);
-        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(format!(
-                "invalid literal for int() with base 16: {}",
-                diagnostic(result)
-            ));
-        }
+fn block_result(result: &Value) -> Result<(), String> {
+    if let Some(raw) = result.as_str()
+        && !hexadecimal_height(raw)
+    {
+        return Err(format!(
+            "invalid literal for int() with base 16: {}",
+            crate::browser_prompt::quoted_string(raw)
+        ));
     }
     Ok(())
 }
 
-fn diagnostic(value: &Value) -> String {
-    match value {
-        Value::String(s) => {
-            let delimiter = if s.contains('\'') && !s.contains('"') {
-                '"'
-            } else {
-                '\''
-            };
-            let escaped = s
-                .replace('\\', "\\\\")
-                .replace(delimiter, &format!("\\{delimiter}"))
-                .replace('\n', "\\n")
-                .replace('\r', "\\r")
-                .replace('\t', "\\t");
-            format!("{delimiter}{escaped}{delimiter}")
-        }
-        Value::Object(map) => format!(
-            "{{{}}}",
-            map.iter()
-                .map(|(key, v)| format!("{}: {}", diagnostic(&json!(key)), diagnostic(v)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Value::Array(xs) => format!(
-            "[{}]",
-            xs.iter().map(diagnostic).collect::<Vec<_>>().join(", ")
-        ),
-        Value::Null => "None".into(),
-        Value::Bool(true) => "True".into(),
-        Value::Bool(false) => "False".into(),
-        Value::Number(n) => n.to_string(),
-    }
+fn hexadecimal_height(raw: &str) -> bool {
+    let normalized: String = raw
+        .trim()
+        .chars()
+        .map(|c| {
+            crate::unicode_decimal::decimal(c).map_or(c, |digit| char::from(b'0' + digit as u8))
+        })
+        .collect();
+    let number = normalized.strip_prefix(['+', '-']).unwrap_or(&normalized);
+    let digits = match number
+        .strip_prefix("0x")
+        .or_else(|| number.strip_prefix("0X"))
+    {
+        Some(rest) => rest.strip_prefix('_').unwrap_or(rest),
+        None => number,
+    };
+    digits
+        .split('_')
+        .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 #[cfg(test)]
@@ -151,15 +77,11 @@ mod tests {
             }),
         );
         let server = tokio::spawn(async move { axum::serve(socket, app).await.unwrap() });
-        let monitor = Monitor {
-            client: Client::new(),
-            timeout: Duration::from_secs(1),
-        };
         let settings = ChainSettings {
             deployment: Some(super::super::Chain::for_health_test(endpoint.clone())),
             ..Default::default()
         };
-        let report = monitor.read(&settings).await.unwrap();
+        let report = settings.health().await.unwrap();
         assert_eq!(report["identity_contract_address"], "deployment");
         assert_eq!(report["available"], true);
         settings
@@ -171,7 +93,7 @@ mod tests {
                 ..Default::default()
             })
             .await;
-        let report = monitor.read(&settings).await.unwrap();
+        let report = settings.health().await.unwrap();
         assert_eq!(report["available"], false);
         assert_eq!(report["identity_contract_address"], "runtime");
         assert_eq!(
@@ -184,22 +106,21 @@ mod tests {
                 ..Default::default()
             })
             .await;
-        let report = monitor.read(&settings).await.unwrap();
+        let report = settings.health().await.unwrap();
         assert_eq!(report["available"], true);
         assert!(report["error"].is_null());
         server.abort();
     }
 
     #[test]
-    fn distinguishes_rpc_outage_from_genesis_and_rejects_an_unrelated_response() {
-        let mut response = json!({"id":1,"jsonrpc":"2.0","result":"0x0"});
-        assert_eq!(block_result(&response), Ok(()));
-        response["id"] = json!(2);
-        assert!(block_result(&response).is_err());
-        let failed = json!({"id":1,"jsonrpc":"2.0","error":{"code":-32000,"message":"offline"}});
+    fn block_number_reports_invalid_hexadecimal_values() {
+        for value in ["0x0", "0x_fa", "a_b", "٠xA", "+１２"] {
+            assert_eq!(block_result(&json!(value)), Ok(()));
+        }
+        assert!(!hexadecimal_height("0x__fa"));
         assert_eq!(
-            block_result(&failed),
-            Err("{'code': -32000, 'message': 'offline'}".into())
+            block_result(&json!("0x")),
+            Err("invalid literal for int() with base 16: '0x'".into())
         );
     }
 }

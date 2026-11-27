@@ -26,7 +26,7 @@ pub(super) async fn health(
     if let Err(response) = administrator::operator(&state, &headers).await {
         return *response;
     }
-    match state.chain_health.read(&state.blockchain).await {
+    match state.blockchain.health().await {
         Ok(report) => Json(report).into_response(),
         Err(()) => internal(),
     }

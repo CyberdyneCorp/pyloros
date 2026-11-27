@@ -1,4 +1,5 @@
 //! Read the authority's IAM inventory without sending transactions.
+mod large_health;
 pub(super) mod policy_transaction;
 mod rpc_response;
 mod transport;
@@ -169,6 +170,32 @@ enum ReadError {
     Transport(Option<String>),
     Diagnostic(String),
     Rpc(Box<rpc_response::RpcError>),
+}
+
+#[derive(Clone, Copy)]
+enum RpcRead {
+    Contract,
+    Health,
+}
+
+impl RpcRead {
+    fn limit(self) -> usize {
+        match self {
+            Self::Contract => 16 * 1024 * 1024,
+            Self::Health => 1024 * 1024,
+        }
+    }
+}
+
+impl ReadError {
+    fn into_diagnostic(self) -> Option<String> {
+        match self {
+            Self::Rpc(error) => Some(error.diagnostic),
+            Self::Transport(detail) => detail,
+            Self::Diagnostic(detail) => Some(detail),
+            Self::Failure => None,
+        }
+    }
 }
 
 pub(crate) enum SnapshotError {
@@ -417,9 +444,28 @@ impl Chain {
     }
 
     async fn rpc(&self, method: &str, params: Value) -> Result<Value, ReadError> {
+        self.rpc_bounded(method, params, RpcRead::Contract).await
+    }
+
+    pub(super) async fn health_block(&self) -> Result<Value, String> {
+        self.rpc_bounded("eth_blockNumber", json!([]), RpcRead::Health)
+            .await
+            .map_err(|error| {
+                error
+                    .into_diagnostic()
+                    .unwrap_or_else(|| "Invalid JSON-RPC response".into())
+            })
+    }
+
+    async fn rpc_bounded(
+        &self,
+        method: &str,
+        params: Value,
+        read: RpcRead,
+    ) -> Result<Value, ReadError> {
         let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string();
         for attempt in 0..5 {
-            match self.request(&body).await {
+            match self.request(&body, read).await {
                 Err(ReadError::Transport(_)) if attempt < 4 => {
                     tokio::time::sleep(Duration::from_millis(125 << attempt)).await
                 }
@@ -429,7 +475,7 @@ impl Chain {
         unreachable!("final RPC attempt always returns its result")
     }
 
-    async fn request(&self, body: &str) -> Result<Value, ReadError> {
+    async fn request(&self, body: &str, read: RpcRead) -> Result<Value, ReadError> {
         let mut response = CLIENT
             .post(&self.endpoint)
             .timeout(self.timeout)
@@ -447,12 +493,17 @@ impl Chain {
             .await
             .map_err(|e| transport::request_error(&self.endpoint, &e))?
         {
-            if piece.len() > 16 * 1024 * 1024 - body.len() {
-                return Err(ReadError::Failure);
+            if piece.len() > read.limit() - body.len() {
+                return match read {
+                    RpcRead::Contract => Err(ReadError::Failure),
+                    RpcRead::Health => {
+                        large_health::read(&self.endpoint, response, &body, &piece).await
+                    }
+                };
             }
             body.extend_from_slice(&piece);
         }
-        rpc_response::decode(&body)
+        rpc_response::decode(&body, read)
     }
 }
 
