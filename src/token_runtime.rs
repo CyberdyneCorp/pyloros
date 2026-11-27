@@ -113,6 +113,11 @@ fn configured_resources(
     let known: std::collections::BTreeSet<_> =
         ["openid", "profile", "email", "offline_access", "roles"]
             .into_iter()
+            .chain(
+                crate::config::PACKAGED_SCOPES
+                    .unwrap_or_default()
+                    .split_whitespace(),
+            )
             .chain(application_scopes.split_whitespace())
             .collect();
     for (uri, entry) in serde_json::from_str::<BTreeMap<String, Resource>>(raw)? {

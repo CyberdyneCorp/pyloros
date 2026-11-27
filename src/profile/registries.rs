@@ -26,9 +26,11 @@ pub(super) fn configured_scopes() -> Result<BTreeMap<String, String>, Box<dyn Er
     .into_iter()
     .map(|(k, v)| (String::from(k), String::from(v)))
     .collect();
-    for name in env::var("PYLOROS_RESOURCE_SCOPE_CATALOG")
+    let configured = env::var("PYLOROS_RESOURCE_SCOPE_CATALOG").unwrap_or_default();
+    for name in crate::config::PACKAGED_SCOPES
         .unwrap_or_default()
         .split_whitespace()
+        .chain(configured.split_whitespace())
     {
         scopes.entry(name.to_owned()).or_default();
     }

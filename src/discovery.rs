@@ -31,6 +31,12 @@ pub(crate) fn rsa_kid(n: &str, e: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(canonical.as_bytes()))
 }
 
+fn discovery_scopes<'a>(runtime: Option<&'a str>, packaged: Option<&'a str>) -> &'a str {
+    runtime
+        .or(packaged)
+        .unwrap_or("openid profile email offline_access")
+}
+
 impl Provider {
     pub fn from_env() -> Result<Option<Self>, ConfigError> {
         if !flag("OIDC_ENABLED")? {
@@ -45,13 +51,13 @@ impl Provider {
             ),
         };
         let issuer = crate::config::configured_issuer().unwrap_or_default();
-        let scopes = env::var("OIDC_SCOPES")
-            .unwrap_or_else(|_| "openid profile email offline_access".into());
+        let override_scopes = env::var("OIDC_SCOPES").ok();
+        let scopes = discovery_scopes(override_scopes.as_deref(), crate::config::PACKAGED_SCOPES);
         let provider = Self::configured(
             &issuer,
             public.as_deref(),
             env::var("JWT_KEY_ID").ok(),
-            &scopes,
+            scopes,
             flag("OAUTH_DCR_ENABLED")?,
             flag("OAUTH_DEVICE_GRANT_ENABLED")?,
         )?;
@@ -408,6 +414,18 @@ pub fn routes(provider: Option<Provider>) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deployment_scopes_can_be_overridden_including_with_an_empty_catalog() {
+        let packaged = Some("openid orders:read");
+        assert_eq!(discovery_scopes(None, packaged), "openid orders:read");
+        assert_eq!(discovery_scopes(Some("email"), packaged), "email");
+        assert_eq!(discovery_scopes(Some(""), packaged), "");
+        assert_eq!(
+            discovery_scopes(None, None),
+            "openid profile email offline_access"
+        );
+    }
 
     #[test]
     fn symmetric_provider_has_no_public_key_and_only_advertises_rsa_id_tokens() {

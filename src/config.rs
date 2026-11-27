@@ -1,5 +1,7 @@
 use std::{env, error::Error};
 
+pub(crate) const PACKAGED_SCOPES: Option<&str> = option_env!("PYLOROS_BUILD_SCOPE_CATALOG");
+
 pub fn flag(name: &str) -> Result<bool, Box<dyn Error>> {
     flag_with_default(name, false)
 }
