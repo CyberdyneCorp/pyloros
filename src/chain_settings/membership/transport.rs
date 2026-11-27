@@ -38,6 +38,13 @@ pub(super) fn request_error(endpoint: &str, error: &reqwest::Error) -> ReadError
         if let Some(io) = inner.downcast_ref::<std::io::Error>()
             && io.kind() == std::io::ErrorKind::ConnectionRefused
         {
+            if let Some(errno) = io.raw_os_error()
+                && error.url().is_some_and(|url| {
+                    url.domain().is_some() && reqwest::Url::parse(endpoint).as_ref() == Ok(url)
+                })
+            {
+                return ReadError::HostRefused(errno);
+            }
             return ReadError::Transport(refused(endpoint));
         }
         if let Some(http) = inner.downcast_ref::<hyper::Error>()

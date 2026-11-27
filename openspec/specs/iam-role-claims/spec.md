@@ -77,6 +77,31 @@ The service SHALL allow an authenticated administrator to check whether the sele
 - **WHEN** the provider answers successfully after an earlier RPC error
 - **THEN** the next health read reports available and clears the error
 
+#### Scenario: Provider request fails
+
+- **WHEN** the block-number request encounters a transport failure
+- **THEN** retry within the overall health deadline and report the failure detail if the provider remains unavailable
+
+#### Scenario: Malformed provider response
+
+- **WHEN** the provider returns malformed JSON
+- **THEN** report the parse diagnostic and keep the selected endpoint and contract in the health response
+
+#### Scenario: Health provider response identifier
+
+- **WHEN** the provider answers the informational block-number request with a numeric response identifier or its decimal string representation
+- **THEN** determine availability from its response and report malformed envelopes with a diagnostic
+
+#### Scenario: Large successful reply
+
+- **WHEN** a valid block-number response includes large extension fields
+- **THEN** report availability from the block result within the health deadline
+
+#### Scenario: Provider hostname refuses connections
+
+- **WHEN** each resolved address of a directly connected provider refuses the final health request
+- **THEN** include the hostname, port and individual connection failures in the operator diagnostic
+
 ### Requirement: Operator chain settings updates
 
 The service SHALL accept partial updates from an authenticated administrator and report the resulting signer address. The audit record SHALL contain sorted names of submitted settings and secret fields. Credentials SHALL stay out of the audit record and the success response.

@@ -33,3 +33,8 @@ The service SHALL allow an authenticated administrator to check whether the sele
 
 - **WHEN** a valid block-number response includes large extension fields
 - **THEN** report availability from the block result within the health deadline
+
+#### Scenario: Provider hostname refuses connections
+
+- **WHEN** each resolved address of a directly connected provider refuses the final health request
+- **THEN** include the hostname, port and individual connection failures in the operator diagnostic

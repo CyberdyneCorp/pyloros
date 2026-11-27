@@ -1,4 +1,5 @@
 //! Read the authority's IAM inventory without sending transactions.
+mod health_connection;
 mod large_health;
 pub(super) mod policy_transaction;
 mod rpc_response;
@@ -168,6 +169,7 @@ impl Inventory {
 enum ReadError {
     Failure,
     Transport(Option<String>),
+    HostRefused(i32),
     Diagnostic(String),
     Rpc(Box<rpc_response::RpcError>),
 }
@@ -193,7 +195,7 @@ impl ReadError {
             Self::Rpc(error) => Some(error.diagnostic),
             Self::Transport(detail) => detail,
             Self::Diagnostic(detail) => Some(detail),
-            Self::Failure => None,
+            Self::Failure | Self::HostRefused(_) => None,
         }
     }
 }
@@ -465,8 +467,14 @@ impl Chain {
     ) -> Result<Value, ReadError> {
         let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string();
         for attempt in 0..5 {
-            match self.request(&body, read).await {
-                Err(ReadError::Transport(_)) if attempt < 4 => {
+            match self.request(&CLIENT, &body, read).await {
+                Err(ReadError::HostRefused(_))
+                    if attempt == 3 && matches!(read, RpcRead::Health) =>
+                {
+                    tokio::time::sleep(Duration::from_millis(125 << attempt)).await;
+                    return self.retry_health_by_address(&body).await;
+                }
+                Err(ReadError::Transport(_) | ReadError::HostRefused(_)) if attempt < 4 => {
                     tokio::time::sleep(Duration::from_millis(125 << attempt)).await
                 }
                 result => return result,
@@ -475,8 +483,13 @@ impl Chain {
         unreachable!("final RPC attempt always returns its result")
     }
 
-    async fn request(&self, body: &str, read: RpcRead) -> Result<Value, ReadError> {
-        let mut response = CLIENT
+    async fn request(
+        &self,
+        client: &Client,
+        body: &str,
+        read: RpcRead,
+    ) -> Result<Value, ReadError> {
+        let mut response = client
             .post(&self.endpoint)
             .timeout(self.timeout)
             .header("Content-Type", "application/json")
