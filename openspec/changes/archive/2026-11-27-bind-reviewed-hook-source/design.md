@@ -1,0 +1,1 @@
+Check the source bytes in PostgreSQL while locking the same hook row used by the edit trigger. Hash UTF-8 without newline conversion or Unicode normalization. Evaluate the condition before the idempotent response or artifact mutation. This check identifies the reviewed input; the operator verifies that the component implements that input.

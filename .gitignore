@@ -1,3 +1,4 @@
 /target/
 .env
 /hook-worker/target/
+/examples/event-name-hook/target/

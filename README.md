@@ -273,6 +273,23 @@ A successful response includes `valid`, `abi`, `size` in bytes, and the artifact
 concurrent uploads or validations (503 when busy). Uploads have a 4 MiB limit
 (413) and a 30-second deadline (408).
 
+### Build a hook from Rust
+
+The [event-name example](examples/event-name-hook/src/lib.rs) reads a JSON
+context and returns the event type followed by a newline. Its bindings are
+generated from this repository's WIT file. To build it with the same toolchain
+used for the migration check:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install cargo-component --version 0.21.1 --locked
+just build-hook-example
+```
+
+The component is written to
+`target/hook-examples/wasm32-unknown-unknown/release/event_name_hook.wasm`.
+Stage it and exercise it with synthetic events before selecting it for a hook.
+
 ### Stage a hook artifact
 
 Apply [the artifact table migration](migrations/001_hook_artifacts.sql) once through
@@ -314,6 +331,13 @@ through the database migration owner. An administrator can then use
 | GET | Read the hook ID and selected SHA-256, or `null` for an unbound hook. |
 | PUT | Select a staged version with a JSON body containing its `sha256`. |
 | DELETE | Release the selection. The artifact remains available for reuse. |
+
+When migrating a reviewed script, include `expected_source_sha256` in the PUT
+body alongside the artifact's `sha256`. Hash the UTF-8 bytes of the exact
+`code` string returned by the v1 hook endpoint, including all line endings.
+HTTP 409 means the source changed. Read the definition again and verify the
+component against the new source before retrying. A successful change records
+the supplied source digest in its audit entry.
 
 Each explicit binding change records its previous and new digest in the administrator audit log.
 Repeating a completed change returns the current selection. The hook's existing

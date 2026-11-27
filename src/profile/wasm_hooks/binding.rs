@@ -33,6 +33,19 @@ pub(in crate::profile) async fn read(
     }
 }
 
+#[derive(Deserialize)]
+struct Binding {
+    sha256: String,
+    expected_source_sha256: Option<String>,
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 pub(in crate::profile) async fn write(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -49,32 +62,28 @@ pub(in crate::profile) async fn write(
         Ok(id) => id,
         Err(e) => return *e,
     };
-    let digest = if method == Method::PUT {
+    let binding = if method == Method::PUT {
         if !crate::request_json::is_json(&headers) {
             return problem(
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
                 "Expected application/json",
             );
         }
-        #[derive(Deserialize)]
-        struct Binding {
-            sha256: String,
-        }
         let Ok(binding) = serde_json::from_slice::<Binding>(&bytes) else {
             return problem(StatusCode::UNPROCESSABLE_ENTITY, "Expected a sha256 digest");
         };
-        if binding.sha256.len() != 64
+        if !valid_digest(&binding.sha256)
             || !binding
-                .sha256
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                .expected_source_sha256
+                .as_deref()
+                .is_none_or(valid_digest)
         {
             return problem(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "Expected a lowercase SHA-256 digest",
             );
         }
-        Some(binding.sha256)
+        Some(binding)
     } else {
         None
     };
@@ -82,7 +91,7 @@ pub(in crate::profile) async fn write(
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
-    change(tx, id, digest.as_deref(), (actor, email.as_deref()), origin)
+    change(tx, id, binding.as_ref(), (actor, email.as_deref()), origin)
         .await
         .unwrap_or_else(|_| internal())
 }
@@ -90,17 +99,26 @@ pub(in crate::profile) async fn write(
 async fn change(
     mut tx: Transaction<'_, Postgres>,
     id: Uuid,
-    digest: Option<&str>,
+    binding: Option<&Binding>,
     actor: (Uuid, Option<&str>),
     origin: SessionOrigin<'_>,
 ) -> sqlx::Result<Response> {
-    let hook = sqlx::query_scalar::<_, Uuid>("SELECT id FROM hooks WHERE id=$1 FOR UPDATE")
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?;
-    if hook.is_none() {
-        return Ok(problem(StatusCode::NOT_FOUND, "Hook not found"));
+    let expected = binding.and_then(|b| b.expected_source_sha256.as_deref());
+    let current = sqlx::query_scalar::<_, bool>(
+        "SELECT CASE WHEN $2::text IS NULL THEN true
+                     ELSE encode(sha256(convert_to(code,'UTF8')),'hex')=$2 END
+         FROM hooks WHERE id=$1 FOR UPDATE",
+    )
+    .bind(id)
+    .bind(expected)
+    .fetch_optional(&mut *tx)
+    .await?;
+    match current {
+        None => return Ok(problem(StatusCode::NOT_FOUND, "Hook not found")),
+        Some(false) => return Ok(problem(StatusCode::CONFLICT, "Hook source has changed")),
+        Some(true) => (),
     }
+    let digest = binding.map(|b| b.sha256.as_str());
     let previous = sqlx::query_scalar::<_, String>(
         "SELECT sha256 FROM pyloros_hook_bindings WHERE hook_id=$1",
     )
@@ -129,12 +147,16 @@ async fn change(
             .execute(&mut *tx)
             .await?;
     }
+    let mut metadata = json!({"previous_sha256":previous,"sha256":digest});
+    if let Some(expected) = expected {
+        metadata["expected_source_sha256"] = json!(expected);
+    }
     crate::admin_audit::append(
         &mut tx,
         "hook.binding.update",
         Some(actor),
         ("hook", &id.to_string()),
-        json!({"previous_sha256":previous,"sha256":digest}),
+        metadata,
         origin,
     )
     .await?;
@@ -154,7 +176,7 @@ mod tests {
             .connect(&env::var("DATABASE_URL").unwrap())
             .await
             .unwrap();
-        sqlx::raw_sql("CREATE TEMP TABLE hooks(id uuid PRIMARY KEY);
+        sqlx::raw_sql("CREATE TEMP TABLE hooks(id uuid PRIMARY KEY,code text NOT NULL DEFAULT 'pass');
             CREATE TEMP TABLE pyloros_hook_artifacts(sha256 text PRIMARY KEY);
             CREATE TEMP TABLE audit_chain_head(id int PRIMARY KEY,head_hash text);
             CREATE TEMP TABLE admin_action_logs(id uuid,action text CHECK(action <> 'hook.binding.update'),
@@ -165,7 +187,7 @@ mod tests {
             .replace("CREATE TABLE", "CREATE TEMP TABLE");
         sqlx::raw_sql(&ddl).execute(&pool).await.unwrap();
         let id = Uuid::new_v4();
-        sqlx::query("INSERT INTO hooks VALUES ($1)")
+        sqlx::query("INSERT INTO hooks(id) VALUES ($1)")
             .bind(id)
             .execute(&pool)
             .await
@@ -179,15 +201,40 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
+        let actor = Uuid::new_v4();
+        let origin = || SessionOrigin {
+            ip: None,
+            user_agent: None,
+        };
+        let stale = Binding {
+            sha256: "first".into(),
+            expected_source_sha256: Some("0".repeat(64)),
+        };
+        assert_eq!(
+            change(
+                pool.begin().await.unwrap(),
+                id,
+                Some(&stale),
+                (actor, None),
+                origin()
+            )
+            .await
+            .unwrap()
+            .status(),
+            StatusCode::CONFLICT
+        );
+        let current_hash =
+            data_encoding::HEXLOWER.encode(digest::digest(&digest::SHA256, b"pass").as_ref());
+        let reviewed = Binding {
+            sha256: "second".into(),
+            expected_source_sha256: Some(current_hash),
+        };
         let result = change(
             pool.begin().await.unwrap(),
             id,
-            Some("second"),
-            (Uuid::new_v4(), None),
-            SessionOrigin {
-                ip: None,
-                user_agent: None,
-            },
+            Some(&reviewed),
+            (actor, None),
+            origin(),
         )
         .await;
         assert_eq!(

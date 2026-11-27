@@ -31,6 +31,10 @@ run: hook-worker
 hook-worker:
     cargo build --manifest-path hook-worker/Cargo.toml --target-dir hook-worker/target --locked
 
+# Build the sample Rust guest using cargo-component and the shared WIT.
+build-hook-example:
+    cargo component build --release --locked --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
+
 # Build the release backend and matching worker side by side.
 build-release:
     cargo build --locked --release --bin pyloros
@@ -42,10 +46,12 @@ dev: db-up run
 # Format Rust source.
 fmt:
     cargo fmt --all
+    cargo fmt --manifest-path examples/event-name-hook/Cargo.toml
     cargo fmt --manifest-path hook-worker/Cargo.toml
 
 # Check formatting and lint all targets.
 lint:
+    cargo fmt --manifest-path examples/event-name-hook/Cargo.toml -- --check
     cargo fmt --manifest-path hook-worker/Cargo.toml -- --check
     cargo clippy --manifest-path hook-worker/Cargo.toml --locked --all-targets -- -D warnings
     cargo fmt --all -- --check

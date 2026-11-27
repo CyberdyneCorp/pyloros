@@ -1,0 +1,2 @@
+- [x] Implement conditional selection and test stale, repeated and concurrent writes.
+- [x] Build an independent Rust guest and compare its output with an equivalent script using both packaged services.
