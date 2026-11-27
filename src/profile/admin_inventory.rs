@@ -41,6 +41,49 @@ pub(super) async fn policies(
 ) -> Response {
     list(&state, method, &headers, Catalog::Policies).await
 }
+
+pub(super) async fn policy(
+    State(state): State<Arc<Profile>>,
+    method: Method,
+    headers: HeaderMap,
+    axum::extract::Path(raw): axum::extract::Path<String>,
+) -> Response {
+    if method != Method::GET {
+        return crate::browser_http::method_not_allowed().await;
+    }
+    let (mut tx, _, _) = match administrator::operator(&state, &headers).await {
+        Ok(operator) => operator,
+        Err(error) => return *error,
+    };
+    let Ok(chain) = admin_client_roles::authority(&state).await else {
+        return internal();
+    };
+    let id = match crate::query::path_uuid(&raw, "policy_id") {
+        Ok(id) => id,
+        Err(issue) => return passkeys::validation(vec![issue]),
+    };
+    if let Some(chain) = chain {
+        if tx.commit().await.is_err() {
+            return internal();
+        }
+        match chain.operator_policy(id).await {
+            Ok(item) => policy_response(item),
+            Err(error) => admin_client_roles::chain_error(error),
+        }
+    } else {
+        match statements::policies(&mut tx, Some(id)).await {
+            Ok(mut rows) => policy_response(rows.pop()),
+            Err(_) => internal(),
+        }
+    }
+}
+
+fn policy_response<T: Serialize>(item: Option<T>) -> Response {
+    match item {
+        Some(policy) => Json(policy).into_response(),
+        None => crate::login_http::problem(StatusCode::NOT_FOUND, "Policy not found"),
+    }
+}
 pub(super) async fn roles(
     State(state): State<Arc<Profile>>,
     method: Method,
@@ -81,7 +124,7 @@ async fn list(state: &Profile, method: Method, headers: &HeaderMap, catalog: Cat
         Ok(None) => {
             let (key, rows) = match catalog {
                 Catalog::Groups => ("groups", postgres_groups(&mut tx).await),
-                Catalog::Policies => ("policies", statements::policies(&mut tx).await),
+                Catalog::Policies => ("policies", statements::policies(&mut tx, None).await),
                 Catalog::Roles => ("roles", postgres_roles(&mut tx).await),
             };
             rows.map(|items| response(key, items))

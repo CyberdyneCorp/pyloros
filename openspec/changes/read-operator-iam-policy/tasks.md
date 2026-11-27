@@ -1,2 +1,0 @@
-- [ ] Implement policy reads on both IAM providers.
-- [ ] Verify errors, the original CLI output and the unchanged console editor against the reference.

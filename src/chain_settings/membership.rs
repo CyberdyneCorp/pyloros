@@ -247,6 +247,19 @@ impl Chain {
             .collect())
     }
 
+    pub(crate) async fn operator_policy(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<OperatorPolicy>, SnapshotError> {
+        Ok(self
+            .snapshot()
+            .await?
+            .policies
+            .into_iter()
+            .find(|entry| chain_uuid("policy", entry.id) == id)
+            .map(OperatorPolicy::from))
+    }
+
     pub(crate) async fn operator_roles(&self) -> Result<Vec<Value>, SnapshotError> {
         // The contract snapshot enumerates groups and policies. It exposes no IAM role catalog.
         self.snapshot().await.map(|_| Vec::new())
