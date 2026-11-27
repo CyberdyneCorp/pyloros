@@ -419,7 +419,12 @@ fn build_routes(
             "/api/v1/admin/policies/{policy_id}",
             any(admin_inventory::policy),
         )
-        .route("/api/v1/admin/policies", any(admin_inventory::policies))
+        .route(
+            "/api/v1/admin/policies",
+            any(admin_inventory::policies)
+                .post(admin_inventory::create)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route("/api/v1/admin/roles", any(admin_inventory::roles))
         .route("/api/v1/admin/groups", any(admin_inventory::groups))
         .route(

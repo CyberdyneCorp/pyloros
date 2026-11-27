@@ -21,7 +21,7 @@ struct Condition {
 }
 
 #[derive(Deserialize, Serialize)]
-enum Operator {
+pub(super) enum Operator {
     StringEquals,
     StringNotEquals,
     NumericEquals,
