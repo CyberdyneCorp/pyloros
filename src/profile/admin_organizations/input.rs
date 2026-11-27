@@ -16,7 +16,7 @@ const TEXT_FIELDS: &[&str] = &[
 
 pub(super) fn parse(raw: &RawValue) -> Result<NewOrganization, Box<Response>> {
     let submitted = fields::object_fields(raw)?;
-    let projection = project(raw, &submitted, TEXT_FIELDS);
+    let projection = fields::project_scalars(raw, &submitted, TEXT_FIELDS);
     let mut errors = Vec::new();
     let body =
         admin_fields::object_field(&projection).map_err(|issue| invalid(vec![(issue, raw)]))?;
@@ -55,21 +55,6 @@ pub(super) fn parse(raw: &RawValue) -> Result<NewOrganization, Box<Response>> {
     })
 }
 
-fn project(
-    raw: &RawValue,
-    submitted: &std::collections::HashMap<String, &RawValue>,
-    keys: &[&str],
-) -> Value {
-    let mut projection = fields::project(raw, submitted, keys);
-    // A numeric literal outside the native JSON range is still a supplied value.
-    for key in keys {
-        if submitted.get(*key).is_some_and(|v| v.get() != "null") && projection[*key].is_null() {
-            projection[*key] = json!([]);
-        }
-    }
-    projection
-}
-
 pub(super) fn patch(
     raw: &RawValue,
     path: &str,
@@ -81,7 +66,7 @@ pub(super) fn patch(
         errors.push((issue.clone(), original_path.as_ref()));
     }
     let submitted = fields::object_fields(raw)?;
-    let projection = project(
+    let projection = fields::project_scalars(
         raw,
         &submitted,
         &[

@@ -176,6 +176,21 @@ pub(crate) fn project(raw: &RawValue, fields: &HashMap<String, &RawValue>, keys:
     }
 }
 
+pub(crate) fn project_scalars(
+    raw: &RawValue,
+    submitted: &std::collections::HashMap<String, &RawValue>,
+    keys: &[&str],
+) -> Value {
+    let mut projection = project(raw, submitted, keys);
+    // A numeric literal outside the native JSON range is still a supplied value.
+    for key in keys {
+        if submitted.get(*key).is_some_and(|v| v.get() != "null") && projection[*key].is_null() {
+            projection[*key] = json!([]);
+        }
+    }
+    projection
+}
+
 fn field_value(text: &str) -> Value {
     match text.as_bytes().first() {
         Some(b'[') => json!([]),
@@ -232,6 +247,31 @@ pub(crate) fn validate_document<T>(
             })
             .collect();
         Box::new((StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { detail })).into_response())
+    })
+}
+
+/// Validate only scalar model fields, preserving the distinction between null
+/// and numeric literals outside the range of serde_json::Number.
+pub(crate) fn validate_scalar_document<T>(
+    raw: &RawValue,
+    keys: &[&str],
+    validate: impl FnOnce(Value) -> Result<T, Vec<Value>>,
+) -> Result<T, Box<Response>> {
+    let fields = object_fields(raw)?;
+    validate(project_scalars(raw, &fields, keys)).map_err(|issues| {
+        let errors = issues
+            .into_iter()
+            .map(|issue| {
+                let original = issue["loc"]
+                    .get(1)
+                    .and_then(Value::as_str)
+                    .and_then(|key| fields.get(key))
+                    .copied()
+                    .unwrap_or(raw);
+                (issue, original)
+            })
+            .collect();
+        invalid(errors)
     })
 }
 

@@ -49,16 +49,17 @@ async fn inventory(
         .fetch_one(&mut **tx)
         .await?;
     let rows=sqlx::query("SELECT key,name,description,active,created_at,updated_at FROM products WHERE NOT $1 OR active ORDER BY key LIMIT $2 OFFSET $3").bind(active).bind(size).bind(offset).fetch_all(&mut **tx).await?;
-    let mut products = Vec::with_capacity(rows.len());
-    for row in rows {
-        products.push(json!({
-            "key":row.try_get::<String,_>("key")?, "name":row.try_get::<String,_>("name")?,
-            "description":row.try_get::<Option<String>,_>("description")?, "active":row.try_get::<bool,_>("active")?,
-            "created_at":timestamp(row.try_get("created_at")?), "updated_at":timestamp(row.try_get("updated_at")?)
-        }));
-    }
+    let products = rows.iter().map(item).collect::<sqlx::Result<Vec<_>>>()?;
     Ok(
         Json(json!({"products":products,"page":page,"page_size":size,"total":total}))
             .into_response(),
     )
+}
+
+pub(super) fn item(row: &sqlx::postgres::PgRow) -> sqlx::Result<Value> {
+    Ok(json!({
+        "key":row.try_get::<String,_>("key")?, "name":row.try_get::<String,_>("name")?,
+        "description":row.try_get::<Option<String>,_>("description")?, "active":row.try_get::<bool,_>("active")?,
+        "created_at":timestamp(row.try_get("created_at")?), "updated_at":timestamp(row.try_get("updated_at")?)
+    }))
 }

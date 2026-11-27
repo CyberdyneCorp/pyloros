@@ -1,5 +1,6 @@
 //! Administrative mobile storefront product mappings.
 mod catalog;
+mod virtual_products;
 use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem, request_json::fields};
 use axum::{
@@ -29,7 +30,12 @@ const GOOGLE: Store = Store {
 };
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
-    let mut routes = Router::new().route("/api/v1/admin/products", any(catalog::list));
+    let mut routes = Router::new()
+        .route(
+            "/api/v1/admin/products",
+            any(catalog::list).post(virtual_products::edit),
+        )
+        .route("/api/v1/admin/products/{key}", any(virtual_products::edit));
     for (path, store) in [
         ("/api/v1/admin/apple-products", APPLE),
         ("/api/v1/admin/google-products", GOOGLE),
@@ -154,12 +160,13 @@ async fn create(
     let Some(raw) = raw else {
         return internal();
     };
-    let input = match fields::validate_document(&raw, &[store.id, "product_key", "plan"], |v| {
-        mapping(v, store.id)
-    }) {
-        Ok(input) => input,
-        Err(e) => return *e,
-    };
+    let input =
+        match fields::validate_scalar_document(&raw, &[store.id, "product_key", "plan"], |v| {
+            mapping(v, store.id)
+        }) {
+            Ok(input) => input,
+            Err(e) => return *e,
+        };
     write(
         store,
         actor,

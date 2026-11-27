@@ -1,0 +1,1 @@
+Validate submitted fields before looking up the product. Track field presence separately from its value so an operator can clear a description. Write changed columns and record each accepted operation in the same transaction. Deactivation retains the product key and all existing references.

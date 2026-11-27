@@ -1,0 +1,2 @@
+- [x] Implement registration, partial updates and deactivation.
+- [x] Compare the REST responses, product records and audit history across both services.
