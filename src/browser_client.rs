@@ -5,8 +5,8 @@ use sqlx::{Postgres, Transaction};
 
 #[derive(Debug, PartialEq)]
 pub struct BrowserClient {
-    id: String,
-    callback: String,
+    pub(crate) id: String,
+    pub(crate) callback: String,
     pub name: String,
     pub trusted: bool,
     pub dynamic: bool,

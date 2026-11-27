@@ -151,6 +151,7 @@ pub(crate) async fn authorize(
     let Some(expiration) = now.checked_add_signed(rt.code_ttl) else {
         return unavailable();
     };
+    let user = session.user;
     match client
         .authorize(&mut tx, session, request, &registry.scopes, expiration)
         .await
@@ -163,10 +164,25 @@ pub(crate) async fn authorize(
             error: code,
             description,
         }) => error(code, &description),
-        Ok(Decision::Approval { .. }) => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Interactive consent unavailable",
-        ),
+        Ok(Decision::Approval { resource, scopes }) => {
+            let Some(page) = &rt.consent_page else {
+                return problem(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Interactive consent unavailable",
+                );
+            };
+            let details = crate::consent_page::Approval {
+                client: &client,
+                user,
+                resource: &resource,
+                scopes: &scopes,
+                query: uri.query().unwrap_or_default(),
+            };
+            match page.render(&mut tx, &rt.signer, details, now).await {
+                Ok(response) => response,
+                Err(_) => unavailable(),
+            }
+        }
         Err(_) => unavailable(),
     }
 }

@@ -21,6 +21,7 @@ pub(crate) struct Runtime {
     pub enforce_revocation: bool,
     pub login_url: Option<String>,
     pub code_ttl: TimeDelta,
+    pub consent_page: Option<crate::consent_page::Page>,
     pub signer: GrantSessionIssuer,
     pub access_ttl: TimeDelta,
     pub id_ttl: TimeDelta,
@@ -184,6 +185,7 @@ impl Runtime {
         )?;
         let admins = crate::config::admin_emails()?;
         Ok(Some(Self {
+            consent_page: crate::consent_page::Page::configured()?,
             verifier: crate::profile::Verifier::configured(production)?
                 .ok_or("missing browser session verification key")?,
             enforce_revocation: crate::config::flag("ENFORCE_TOKEN_REVOCATION")?,

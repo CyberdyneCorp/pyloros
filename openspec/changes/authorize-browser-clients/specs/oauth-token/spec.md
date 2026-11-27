@@ -34,3 +34,7 @@ The service SHALL validate the registered client and callback, browser authentic
 #### Scenario: Approval during a backend transition
 - **WHEN** the signed consent ticket belongs to the signed-in account and its untrusted client and callback are still valid
 - **THEN** approval merges the ticket scopes with prior approvals for that account, client and resource, preserving concurrent additions, and returns HTTP 303 to the original authorization request. Denial returns HTTP 303 to the validated callback with the state and leaves consent unchanged.
+
+#### Scenario: Present interactive consent
+- **WHEN** a first-party session needs to approve access and a shared consent bundle is configured
+- **THEN** render the deployment’s consent page with escaped client and scope details and an issuer-signed ten-minute ticket bound to the account, client, resource, scopes and original authorization query.

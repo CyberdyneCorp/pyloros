@@ -31,6 +31,7 @@ percent-encoding = "2"
 unicode-general-category = "1"
 k256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
 sha3 = "0.10"
+minijinja = { version = "2", default-features = false, features = ["loader", "serde"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

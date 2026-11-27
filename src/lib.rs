@@ -8,6 +8,7 @@ pub mod code_decision;
 pub mod code_exchange;
 pub mod config;
 mod consent_http;
+mod consent_page;
 pub mod cors;
 mod csrf;
 pub mod discovery;
