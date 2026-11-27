@@ -1,0 +1,2 @@
+- [x] Implement authorized organization deactivation and audit recording.
+- [x] Verify retries, retained references, directory visibility and audit rollback against the reference.

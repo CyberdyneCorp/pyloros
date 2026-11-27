@@ -54,11 +54,12 @@ async fn operator_delete_routes_authenticate_before_validating_the_target() {
         .unwrap();
     let routes = pyloros::profile::routes(pool, false).unwrap();
     for target in [
-        "bulk",
-        "invalid",
-        "invalid/roles/app/reader?organization_id=invalid",
+        "users/bulk",
+        "users/invalid",
+        "users/invalid/roles/app/reader?organization_id=invalid",
+        "organizations/invalid",
     ] {
-        let request = Request::delete(format!("/api/v1/admin/users/{target}"))
+        let request = Request::delete(format!("/api/v1/admin/{target}"))
             .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
             .body(Body::empty())
             .unwrap();

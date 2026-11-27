@@ -10,7 +10,7 @@ mod metadata;
 pub(super) use addition::add;
 pub(super) use catalog::list;
 pub(super) use creation::create;
-pub(super) use edit::edit;
+pub(super) use edit::{deactivate, edit};
 
 pub(super) async fn memberships(
     State(state): State<Arc<Profile>>,

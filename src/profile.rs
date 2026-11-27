@@ -424,6 +424,7 @@ fn build_routes(
             "/api/v1/admin/organizations/{org_id}",
             any(admin_organizations::detail)
                 .patch(admin_organizations::edit)
+                .delete(admin_organizations::deactivate)
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(

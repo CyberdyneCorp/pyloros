@@ -32,6 +32,61 @@ pub(in crate::profile) async fn edit(
         .unwrap_or_else(|_| internal())
 }
 
+pub(in crate::profile) async fn deactivate(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(path): Path<String>,
+) -> Response {
+    let (mut tx, actor, email) = match administrator::operator(&state, &headers).await {
+        Ok(operator) => operator,
+        Err(e) => return *e,
+    };
+    let id = match crate::query::path_uuid(&path, "org_id") {
+        Ok(id) => id,
+        Err(issue) => return passkeys::validation(vec![issue]),
+    };
+    let origin = SessionOrigin {
+        ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
+        user_agent: crate::token_http::header(&headers, "user-agent"),
+    };
+    let outcome: Result<Response, sqlx::Error> = async {
+        let Some(row) = lookup(&mut tx, id).await? else {
+            return Ok(problem(StatusCode::NOT_FOUND, "Organization not found"));
+        };
+        let mut changes = Map::new();
+        if row.0["is_active"] == true {
+            changes.insert("is_active".into(), Value::Bool(false));
+        }
+        if !row.1.starts_with('{') {
+            metadata::strings(&row.1).map_err(|e| sqlx::Error::Decode(e.into()))?;
+            let canonical =
+                metadata::stored_object(&row.1).map_err(|e| sqlx::Error::Decode(e.into()))?;
+            changes.insert("extra_metadata".into(), Value::String(canonical));
+        }
+        if !changes.is_empty() {
+            save(&mut tx, id, changes).await?;
+        }
+        crate::admin_audit::append(
+            &mut tx,
+            "organization.deactivate",
+            Some((actor, email.as_deref())),
+            ("organization", &id.to_string()),
+            json!({}),
+            origin,
+        )
+        .await?;
+        tx.commit().await?;
+        Ok((
+            StatusCode::NO_CONTENT,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+        )
+            .into_response())
+    }
+    .await;
+    outcome.unwrap_or_else(|_| internal())
+}
+
 async fn lookup(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
