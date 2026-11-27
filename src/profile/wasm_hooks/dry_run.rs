@@ -4,8 +4,8 @@ use axum::extract::Path;
 use std::{io, path::PathBuf, process::Stdio, time::Duration};
 use tokio::{io::AsyncWriteExt, process::Command, time::timeout};
 
-const MAX_EVENT: usize = 64 << 10;
-static WORKERS: Semaphore = Semaphore::const_new(2);
+pub(super) const MAX_EVENT: usize = 64 << 10;
+pub(super) static WORKERS: Semaphore = Semaphore::const_new(2);
 
 pub(in crate::profile) async fn dry_run(
     State(state): State<Arc<Profile>>,
@@ -104,7 +104,7 @@ async fn read_event(req: Request) -> Result<Bytes, Box<Response>> {
     Ok(bytes)
 }
 
-async fn invoke(component: &[u8], event: &[u8]) -> io::Result<Value> {
+pub(super) async fn invoke(component: &[u8], event: &[u8]) -> io::Result<Value> {
     let path = match std::env::var_os("PYLOROS_HOOK_WORKER") {
         Some(path) => PathBuf::from(path),
         None => std::env::current_exe()?.with_file_name(format!(

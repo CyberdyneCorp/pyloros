@@ -1,0 +1,129 @@
+use super::*;
+use sqlx::{Acquire, Row};
+use tokio::{
+    task::JoinHandle,
+    time::{Duration, Instant, sleep, timeout},
+};
+
+pub struct StoreHookWorker(JoinHandle<()>);
+impl StoreHookWorker {
+    pub fn start(pool: PgPool) -> Result<Option<Self>, Box<dyn Error>> {
+        if !config::flag_with_default("PYLOROS_STORE_HOOK_DISPATCH", false)?
+            || !config::flag_with_default("HOOKS_ENABLED", true)?
+        {
+            return Ok(None);
+        }
+        Ok(Some(Self(tokio::spawn(async move {
+            loop {
+                match deliver(&pool).await {
+                    Ok(true) => continue,
+                    Ok(false) => sleep(Duration::from_millis(250)).await,
+                    Err(error) => {
+                        eprintln!("store hook delivery failed: {error}");
+                        sleep(Duration::from_secs(2)).await;
+                    }
+                }
+            }
+        }))))
+    }
+}
+impl Drop for StoreHookWorker {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+async fn deliver(pool: &PgPool) -> sqlx::Result<bool> {
+    let Ok(_slot) = dry_run::WORKERS.try_acquire() else {
+        return Ok(false);
+    };
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query(
+        "SELECT q.id,q.hook_id,q.hook_name,q.event_type,q.user_id,q.payload::text,
+        q.timeout_seconds,a.component FROM pyloros_hook_deliveries q
+        JOIN pyloros_hook_artifacts a USING(sha256) WHERE available_at<=clock_timestamp()
+        ORDER BY available_at,q.id LIMIT 1 FOR UPDATE OF q SKIP LOCKED",
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(row) = row else { return Ok(false) };
+    let id: Uuid = row.try_get("id")?;
+    let seconds: i32 = row.try_get("timeout_seconds")?;
+    let payload: &str = row.try_get("payload")?;
+    let started = Instant::now();
+    let result = if payload.len() > dry_run::MAX_EVENT {
+        (
+            "failed",
+            None,
+            Some("Hook event exceeds 64 KiB".to_string()),
+        )
+    } else {
+        match timeout(
+            Duration::from_secs(seconds as u64),
+            dry_run::invoke(row.try_get("component")?, payload.as_bytes()),
+        )
+        .await
+        {
+            Err(_) => ("timeout", None, Some("Hook execution timed out".into())),
+            Ok(Ok(value)) => history(&value),
+            Ok(Err(_)) => {
+                retry(tx, id).await?;
+                return Ok(true);
+            }
+        }
+    };
+    let (status, output, error) = result;
+    let event: &str = row.try_get("event_type")?;
+    let mut history_tx = tx.begin().await?;
+    let insert = sqlx::query(
+        "INSERT INTO hook_executions(id,hook_id,hook_name,event_type,user_id,status,output,error_message,execution_time_ms,context_snapshot)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,jsonb_build_object('event',$4::text))",
+    )
+    .bind(id)
+    .bind(row.try_get::<Uuid,_>("hook_id")?)
+    .bind(row.try_get::<&str,_>("hook_name")?)
+    .bind(event)
+    .bind(row.try_get::<Option<Uuid>,_>("user_id")?)
+    .bind(status)
+    .bind(output)
+    .bind(error)
+    .bind(started.elapsed().as_millis() as i32)
+    .execute(&mut *history_tx).await;
+    // A deferred history trigger can reject a row at commit. Check it while
+    // the savepoint can still be rolled back and another delivery can advance.
+    let checked = match insert {
+        Ok(_) => {
+            sqlx::query("SET CONSTRAINTS ALL IMMEDIATE")
+                .execute(&mut *history_tx)
+                .await
+        }
+        Err(error) => Err(error),
+    };
+    if let Err(error) = checked {
+        history_tx.rollback().await?;
+        retry(tx, id).await?;
+        return Err(error);
+    }
+    history_tx.commit().await?;
+    sqlx::query("DELETE FROM pyloros_hook_deliveries WHERE id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+async fn retry(mut tx: Transaction<'_, Postgres>, id: Uuid) -> sqlx::Result<()> {
+    sqlx::query("UPDATE pyloros_hook_deliveries SET available_at=clock_timestamp()+interval '5 seconds' WHERE id=$1")
+        .bind(id).execute(&mut *tx).await?;
+    tx.commit().await
+}
+
+fn history(value: &Value) -> (&'static str, Option<String>, Option<String>) {
+    let text = |key: &str| value[key].as_str().map(|s| s.replace('\0', "�"));
+    match value["status"].as_str() {
+        Some("success") => ("success", text("output"), None),
+        Some("error") => ("failed", None, text("output")),
+        _ => ("failed", None, text("error")),
+    }
+}

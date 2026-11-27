@@ -113,11 +113,7 @@ async fn revoke(
     if !exists {
         return Ok(Outcome::Deferred("no entitlement for transaction"));
     }
-    let updated=sqlx::query("UPDATE entitlements SET status='revoked',revoked_at=now(),updated_at=now() WHERE user_id=$1 AND source='apple' AND external_ref=$2 AND status='active'").bind(user).bind(reference).execute(&mut **tx).await?;
-    if updated.rows_affected() > 0
-        && hooks
-        && registration::pending_hook(tx, "entitlement_revoked").await?
-    {
+    if !billing_grants::revoke(tx, reference, Some(user), Some("apple"), None, hooks).await? {
         return Ok(Outcome::NeedsDispatcher);
     }
     Ok(Outcome::Applied)
@@ -138,7 +134,7 @@ mod tests {
         sqlx::raw_sql("CREATE TEMP TABLE apple_notifications(notification_uuid text PRIMARY KEY,status text,reason text,processed_at timestamptz);
             CREATE TEMP TABLE apple_transactions(original_transaction_id text,user_id uuid);
             CREATE TEMP TABLE users(id uuid);
-            CREATE TEMP TABLE entitlements(user_id uuid,source text,external_ref text,status text,revoked_at timestamptz,updated_at timestamptz);")
+            CREATE TEMP TABLE entitlements(id uuid DEFAULT gen_random_uuid(), product_key text DEFAULT 'fixture',plan text,user_id uuid,source text,external_ref text,status text,revoked_at timestamptz,updated_at timestamptz);")
             .execute(&pool).await.unwrap();
         let user = Uuid::new_v4();
         let refund = || Delivery {
@@ -166,7 +162,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO entitlements VALUES($1,'apple','p','active',NULL,now()),($1,'stripe','p','active',NULL,now())").bind(user).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO entitlements(user_id,source,external_ref,status,revoked_at,updated_at) VALUES($1,'apple','p','active',NULL,now()),($1,'stripe','p','active',NULL,now())").bind(user).execute(&pool).await.unwrap();
         assert_eq!(process(&pool, refund(), false).await.unwrap(), Some(true));
         assert_eq!(process(&pool, refund(), false).await.unwrap(), Some(false));
         let active: Vec<String> =

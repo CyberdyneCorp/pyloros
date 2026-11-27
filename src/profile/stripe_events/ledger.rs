@@ -162,12 +162,7 @@ async fn revoke(tx: &mut Tx<'_>, event: &Event, hooks: bool) -> sqlx::Result<Out
     if !exists {
         return Ok(Outcome::Deferred("no entitlement for reference".into()));
     }
-    let rows=sqlx::query("UPDATE entitlements SET status='revoked',revoked_at=now(),updated_at=now() WHERE external_ref=$1 AND status='active'")
-        .bind(reference).execute(&mut **tx).await?;
-    if rows.rows_affected() > 0
-        && hooks
-        && registration::pending_hook(tx, "entitlement_revoked").await?
-    {
+    if !billing_grants::revoke(tx, reference, None, None, None, hooks).await? {
         return Ok(Outcome::NeedsDispatcher);
     }
     Ok(Outcome::Applied)

@@ -229,12 +229,7 @@ async fn revoke(tx: &mut Tx<'_>, user: Uuid, token: &str, hooks: bool) -> Result
     if !exists {
         return Ok(Outcome::Deferred("no entitlement for purchase"));
     }
-    let result=sqlx::query("UPDATE entitlements SET status='revoked',revoked_at=now(),updated_at=now() WHERE user_id=$1 AND source='google' AND external_ref=$2 AND status='active'")
-        .bind(user).bind(token).execute(&mut **tx).await?;
-    if result.rows_affected() > 0
-        && hooks
-        && registration::pending_hook(tx, "entitlement_revoked").await?
-    {
+    if !billing_grants::revoke(tx, token, Some(user), Some("google"), None, hooks).await? {
         return Err(Failure::Unavailable);
     }
     Ok(Outcome::Applied)

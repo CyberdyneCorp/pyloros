@@ -52,6 +52,7 @@ mod userinfo;
 mod wallet_challenge;
 mod wallet_export;
 mod wasm_hooks;
+pub use wasm_hooks::StoreHookWorker;
 mod webhook_history;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};

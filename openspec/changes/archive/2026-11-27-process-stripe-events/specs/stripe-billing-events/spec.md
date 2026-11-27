@@ -24,5 +24,9 @@ The service SHALL verify Stripe signatures against the original payload and appl
 - **THEN** defer the event and preserve the existing customer and entitlement records
 
 #### Scenario: Keep an unfulfilled callback retryable
-- **WHEN** an active entitlement hook requires a dispatcher that is unavailable
+- **WHEN** hook processing is enabled and an active hook cannot accept delivery because its component version or store dispatcher is unconfigured
 - **THEN** roll back the event, return a retryable error and preserve eligibility for redelivery
+
+#### Scenario: Recover after component execution becomes available
+- **WHEN** an event has committed a delivery that cannot yet start its worker
+- **THEN** retain the selected version and retry execution independently of provider redelivery

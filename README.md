@@ -34,7 +34,7 @@ Set `BILLING_ENABLED=true` and configure `STRIPE_API_KEY` on the server to enabl
 
 The response contains the hosted session's `id` and `url`. The service identifies the signed-in user to Stripe, reuses a mapped customer when available, and sends one line item. Each new checkout request gets a new provider idempotency key. Retries of that provider request reuse its key. Fulfillment begins when Stripe sends a signed event to `POST /api/v1/webhooks/stripe`. Set `STRIPE_WEBHOOK_SECRET` to the endpoint signing secret. The handler verifies the original bytes, updates entitlements and records the outcome in one PostgreSQL transaction. Redelivery of a processed event is acknowledged. An event deferred for missing business data can be reapplied after that data becomes available.
 
-Pyloros intentionally fulfills correctly signed events that the previous provider adapter could reject with HTTP 500 during decoding. During migration, an active entitlement hook requiring a dispatcher returns HTTP 503 and leaves the billing event available for retry.
+Pyloros intentionally fulfills correctly signed events that the previous provider adapter could reject with HTTP 500 during decoding. When hook processing is enabled, an active entitlement hook without a selected version or enabled store dispatcher keeps the billing notification retryable with HTTP 503.
 
 ## App Store purchases
 
@@ -290,3 +290,16 @@ through the database migration owner. An administrator can then use
 Each change records its previous and new digest in the administrator audit log.
 Repeating a completed change returns the current selection. The hook's existing
 enabled flag, event, privacy settings and source are preserved.
+
+### Deliver store entitlement hooks
+
+Apply [the delivery queue migration](migrations/003_hook_deliveries.sql) after the
+binding migration. On the Rust deployment that owns billing mutations, enable
+`HOOKS_ENABLED=true` and `PYLOROS_STORE_HOOK_DISPATCH=true` and install the hook
+worker. Bind every active grant or revocation hook to its staged component.
+
+Stripe, Google Play and App Store billing writes queue each matching hook in the
+entitlement transaction. Delivery uses the version selected at that time and the
+hook's timeout. A missing binding keeps the billing event retryable. A worker
+outage after commit retains the queued work. The operator console shows successful
+output, guest failures and timeouts in the existing execution history.

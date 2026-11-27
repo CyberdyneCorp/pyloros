@@ -1,0 +1,2 @@
+- [x] Queue version-pinned deliveries with store billing transactions and run committed work in bounded workers.
+- [x] Verify history, privacy, rollback, replay and recovery with PostgreSQL and a packaged worker.

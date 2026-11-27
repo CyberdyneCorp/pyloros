@@ -1,3 +1,3 @@
 - [x] Implement authenticated event parsing and transactional processing.
 - [x] Verify grants, customer mapping, retries, plan changes, refunds, disputes, and concurrent deliveries.
-- [ ] Verify active entitlement hook dispatch at the migration gate.
+- [x] Verify active component delivery, retry for an unbound hook, rollback and replay.

@@ -22,9 +22,6 @@ pub(super) async fn apply(
         reference,
         source,
     } = grant;
-    if hooks && registration::pending_hook(tx, "entitlement_granted").await? {
-        return Ok(false);
-    }
     let candidates=sqlx::query_scalar::<_,Uuid>("SELECT id FROM entitlements WHERE user_id=$1 AND product_key=$2 AND plan IS NOT DISTINCT FROM $3 LIMIT 2 FOR UPDATE")
         .bind(user).bind(product).bind(plan).fetch_all(&mut **tx).await?;
 
@@ -63,17 +60,54 @@ pub(super) async fn apply(
             ));
         }
     };
-    let superseded = sqlx::query(
+    if let Some(reference) = reference
+        && !revoke(tx, reference, None, Some(source), Some(id), hooks).await?
+    {
+        return Ok(false);
+    }
+    if !hooks {
+        return Ok(true);
+    }
+    let payload = json!({
+        "product_key": product, "plan": plan, "entitlement_id": id,
+        "source": source, "organization_id": null
+    });
+    wasm_hooks::delivery::enqueue(tx, "entitlement_granted", Some(user), payload).await
+}
+
+pub(super) async fn revoke(
+    tx: &mut Transaction<'_, Postgres>,
+    reference: &str,
+    user: Option<Uuid>,
+    source: Option<&str>,
+    keep: Option<Uuid>,
+    hooks: bool,
+) -> sqlx::Result<bool> {
+    let revoked = sqlx::query_as::<_, (Uuid, Option<Uuid>, String, Option<String>)>(
         "UPDATE entitlements SET status='revoked',revoked_at=now(),updated_at=now()
-        WHERE external_ref=$1 AND id<>$2 AND source=$3 AND status='active'",
+         WHERE external_ref=$1 AND status='active' AND ($2::uuid IS NULL OR user_id=$2)
+         AND ($3::text IS NULL OR source=$3) AND ($4::uuid IS NULL OR id<>$4)
+         RETURNING id,user_id,product_key,plan",
     )
     .bind(reference)
-    .bind(id)
+    .bind(user)
     .bind(source)
-    .execute(&mut **tx)
+    .bind(keep)
+    .fetch_all(&mut **tx)
     .await?;
-    let needs_dispatch = superseded.rows_affected() > 0
-        && hooks
-        && registration::pending_hook(tx, "entitlement_revoked").await?;
-    Ok(!needs_dispatch)
+    if hooks {
+        for (id, user, product, plan) in revoked {
+            if !wasm_hooks::delivery::enqueue(
+                tx,
+                "entitlement_revoked",
+                user,
+                json!({"product_key":product,"plan":plan,"entitlement_id":id}),
+            )
+            .await?
+            {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
