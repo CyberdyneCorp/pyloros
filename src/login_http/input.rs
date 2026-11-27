@@ -135,7 +135,7 @@ pub(super) async fn read<T>(
     headers: &HeaderMap,
     body: Body,
     parse: fn(&Value) -> Inputs<T>,
-) -> Result<T, Response> {
+) -> Result<T, Box<Response>> {
     let bytes = to_bytes(body, 2 * 1024 * 1024)
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE.into_response())?;
@@ -149,11 +149,25 @@ pub(super) async fn read<T>(
             )
                 .into_response()
         })
+        .map_err(Box::new)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn invalid_json_returns_a_validation_response_to_the_http_handler() {
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", "application/json".parse().unwrap());
+        let response = read(&headers, Body::from("{"), credentials)
+            .await
+            .unwrap_err();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let error: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(error["detail"][0]["type"], "json_invalid");
+    }
 
     #[test]
     fn login_accepts_display_addresses_and_requires_a_public_email_domain() {

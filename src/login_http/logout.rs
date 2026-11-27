@@ -18,7 +18,7 @@ pub(super) async fn handle(
     let (parts, body) = req.into_parts();
     let refresh = match refresh::read_token(&parts.headers, body).await {
         Ok(token) => token,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let access = bearer(&parts.headers).or_else(|| cookie(&parts.headers, "access_token"));
     let origin = SessionOrigin {

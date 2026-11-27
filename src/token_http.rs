@@ -69,7 +69,7 @@ pub(crate) fn client_ip(headers: &HeaderMap, peer: IpAddr, proxies: usize) -> Op
 }
 
 type Fields = Vec<(String, String)>;
-async fn fields(req: Request) -> Result<Fields, Response> {
+async fn fields(req: Request) -> Result<Fields, Box<Response>> {
     let mime = header(req.headers(), "content-type")
         .unwrap_or_default()
         .split(';')
@@ -111,7 +111,7 @@ async fn exchange(
     let headers = req.headers().clone();
     let fields = match fields(req).await {
         Ok(fields) => fields,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let get = |name: &str| {
         fields

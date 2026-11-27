@@ -21,7 +21,7 @@ pub(super) async fn handle(
     let token = match read_token(&parts.headers, body).await {
         Ok(Some(token)) => token,
         Ok(None) => return problem(StatusCode::UNAUTHORIZED, "Missing refresh token"),
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let origin = SessionOrigin {
         ip: client_ip(&parts.headers, peer.ip(), login.proxies),
@@ -60,7 +60,7 @@ pub(super) async fn handle(
 pub(super) async fn read_token(
     headers: &axum::http::HeaderMap,
     body: axum::body::Body,
-) -> Result<Option<String>, Response> {
+) -> Result<Option<String>, Box<Response>> {
     let submitted = input::read(headers, body, input::refresh).await?;
     Ok(cookie(headers, "refresh_token")
         .filter(|s| !s.is_empty())

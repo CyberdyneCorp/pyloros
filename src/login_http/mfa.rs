@@ -20,7 +20,7 @@ pub(super) async fn handle(
     let (parts, body) = req.into_parts();
     let (token, code) = match input::read(&parts.headers, body, input::factor).await {
         Ok(fields) => fields,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let origin = SessionOrigin {
         ip: client_ip(&parts.headers, peer.ip(), login.proxies),

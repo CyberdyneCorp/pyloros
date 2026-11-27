@@ -91,7 +91,7 @@ async fn handle(
     let (parts, body) = req.into_parts();
     let (email, password) = match input::read(&parts.headers, body, input::credentials).await {
         Ok(v) => v,
-        Err(r) => return r,
+        Err(r) => return *r,
     };
     let origin = SessionOrigin {
         ip: client_ip(&parts.headers, peer.ip(), login.proxies),
