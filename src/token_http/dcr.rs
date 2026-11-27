@@ -1,5 +1,4 @@
 //! Public OAuth client registration and its administrative audit record.
-mod audit;
 mod input;
 use super::{client_ip, header, internal, post_only};
 use crate::{
@@ -300,8 +299,10 @@ async fn persist(
     .bind(grants)
     .execute(&mut *tx)
     .await?;
-    audit::append(
+    crate::admin_audit::append_client_action(
         &mut tx,
+        "oauth_client.dynamic_register",
+        None,
         &id,
         json!({"name":client.name,"redirect_uris":client.uris}),
         origin,

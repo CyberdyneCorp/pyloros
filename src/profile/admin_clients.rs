@@ -1,7 +1,11 @@
-//! Administrative reads of the OAuth client registry.
+//! Administrative access to the OAuth client registry.
 mod page;
 use super::*;
-use crate::login_http::problem;
+use crate::{
+    grant_response::SessionOrigin,
+    login_http::problem,
+    token_http::{client_ip, header as header_value},
+};
 use axum::extract::{Path, RawQuery};
 use page::Page;
 use sqlx::{Row, postgres::PgRow};
@@ -18,47 +22,65 @@ pub(super) async fn list(
     headers: HeaderMap,
     RawQuery(query): RawQuery,
 ) -> Response {
-    read(
+    if method != Method::GET {
+        return method_refused();
+    }
+    handle(
         &state,
-        method,
         &headers,
-        Read::Page(query.as_deref().unwrap_or("")),
+        Operation::Page(query.as_deref().unwrap_or("")),
     )
     .await
 }
+
 pub(super) async fn detail(
     State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    read(&state, method, &headers, Read::Client(&id)).await
+    let op = match method {
+        Method::GET => Operation::Client(&id),
+        Method::DELETE => Operation::Deactivate(
+            &id,
+            SessionOrigin {
+                ip: client_ip(&headers, peer.ip(), state.proxies),
+                user_agent: header_value(&headers, "user-agent"),
+            },
+        ),
+        _ => return method_refused(),
+    };
+    handle(&state, &headers, op).await
 }
-enum Read<'a> {
+
+fn method_refused() -> Response {
+    let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+    response
+        .headers_mut()
+        .insert(header::ALLOW, "GET".parse().unwrap());
+    response
+}
+enum Operation<'a> {
     Page(&'a str),
     Client(&'a str),
+    Deactivate(&'a str, SessionOrigin<'a>),
 }
-async fn read(state: &Profile, method: Method, headers: &HeaderMap, op: Read<'_>) -> Response {
-    if method != Method::GET {
-        let mut r = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
-        r.headers_mut()
-            .insert(header::ALLOW, "GET".parse().unwrap());
-        return r;
-    }
+async fn handle(state: &Profile, headers: &HeaderMap, op: Operation<'_>) -> Response {
     let Some(id) = credential(headers)
         .and_then(|s| state.verify.as_ref()?.read(s))
         .filter(|id| !id.client_bound)
     else {
         return unauthorized();
     };
-    authorized_read(state, &id, op)
+    authorized_operation(state, &id, op)
         .await
         .unwrap_or_else(|_| internal())
 }
-async fn authorized_read(
+async fn authorized_operation(
     state: &Profile,
     id: &Identity,
-    op: Read<'_>,
+    op: Operation<'_>,
 ) -> Result<Response, sqlx::Error> {
     let mut tx = state.pool.begin().await?;
     if state.enforce && revoked(&mut tx, id).await? {
@@ -72,19 +94,24 @@ async fn authorized_read(
             .bind(id.user)
             .fetch_optional(&mut *tx)
             .await?;
-    if !operator.is_some_and(|(stored, email, verified)| {
-        config::effective_admin(
-            stored,
-            email.as_deref(),
-            verified,
-            state.production,
-            &state.admins,
-        )
-    }) {
+    let Some((stored, email, verified)) = operator else {
+        return Ok(problem(StatusCode::FORBIDDEN, "Admin access required"));
+    };
+    if !config::effective_admin(
+        stored,
+        email.as_deref(),
+        verified,
+        state.production,
+        &state.admins,
+    ) {
         return Ok(problem(StatusCode::FORBIDDEN, "Admin access required"));
     }
     match op {
-        Read::Client(id) => {
+        Operation::Deactivate(target, origin) => {
+            deactivate(tx, id.user, email.as_deref(), target, origin).await
+        }
+
+        Operation::Client(id) => {
             let row = sqlx::query(&format!(
                 "SELECT {COLUMNS} FROM oauth_clients WHERE client_id=$1"
             ))
@@ -96,7 +123,7 @@ async fn authorized_read(
                 None => problem(StatusCode::NOT_FOUND, "OAuth client not found"),
             })
         }
-        Read::Page(query) => match Page::parse(query) {
+        Operation::Page(query) => match Page::parse(query) {
             Ok(page) => collection(&mut tx, page).await,
             Err(issues) => Ok((
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -106,6 +133,30 @@ async fn authorized_read(
         },
     }
 }
+async fn deactivate(
+    mut tx: Transaction<'_, Postgres>,
+    operator: Uuid,
+    email: Option<&str>,
+    target: &str,
+    origin: SessionOrigin<'_>,
+) -> Result<Response, sqlx::Error> {
+    let updated=sqlx::query("UPDATE oauth_clients SET updated_at=CASE WHEN active THEN now() ELSE updated_at END,active=false WHERE client_id=$1").bind(target).execute(&mut *tx).await?;
+    if updated.rows_affected() == 0 {
+        return Ok(problem(StatusCode::NOT_FOUND, "OAuth client not found"));
+    }
+    crate::admin_audit::append_client_action(
+        &mut tx,
+        "oauth_client.delete",
+        Some((operator, email)),
+        target,
+        json!({}),
+        origin,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 async fn collection(
     tx: &mut Transaction<'_, Postgres>,
     page: Page,
@@ -150,7 +201,7 @@ fn item(row: PgRow) -> Result<Value, sqlx::Error> {
         "post_logout_redirect_uris",
     ] {
         result[field] =
-            json!(row.try_get::<Option<sqlx::types::Json<BTreeSet<String>>>, _>(field)?);
+            json!(row.try_get::<Option<sqlx::types::Json<Option<BTreeSet<String>>>>, _>(field)?);
     }
     for field in ["trusted", "active"] {
         result[field] = json!(row.try_get::<bool, _>(field)?);
@@ -172,4 +223,28 @@ fn item(row: PgRow) -> Result<Value, sqlx::Error> {
     }
     result["max_token_ttl_s"] = json!(row.try_get::<i32, _>("max_token_ttl_s")?);
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn sql_and_json_null_client_lists_share_the_same_response() {
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let row = sqlx::query("SELECT gen_random_uuid() AS id, NULL::uuid AS created_by_user_id,
+            'client'::text AS client_id,'App'::text AS name,NULL::text AS description,
+            'public'::text AS client_type,NULL::text AS access_token_audience,'admin'::text AS registration_source,
+            'null'::jsonb AS allowed_audiences,NULL::jsonb AS redirect_uris,'[]'::jsonb AS post_logout_redirect_uris,
+            false AS trusted,true AS active,now() AS created_at,now() AS updated_at,
+            NULL::timestamptz AS last_used_at,''::text AS allowed_scopes,''::text AS grant_types,3600 AS max_token_ttl_s")
+            .fetch_one(&pool).await.unwrap();
+        let client = item(row).unwrap();
+        assert_eq!(client["allowed_audiences"], Value::Null);
+        assert_eq!(client["redirect_uris"], Value::Null);
+        assert_eq!(client["post_logout_redirect_uris"], json!([]));
+    }
 }

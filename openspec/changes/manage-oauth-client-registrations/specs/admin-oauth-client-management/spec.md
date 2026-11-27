@@ -23,3 +23,13 @@ The issuer SHALL allow an authorized operator to create, update, rotate the secr
 
 - **WHEN** an operator deactivates a known client
 - **THEN** retain the registration and audit history and enforce its inactive status on subsequent credential use.
+
+#### Scenario: A deactivation is retried
+
+- **WHEN** an operator repeats a successful deactivation
+- **THEN** return an empty success response, keep the client inactive and record the operator action in the same audit chain.
+
+#### Scenario: The audit write fails
+
+- **WHEN** the service cannot record a deactivation in the administrative audit chain
+- **THEN** the request fails and the client retains its previous active state.

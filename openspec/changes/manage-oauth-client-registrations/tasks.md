@@ -1,4 +1,5 @@
 - [x] Capture initial reference responses and state changes for the four mutation endpoints.
 - [ ] Implement administrative creation and partial updates with shared client and audit persistence.
-- [ ] Implement secret rotation and deactivation.
+- [x] Implement audited deactivation and verify shared client status, credential refusal and repeated requests.
+- [ ] Implement secret rotation.
 - [ ] Compare policy enforcement, audit continuity and credential use across both services and exercise existing consumers.

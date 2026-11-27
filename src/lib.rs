@@ -148,3 +148,5 @@ pub mod external_oauth;
 pub mod token_revocation;
 
 mod query;
+
+mod admin_audit;

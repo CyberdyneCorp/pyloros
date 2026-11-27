@@ -1,4 +1,4 @@
-//! Append the public registration event to the existing administrative hash chain.
+//! Append OAuth client administration events to the shared audit chain.
 use crate::grant_response::SessionOrigin;
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -22,8 +22,10 @@ fn canonical_digest(mut fields: Value) -> String {
     format!("{:x}", Sha256::digest(ascii.as_bytes()))
 }
 
-pub(super) async fn append(
+pub(crate) async fn append_client_action(
     tx: &mut Transaction<'_, Postgres>,
+    action: &str,
+    actor: Option<(Uuid, Option<&str>)>,
     target: &str,
     meta: Value,
     origin: SessionOrigin<'_>,
@@ -38,16 +40,19 @@ pub(super) async fn append(
     let now = Utc::now();
     let id = Uuid::new_v4();
     let ip = origin.ip.map(|v| v.to_string());
+    let actor_id = actor.map(|(id, _)| id);
+    let actor_email = actor.and_then(|(_, email)| email);
     let digest = canonical_digest(
-        json!({"action":"oauth_client.dynamic_register","actor_email":null,"actor_user_id":null,
+        json!({"action":action,"actor_email":actor_email,"actor_user_id":actor_id,
         "target_id":target,"target_type":"oauth_client","id":id,"metadata":meta,"ip_address":ip,"user_agent":origin.user_agent,
         "prev_hash":previous,"created_at":now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()}),
     );
     sqlx::query(
-        "INSERT INTO admin_action_logs (id,action,target_type,target_id,extra_metadata,ip_address,user_agent,created_at,prev_hash,row_hash)
-         VALUES ($1,'oauth_client.dynamic_register','oauth_client',$2,$3,$4::text::inet,$5,$6,$7,$8)",
+        "INSERT INTO admin_action_logs (id,action,target_type,target_id,extra_metadata,ip_address,user_agent,created_at,prev_hash,row_hash,actor_user_id,actor_email)
+         VALUES ($1,$2,'oauth_client',$3,$4,$5::text::inet,$6,$7,$8,$9,$10,$11)",
     )
     .bind(id)
+    .bind(action)
     .bind(target)
     .bind(meta)
     .bind(ip)
@@ -55,6 +60,8 @@ pub(super) async fn append(
     .bind(now)
     .bind(previous)
     .bind(&digest)
+    .bind(actor_id)
+    .bind(actor_email)
     .execute(&mut **tx)
     .await?;
     sqlx::query("UPDATE audit_chain_head SET head_hash=$1 WHERE id=1")
