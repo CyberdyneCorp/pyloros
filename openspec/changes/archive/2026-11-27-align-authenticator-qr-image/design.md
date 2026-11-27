@@ -1,0 +1,1 @@
+Encode the ASCII provisioning URI as a QR byte segment. Select the smallest standard symbol supporting medium error correction and boost redundancy within that size when possible. Render dark runs onto the transparent quiet zone at five pixels per module.

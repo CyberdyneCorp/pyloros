@@ -1,0 +1,2 @@
+- [x] Encode and render a scannable enrollment image.
+- [x] Verify image media, dimensions, decoded URI and existing browser enrollment.

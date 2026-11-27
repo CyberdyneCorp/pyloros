@@ -1,5 +1,6 @@
 //! Provision and confirm a first-party account's authenticator.
 mod manage;
+mod qr;
 use super::*;
 use crate::{
     enrolled_factor::FactorVerifier,
@@ -10,9 +11,7 @@ use crate::{
     token_http::{client_ip, header as value},
 };
 use axum::body::to_bytes;
-use base64::{Engine, engine::general_purpose::STANDARD};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use qrcode::{EcLevel, QrCode, render::svg};
 use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
 
@@ -227,10 +226,7 @@ async fn provision(
             utf8_percent_encode(issuer, QUERY)
         )
     };
-    let svg = QrCode::with_error_correction_level(uri.as_bytes(), EcLevel::M)?
-        .render::<svg::Color>()
-        .build();
-    let qr = format!("data:image/svg+xml;base64,{}", STANDARD.encode(svg));
+    let qr = qr::data_uri(&uri)?;
     sqlx::query("UPDATE users SET totp_secret_encrypted=$2 WHERE id=$1")
         .bind(user)
         .bind(encrypted)
