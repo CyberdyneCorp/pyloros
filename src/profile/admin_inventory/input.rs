@@ -6,6 +6,7 @@ use serde_json::value::RawValue;
 enum Shape {
     Context,
     Integer,
+    TokenStatus,
     Identifier,
     String,
     Object(&'static [Field]),
@@ -130,6 +131,7 @@ impl<'a> Errors<'a> {
                 }
                 Ok(Value::Array(values))
             }
+            Shape::TokenStatus => self.token_status(raw, loc),
             Shape::Integer => match integer_text(raw) {
                 Ok(number) => Ok(json!(number)),
                 Err((kind, msg)) => self.reject(raw, loc, kind, msg),
@@ -138,6 +140,23 @@ impl<'a> Errors<'a> {
             Object(fields) => self.object(raw, loc, fields),
         }
     }
+    fn token_status(&mut self, raw: &'a RawValue, loc: &[Value]) -> Result<Value, Box<Response>> {
+        let number = match integer_text(raw) {
+            Ok(number) => number,
+            Err((kind, msg)) => return self.reject(raw, loc, kind, msg),
+        };
+        if let Ok(status @ 0..=2) = number.parse::<u8>() {
+            return Ok(json!(status));
+        }
+        let issue = if number.starts_with('-') {
+            json!({"loc":loc,"type":"greater_than_equal","msg":"Input should be greater than or equal to 0","ctx":{"ge":"0"}})
+        } else {
+            json!({"loc":loc,"type":"less_than_equal","msg":"Input should be less than or equal to 2","ctx":{"le":"2"}})
+        };
+        self.detail.push(field_issue(issue, raw));
+        Ok(Value::Null)
+    }
+
     fn context(&mut self, raw: &'a RawValue, loc: &mut Vec<Value>) -> Result<Value, Box<Response>> {
         if !raw.get().starts_with('{') {
             return self.reject(raw, loc, "dict_type", "Input should be a valid dictionary");
@@ -224,6 +243,18 @@ fn integer_text(raw: &RawValue) -> Result<String, (&'static str, &'static str)> 
     } else {
         Ok(magnitude.into())
     }
+}
+
+pub(super) fn token_status(
+    raw: &RawValue,
+    path: Result<Uuid, Value>,
+) -> Result<(Uuid, u8), Box<Response>> {
+    const REQUEST: Shape = Object(&[Field("new_status", &Shape::TokenStatus, Required)]);
+    let (id, doc) = project(raw, &REQUEST, Some(path))?;
+    Ok((
+        id.expect("user path supplied"),
+        doc["new_status"].as_u64().expect("validated status") as u8,
+    ))
 }
 
 pub(super) fn assumption(

@@ -7,7 +7,7 @@ use crate::{
 use axum::extract::Path;
 
 mod assignments;
-mod token;
+pub(super) mod token;
 
 enum View {
     Token,

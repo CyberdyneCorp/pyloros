@@ -1,20 +1,26 @@
 //! Append OAuth administration events to the shared audit chain.
 use crate::grant_response::SessionOrigin;
 use chrono::Utc;
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 use std::fmt::Write;
 use uuid::Uuid;
 
-fn canonical_digest(mut fields: Value) -> String {
-    fields.sort_all_objects();
-    format!("{:x}", Sha256::digest(ascii_json(&fields).as_bytes()))
+fn sorted_digest(value: &impl serde::Serialize) -> Result<String, serde_json::Error> {
+    let encoded = serde_json::to_string(value)?;
+    Ok(format!("{:x}", Sha256::digest(ascii(&encoded))))
 }
 
 pub(crate) fn ascii_json(value: &Value) -> String {
+    ascii(&value.to_string())
+}
+
+fn ascii(text: &str) -> String {
     let mut ascii = String::new();
-    for c in value.to_string().chars() {
+    for c in text.chars() {
         if c < '\u{7f}' {
             ascii.push(c);
         } else {
@@ -64,6 +70,20 @@ pub(crate) async fn append_record(
     meta: Value,
     origin: SessionOrigin<'_>,
 ) -> Result<(), sqlx::Error> {
+    let mut meta = meta;
+    meta.sort_all_objects();
+    append_sorted_record(tx, action, actor, target, &meta, origin).await
+}
+
+// The metadata must serialize in sorted key order for the shared audit hash.
+pub(crate) async fn append_sorted_record<T: serde::Serialize + Sync>(
+    tx: &mut Transaction<'_, Postgres>,
+    action: &str,
+    actor: Option<(Uuid, Option<&str>)>,
+    target: Option<(&str, Option<&str>)>,
+    meta: &T,
+    origin: SessionOrigin<'_>,
+) -> Result<(), sqlx::Error> {
     let now = Utc::now();
     let (target_type, target) = target.unzip();
     let target = target.flatten();
@@ -78,11 +98,34 @@ pub(crate) async fn append_record(
     let ip = origin.ip.map(|v| v.to_string());
     let actor_id = actor.map(|(id, _)| id);
     let actor_email = actor.and_then(|(_, email)| email);
-    let digest = canonical_digest(
-        json!({"action":action,"actor_email":actor_email,"actor_user_id":actor_id,
-        "target_id":target,"target_type":target_type,"id":id,"metadata":meta,"ip_address":ip,"user_agent":origin.user_agent,
-        "prev_hash":previous,"created_at":now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()}),
-    );
+    #[derive(serde::Serialize)]
+    struct Record<'a, T> {
+        action: &'a str,
+        actor_email: Option<&'a str>,
+        actor_user_id: Option<Uuid>,
+        created_at: String,
+        id: Uuid,
+        ip_address: Option<&'a str>,
+        metadata: &'a T,
+        prev_hash: &'a str,
+        target_id: Option<&'a str>,
+        target_type: Option<&'a str>,
+        user_agent: Option<&'a str>,
+    }
+    let record = Record {
+        action,
+        actor_email,
+        actor_user_id: actor_id,
+        created_at: now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string(),
+        id,
+        ip_address: ip.as_deref(),
+        metadata: meta,
+        prev_hash: &previous,
+        target_id: target,
+        target_type,
+        user_agent: origin.user_agent,
+    };
+    let digest = sorted_digest(&record).map_err(|err| sqlx::Error::Encode(err.into()))?;
     sqlx::query(
         "INSERT INTO admin_action_logs (id,action,target_type,target_id,extra_metadata,ip_address,user_agent,created_at,prev_hash,row_hash,actor_user_id,actor_email)
          VALUES ($1,$2,$12,$3,$4,$5::text::inet,$6,$7,$8,$9,$10,$11)",
@@ -90,7 +133,7 @@ pub(crate) async fn append_record(
     .bind(id)
     .bind(action)
     .bind(target)
-    .bind(meta)
+    .bind(sqlx::types::Json(meta))
     .bind(ip)
     .bind(origin.user_agent)
     .bind(now)
@@ -183,9 +226,10 @@ mod tests {
 
     #[test]
     fn unicode_registration_metadata_preserves_the_chain_digest() {
-        let content = json!({"nested":{"z":1,"a":2},"label":"Δ 🏛"});
+        let mut content = json!({"nested":{"z":1,"a":2},"label":"Δ 🏛"});
+        content.sort_all_objects();
         assert_eq!(
-            canonical_digest(content),
+            sorted_digest(&content).unwrap(),
             "edb09f4a065cf69cda395d3cecfd5ef4323c799de7a5ad53ee579cc4da25c2f0"
         );
     }

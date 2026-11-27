@@ -1,7 +1,7 @@
 - [x] Implement the local mint retry route, including operator authorization and provider selection.
 - [x] Verify repeated local mints, settings reload, token reads, metadata persistence and audit rollback.
 - [x] Exercise mint retries with the existing CLI and browser.
-- [ ] Implement status updates, including input validation, metadata persistence and audit rollback.
-- [ ] Exercise status changes with the existing CLI and browser.
+- [x] Implement local status updates, including input validation, metadata persistence and audit rollback.
+- [x] Exercise local status changes with the existing CLI and browser.
 - [ ] Compare deployed provider call preparation and failures for both operations.
 - [ ] Verify confirmed chain operations.

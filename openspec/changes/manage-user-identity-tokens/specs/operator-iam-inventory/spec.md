@@ -41,3 +41,14 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 - **WHEN** a retry loads user metadata, a concurrent edit commits, and the provider returns an outcome for that retry
 - **THEN** persist the retry result against the originally loaded metadata, even when doing so overwrites the intervening metadata edit
 - **AND** commit the operator audit and metadata change together
+
+#### Scenario: Audit failure after a local status change
+
+- **WHEN** the provider changes an issued token's status and storing the operator audit fails
+- **THEN** roll back the user's metadata update and return an internal error
+- **AND** subsequent token reads expose the status already applied by the provider
+
+#### Scenario: Unknown local token
+
+- **WHEN** an operator requests a status change for an integer token identifier absent from the local provider
+- **THEN** report an unsuccessful provider outcome and audit the original integer identifier at full precision

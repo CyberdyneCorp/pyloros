@@ -13,7 +13,7 @@ struct TokenInfo<'a> {
     blockchain_status: Option<u8>,
 }
 
-fn token_number(raw: &RawValue) -> Option<&RawValue> {
+pub(in crate::profile::admin_inventory) fn token_number(raw: &RawValue) -> Option<&RawValue> {
     match raw.get() {
         "true" => Some(serde_json::from_str("1").expect("valid integer")),
         "false" => Some(serde_json::from_str("0").expect("valid integer")),
