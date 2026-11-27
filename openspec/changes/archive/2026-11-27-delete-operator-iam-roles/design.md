@@ -1,0 +1,1 @@
+Resolve the requested role using the configured provider. For PostgreSQL, check existence at request time and delete the role in the transaction that records the operator audit. Use the database relationships to remove its sessions and policy links.

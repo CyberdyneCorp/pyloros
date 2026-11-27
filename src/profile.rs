@@ -433,6 +433,10 @@ fn build_routes(
             any(admin_inventory::delete_group),
         )
         .route(
+            "/api/v1/admin/roles/{role_id}",
+            any(admin_inventory::delete_only).delete(admin_inventory::delete_role),
+        )
+        .route(
             "/api/v1/admin/roles/{role_id}/policies",
             any(crate::token_http::post_only)
                 .post(admin_inventory::attach_role_policy)

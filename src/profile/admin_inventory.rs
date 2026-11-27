@@ -7,6 +7,8 @@ pub(super) use removal::remove;
 mod create_group;
 pub(super) mod create_role;
 mod delete_group;
+mod delete_role;
+pub(super) use delete_role::delete_role;
 mod group_policies;
 pub(super) use delete_group::delete_group;
 pub(super) mod boundary;

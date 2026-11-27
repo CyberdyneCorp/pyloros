@@ -1,0 +1,3 @@
+- [x] Implement role deletion and atomic audit.
+- [x] Compare missing roles, deletion timing, cascading effects, rollback and chain provider responses.
+- [x] Verify the operator CLI and console.
