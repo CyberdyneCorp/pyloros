@@ -73,14 +73,18 @@ pub(super) async fn handle(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
-    let (headers, body) = match password_change::read_body(req).await {
-        Ok(pair) => pair,
-        Err(response) => return *response,
-    };
-    let token = match crate::request_json::token_field(body, "token", 0, usize::MAX) {
-        Ok(token) => token,
-        Err(issue) => return password_change::invalid(vec![issue]),
-    };
+    if req.method() != Method::POST {
+        return crate::token_http::post_only().await;
+    }
+    let (parts, stream) = req.into_parts();
+    let headers = parts.headers;
+    let token =
+        match crate::request_json::fields::read_string(&headers, stream, "token", 0, usize::MAX)
+            .await
+        {
+            Ok(token) => token,
+            Err(response) => return *response,
+        };
     let origin = SessionOrigin {
         ip: client_ip(&headers, peer.ip(), state.proxies),
         user_agent: value(&headers, "user-agent"),
@@ -160,6 +164,29 @@ async fn redeem(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn verification_preserves_nested_token_input_before_redemption() {
+        use axum::body::{Body, to_bytes};
+        use tower::ServiceExt;
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://localhost/pyloros")
+            .unwrap();
+        let request = Request::post("/api/v1/auth/verify-email")
+            .header(header::CONTENT_TYPE, "application/json")
+            .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 8080))))
+            .body(Body::from(r#"{"token":{"id":1844674407370955161709}}"#))
+            .unwrap();
+        let response = routes(pool, false).unwrap().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = to_bytes(response.into_body(), 2048).await.unwrap();
+        assert!(
+            std::str::from_utf8(&body)
+                .unwrap()
+                .contains(r#""input":{"id":1844674407370955161709}"#)
+        );
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]

@@ -1,0 +1,1 @@
+Decode the request using the existing single-string reader before opening the token transaction. Accept an empty string as a syntactically valid token so that redemption decides its validity. Preserve method rejection and transaction handling.
