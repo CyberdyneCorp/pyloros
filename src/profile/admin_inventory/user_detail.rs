@@ -1,6 +1,9 @@
 //! Operator reads used by the user administration panel.
 use super::*;
-use crate::{chain_settings::Chain, login_http::problem};
+use crate::{
+    chain_settings::{Chain, ChainSettings},
+    login_http::problem,
+};
 use axum::extract::Path;
 
 mod assignments;
@@ -9,6 +12,19 @@ mod token;
 enum View {
     Token,
     Assignments,
+}
+
+impl View {
+    async fn authority(&self, settings: &ChainSettings) -> Result<Option<Chain>, sqlx::Error> {
+        let chain = match self {
+            Self::Token => settings.provider().await,
+            Self::Assignments => settings.membership_source().await,
+        };
+        if let Some(provider) = &chain {
+            provider.validate_signer()?;
+        }
+        Ok(chain)
+    }
 }
 
 pub(in crate::profile) async fn user_token(
@@ -41,7 +57,7 @@ async fn read(
         Ok(ctx) => ctx,
         Err(response) => return *response,
     };
-    let Ok(chain) = admin_client_roles::authority(state).await else {
+    let Ok(chain) = view.authority(&state.blockchain).await else {
         return internal();
     };
     let id = match crate::query::path_uuid(path, "user_id") {
@@ -85,5 +101,41 @@ async fn read(
             .await
             .map(|doc| Json(doc).into_response())
             .unwrap_or_else(|_| internal()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chain_settings::Update;
+
+    #[tokio::test]
+    async fn token_reads_use_deployment_and_prefer_runtime_configuration() {
+        let settings = ChainSettings::default();
+        let configuration = |identity: &str| Update {
+            enabled: Some(true),
+            rpc_url: Some("http://localhost".into()),
+            identity_contract_address: Some(identity.into()),
+            private_key: Some(zeroize::Zeroizing::new(format!("{:064x}", 1))),
+            ..Update::default()
+        };
+        settings.update(configuration("deployment")).await;
+        let deployed = ChainSettings::with_deployment(settings.provider().await.unwrap());
+        assert!(
+            View::Assignments
+                .authority(&deployed)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(View::Token.authority(&deployed).await.unwrap().is_some());
+        deployed.update(configuration("runtime")).await;
+        deployed
+            .update(Update {
+                private_key: Some(zeroize::Zeroizing::new("invalid".into())),
+                ..Update::default()
+            })
+            .await;
+        assert!(View::Token.authority(&deployed).await.is_err());
     }
 }

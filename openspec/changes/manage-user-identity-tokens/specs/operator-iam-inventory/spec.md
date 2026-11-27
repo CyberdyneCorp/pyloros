@@ -23,3 +23,9 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 
 - **WHEN** preparing an identity token mint
 - **THEN** send an empty email field to the identity contract
+
+#### Scenario: Read a token using deployment settings
+
+- **WHEN** a user has a token identifier and the identity provider is configured through deployment settings alone
+- **THEN** obtain the token status from the deployed identity contract
+- **AND** prefer a configured runtime provider when one is available

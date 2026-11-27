@@ -58,6 +58,14 @@ impl ChainSettings {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_deployment(chain: Chain) -> Self {
+        Self {
+            deployment: Some(chain),
+            ..Default::default()
+        }
+    }
+
     pub async fn view(&self) -> View {
         self.state.read().await.view()
     }
