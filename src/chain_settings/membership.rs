@@ -77,14 +77,20 @@ enum ReadError {
 }
 
 impl Chain {
+    pub(crate) fn validate_signer(&self) -> Result<(), sqlx::Error> {
+        if self.signer_valid {
+            Ok(())
+        } else {
+            Err(sqlx::Error::Configuration("invalid chain signer".into()))
+        }
+    }
+
     pub(crate) async fn groups_for(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         user: Uuid,
     ) -> Result<Option<Vec<String>>, sqlx::Error> {
-        if !self.signer_valid {
-            return Err(sqlx::Error::Configuration("invalid chain signer".into()));
-        }
+        self.validate_signer()?;
         let mut lookup = tx.begin().await?;
         let token = sqlx::query_scalar::<_, Option<i32>>(
             "SELECT chain_token_id FROM iam_identities WHERE user_id=$1",

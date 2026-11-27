@@ -1,0 +1,1 @@
+Use the operator gate before consulting the registry. Read the active client and its permission rows in one statement so a catalog read has a consistent view during concurrent deactivation. Preserve key ordering, optional descriptions and timestamp precision.

@@ -3,6 +3,7 @@ mod admin_clients;
 mod admin_fields;
 mod admin_mfa;
 mod admin_password;
+mod admin_permissions;
 mod admin_role;
 mod admin_sessions;
 mod admin_users;
@@ -373,6 +374,10 @@ fn build_routes(
         .route(
             "/api/v1/admin/settings/blockchain",
             any(blockchain::get).put(blockchain::update),
+        )
+        .route(
+            "/api/v1/admin/clients/{client_id}/permissions",
+            any(admin_permissions::list),
         )
         .route("/api/v1/admin/blockchain/health", any(blockchain::health))
         .route(

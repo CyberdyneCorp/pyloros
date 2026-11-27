@@ -1,0 +1,2 @@
+- [x] Implement the operator catalog read against PostgreSQL.
+- [x] Verify client isolation, inactive clients, authorization and response formatting.
