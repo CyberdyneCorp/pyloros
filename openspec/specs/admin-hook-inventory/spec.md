@@ -40,5 +40,9 @@ The service SHALL accept source validation requests from authorized administrato
 - **THEN** return a service unavailable response and preserve stored hooks
 
 #### Scenario: Source admission limits
-- **WHEN** the decoded UTF-8 source exceeds 2 MiB or the HTTP envelope exceeds 64 MiB
+- **WHEN** the HTTP envelope exceeds 64 MiB
 - **THEN** return HTTP 413 before invoking the worker
+
+#### Scenario: Large module
+- **WHEN** an authorized operator submits a valid module larger than 2 MiB within the accepted request envelope
+- **THEN** validate the entire module and return the result

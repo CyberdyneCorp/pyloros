@@ -11,7 +11,8 @@ use ruff_python_parser::{Parsed, parse_unchecked_source};
 use serde_json::{Value, json};
 use std::io::Read;
 
-const MAX_SOURCE: u64 = 2 << 20;
+// A 64 MiB UTF-16 request can use three UTF-8 bytes per two-byte code unit.
+const MAX_SOURCE: u64 = (64 << 20) * 3 / 2;
 
 #[derive(Default)]
 struct Prescan {
@@ -97,6 +98,14 @@ fn diagnostic(source: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checks_the_entire_large_module() {
+        let mut source = format!("#{}\n", "a".repeat(2 << 20));
+        assert_eq!(inspect(source.as_bytes()).unwrap()["status"], "parsed");
+        source.push_str("import math");
+        assert_eq!(inspect(source.as_bytes()).unwrap()["status"], "rejected");
+    }
 
     #[test]
     fn checks_structure_without_running_the_source() {

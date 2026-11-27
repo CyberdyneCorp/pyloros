@@ -82,12 +82,6 @@ fn append_update_issues(issues: &mut Vec<Value>, raw: &RawValue) {
 }
 
 async fn evaluate(code: &str) -> Response {
-    if code.len() > 2 << 20 {
-        return crate::login_http::problem(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "Hook source exceeds 2 MiB",
-        );
-    }
     let Ok(_permit) = dry_run::WORKERS.try_acquire() else {
         return crate::login_http::problem(
             StatusCode::SERVICE_UNAVAILABLE,

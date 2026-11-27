@@ -1,0 +1,2 @@
+- [x] Admit the full decoded module.
+- [x] Check oversized valid and rejected modules and compare the release endpoint.

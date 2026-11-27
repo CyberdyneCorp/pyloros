@@ -1,0 +1,1 @@
+Keep admission at the 64 MiB HTTP envelope. UTF-16 can expand from two bytes per code unit to three bytes of UTF-8, so allow up to 96 MiB on worker stdin. JSON escapes and UTF-32 cannot exceed that expansion. Continue bounding worker concurrency and runtime.

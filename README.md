@@ -241,9 +241,8 @@ failures, including a duplicate parameter, return HTTP 500.
 
 Build both release binaries with `just build-release`. Deploy the matching
 `pyloros-hook-worker` alongside the backend, or set
-`PYLOROS_HOOK_WORKER` to its path. The worker accepts up to 2 MiB of decoded
-UTF-8 source. The HTTP handler accepts JSON envelopes up to 64 MiB, including
-UTF-16 and UTF-32 requests. A missing or busy worker returns HTTP 503.
+`PYLOROS_HOOK_WORKER` to its path. The HTTP handler accepts JSON envelopes up to 64 MiB, including
+UTF-16 and UTF-32 requests. It sends the full decoded module to the worker. A missing or busy worker returns HTTP 503.
 For local inspection, run `pyloros-hook-worker --parse-hook-source < hook.py`.
 
 ### Validate a WebAssembly hook
