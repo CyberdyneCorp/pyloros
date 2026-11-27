@@ -1,0 +1,2 @@
+- [x] Implement the transactional revoke operation.
+- [x] Check persisted grant state, consumer visibility, audit and failure responses.

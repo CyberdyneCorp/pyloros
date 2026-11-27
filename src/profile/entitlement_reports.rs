@@ -3,12 +3,20 @@ use super::*;
 use axum::extract::RawQuery;
 use sqlx::{Row, postgres::PgRow};
 use std::collections::HashMap;
+mod revoke;
 mod stats;
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
         .route("/api/v1/admin/entitlements", any(list))
-        .route("/api/v1/admin/entitlements/stats", any(stats::read))
+        .route(
+            "/api/v1/admin/entitlements/stats",
+            any(stats::read).delete(revoke::stats_path),
+        )
+        .route(
+            "/api/v1/admin/entitlements/{entitlement_id}",
+            any(revoke::remove),
+        )
 }
 
 struct Filters {
@@ -132,16 +140,7 @@ async fn labels(
 }
 
 fn item(row: &PgRow, emails: &Labels, names: &Labels) -> sqlx::Result<Value> {
-    administrator::validate_metadata(row.try_get("metadata")?)?;
-    let status: &str = row.try_get("status")?;
-    let source: &str = row.try_get("source")?;
-    if !matches!(status, "active" | "revoked" | "expired")
-        || !matches!(source, "admin" | "stripe" | "nft" | "apple" | "google")
-    {
-        return Err(sqlx::Error::Decode(
-            "unknown entitlement status or source".into(),
-        ));
-    }
+    let (status, source) = stored_fields(row)?;
     let product: &str = row.try_get("product_key")?;
     let plan: Option<&str> = row.try_get("plan")?;
     let token = plan
@@ -165,4 +164,18 @@ fn item(row: &PgRow, emails: &Labels, names: &Labels) -> sqlx::Result<Value> {
         );
     }
     Ok(item)
+}
+
+fn stored_fields(row: &PgRow) -> sqlx::Result<(&str, &str)> {
+    administrator::validate_metadata(row.try_get("metadata")?)?;
+    let status: &str = row.try_get("status")?;
+    let source: &str = row.try_get("source")?;
+    if !matches!(status, "active" | "revoked" | "expired")
+        || !matches!(source, "admin" | "stripe" | "nft" | "apple" | "google")
+    {
+        return Err(sqlx::Error::Decode(
+            "unknown entitlement status or source".into(),
+        ));
+    }
+    Ok((status, source))
 }

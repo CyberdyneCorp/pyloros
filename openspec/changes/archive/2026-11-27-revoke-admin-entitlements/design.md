@@ -1,0 +1,1 @@
+Validate the live administrator and grant identifier before reading the grant. Keep the original owner, plan, provider reference and expiry. A repeat request records another revocation and a new audit entry. Use the existing pending-hook check until an execution adapter can run subscribed modules.
