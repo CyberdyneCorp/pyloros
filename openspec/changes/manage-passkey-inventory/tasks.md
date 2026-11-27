@@ -1,3 +1,3 @@
 - [x] Serve and verify the authenticated, relying-party-scoped metadata list.
-- [ ] Implement and compare metadata renaming.
+- [x] Implement and compare metadata renaming.
 - [ ] Implement and compare recent-authenticated revocation and recovery safeguards.

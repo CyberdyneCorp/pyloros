@@ -10,3 +10,7 @@ The service SHALL restrict inventory operations to a first-party credential with
 #### Scenario: Manage an enrolled credential
 - **WHEN** the account renames or revokes a credential
 - **THEN** restrict the change to an active credential for that account and relying party. Revocation requires recent authentication and an alternative sign-in method.
+
+#### Scenario: Rename an active credential
+- **WHEN** an eligible account submits a name of one to 64 characters that contains visible text after trimming whitespace
+- **THEN** save the trimmed display name and return the updated metadata. Return HTTP 404 for a missing, revoked, foreign-account or other relying-party credential.

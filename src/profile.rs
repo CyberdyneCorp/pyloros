@@ -253,6 +253,10 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/userinfo", any(userinfo::handle))
         .route("/api/v1/auth/passkeys", any(passkeys::list))
+        .route(
+            "/api/v1/auth/passkeys/{passkey_id}",
+            any(passkeys::rename::handle),
+        )
         .route("/api/v1/auth/register", any(registration::handle))
         .route("/api/v1/users/me", any(current))
         .route("/api/v1/auth/verify-email", any(email_verification::handle))

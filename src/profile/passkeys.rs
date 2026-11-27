@@ -1,3 +1,4 @@
+pub(super) mod rename;
 use super::*;
 use crate::{
     login_http::problem,
@@ -9,6 +10,7 @@ use serde::Serialize;
 pub(super) struct Inventory {
     rp: Option<String>,
     quota: LoginThrottle,
+    rename_quota: LoginThrottle,
 }
 
 impl Inventory {
@@ -26,6 +28,7 @@ impl Inventory {
         Self {
             rp,
             quota: LoginThrottle::new(limit),
+            rename_quota: LoginThrottle::new(limit),
         }
     }
 }
@@ -39,13 +42,41 @@ pub(super) async fn list(
     if method != Method::GET {
         return crate::browser_http::method_not_allowed().await;
     }
-    let Some(id) = credential(&headers)
+    run(&state, &headers, peer.ip(), Operation::List).await
+}
+
+enum Operation {
+    List,
+    Rename(Result<(Uuid, String), Vec<Value>>),
+}
+
+fn validation(issues: Vec<Value>) -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(json!({"detail":issues})),
+    )
+        .into_response()
+}
+
+async fn run(
+    state: &Profile,
+    headers: &HeaderMap,
+    peer: std::net::IpAddr,
+    operation: Operation,
+) -> Response {
+    let Some(id) = credential(headers)
         .and_then(|t| state.verify.as_ref()?.read(t))
         .filter(|id| !id.client_bound)
     else {
         return unauthorized();
     };
-    let result = inventory(&state, &id, client_ip(&headers, peer.ip(), state.proxies)).await;
+    let result = inventory(
+        state,
+        &id,
+        client_ip(headers, peer, state.proxies),
+        operation,
+    )
+    .await;
     result.unwrap_or_else(|_| {
         problem(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -58,6 +89,7 @@ async fn inventory(
     state: &Profile,
     id: &Identity,
     source: Option<std::net::IpAddr>,
+    operation: Operation,
 ) -> Result<Response, sqlx::Error> {
     let mut tx = state.pool.begin().await?;
     if state.enforce && revoked(&mut tx, id).await? {
@@ -72,8 +104,15 @@ async fn inventory(
     let Some(rp) = &state.passkeys.rp else {
         return Ok(problem(StatusCode::NOT_FOUND, "Passkeys disabled"));
     };
-    if !state.passkeys.quota.allow(source) {
+    let quota = match &operation {
+        Operation::List => &state.passkeys.quota,
+        Operation::Rename(_) => &state.passkeys.rename_quota,
+    };
+    if !quota.allow(source) {
         return Ok(RateLimited.into_response());
+    }
+    if let Operation::Rename(Err(issues)) = operation {
+        return Ok(validation(issues));
     }
     let live=sqlx::query_scalar::<_,i32>(
         "SELECT 1 FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=$1 AND s.id=$2
@@ -85,6 +124,20 @@ async fn inventory(
             StatusCode::UNAUTHORIZED,
             "Invalid passkey ceremony or authentication proof",
         ));
+    }
+    if let Operation::Rename(Ok((key, name))) = operation {
+        let record = match rename::save(&mut tx, id.user, rp, key, name).await {
+            Ok(Some(record)) => record,
+            Ok(None) => return Ok(problem(StatusCode::NOT_FOUND, "Passkey not found")),
+            Err(sqlx::Error::Database(error))
+                if error.code().is_some_and(|code| code.starts_with("22")) =>
+            {
+                return Ok(internal());
+            }
+            Err(error) => return Err(error),
+        };
+        tx.commit().await?;
+        return Ok(Json(record).into_response());
     }
     let rows = metadata(&mut tx, id.user, rp).await?;
     Ok(([(header::CACHE_CONTROL, "no-store")], Json(rows)).into_response())
@@ -105,7 +158,6 @@ async fn metadata(
     user: Uuid,
     rp: &str,
 ) -> Result<Vec<Record>, sqlx::Error> {
-    use sqlx::Row;
     let rows = sqlx::query(
         "SELECT id,name,created_at,last_used_at,backup_eligible,backed_up FROM passkeys
         WHERE user_id=$1 AND rp_id=$2 AND revoked_at IS NULL ORDER BY created_at",
@@ -114,20 +166,21 @@ async fn metadata(
     .bind(rp)
     .fetch_all(&mut **tx)
     .await?;
-    rows.into_iter()
-        .map(|row| {
-            Ok(Record {
-                id: row.try_get("id")?,
-                name: row.try_get("name")?,
-                created_at: timestamp(row.try_get("created_at")?),
-                last_used_at: row
-                    .try_get::<Option<DateTime<Utc>>, _>("last_used_at")?
-                    .map(timestamp),
-                backup_eligible: row.try_get("backup_eligible")?,
-                backed_up: row.try_get("backed_up")?,
-            })
-        })
-        .collect()
+    rows.into_iter().map(record).collect()
+}
+
+fn record(row: sqlx::postgres::PgRow) -> Result<Record, sqlx::Error> {
+    use sqlx::Row;
+    Ok(Record {
+        id: row.try_get("id")?,
+        name: row.try_get("name")?,
+        created_at: timestamp(row.try_get("created_at")?),
+        last_used_at: row
+            .try_get::<Option<DateTime<Utc>>, _>("last_used_at")?
+            .map(timestamp),
+        backup_eligible: row.try_get("backup_eligible")?,
+        backed_up: row.try_get("backed_up")?,
+    })
 }
 
 #[cfg(test)]
@@ -160,5 +213,16 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "current");
         assert!(rows[0].last_used_at.is_none());
+        assert!(
+            rename::save(&mut tx, owner, "rp", foreign, "Changed".into())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let saved = rename::save(&mut tx, owner, "rp", owner, "Renamed".into())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.name, "Renamed");
     }
 }
