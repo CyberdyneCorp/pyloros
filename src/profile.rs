@@ -367,33 +367,33 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/oauth/web-origins",
-            axum::routing::post(registries::create_origin).fallback(registries::list_origins),
+            any(registries::list_origins).post(registries::create_origin),
         )
         .route(
             "/api/v1/admin/oauth/web-origins/{origin_id}",
-            axum::routing::delete(registries::deactivate_origin)
-                .patch(registries::update_origin)
-                .fallback(registries::get_origin),
+            any(registries::get_origin)
+                .delete(registries::deactivate_origin)
+                .patch(registries::update_origin),
         )
         .route(
             "/api/v1/admin/oauth/protected-resources",
-            axum::routing::post(registries::create_resource).fallback(registries::list_resources),
+            any(registries::list_resources).post(registries::create_resource),
         )
         .route(
             "/api/v1/admin/oauth/protected-resources/{entry_id}",
-            axum::routing::delete(registries::deactivate_resource)
-                .patch(registries::update_resource)
-                .fallback(registries::get_resource),
+            any(registries::get_resource)
+                .delete(registries::deactivate_resource)
+                .patch(registries::update_resource),
         )
         .route(
             "/api/v1/admin/oauth/scopes",
-            axum::routing::post(registries::create).fallback(registries::list_scopes),
+            any(registries::list_scopes).post(registries::create),
         )
         .route(
             "/api/v1/admin/oauth/scopes/{name}",
-            axum::routing::delete(registries::deactivate)
-                .patch(registries::update)
-                .fallback(registries::get_scope),
+            any(registries::get_scope)
+                .delete(registries::deactivate)
+                .patch(registries::update),
         )
         .route(
             "/api/v1/admin/oauth/clients/{client_id}/rotate-secret",
@@ -401,11 +401,11 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/oauth/clients",
-            axum::routing::post(admin_clients::create).fallback(admin_clients::list),
+            any(admin_clients::list).post(admin_clients::create),
         )
         .route(
             "/api/v1/admin/oauth/clients/{client_id}",
-            axum::routing::patch(admin_clients::update).fallback(admin_clients::detail),
+            any(admin_clients::detail).patch(admin_clients::update),
         )
         .route("/api/v1/auth/oauth2/userinfo", any(userinfo::handle))
         .route(

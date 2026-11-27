@@ -47,7 +47,7 @@ pub(super) async fn list(
     RawQuery(query): RawQuery,
 ) -> Response {
     if method != Method::GET {
-        return method_refused();
+        return method_refused("POST");
     }
     handle(
         &state,
@@ -73,16 +73,16 @@ pub(super) async fn detail(
                 user_agent: header_value(&headers, "user-agent"),
             },
         ),
-        _ => return method_refused(),
+        _ => return method_refused("GET"),
     };
     handle(&state, &headers, op).await
 }
 
-fn method_refused() -> Response {
+fn method_refused(allow: &'static str) -> Response {
     let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
     response
         .headers_mut()
-        .insert(header::ALLOW, "GET".parse().unwrap());
+        .insert(header::ALLOW, axum::http::HeaderValue::from_static(allow));
     response
 }
 enum Operation<'a> {

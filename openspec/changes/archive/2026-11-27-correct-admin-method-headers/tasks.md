@@ -1,0 +1,3 @@
+- [x] Reproduce the header difference through the public router.
+- [x] Correct route registration and method advertisement.
+- [x] Compare all eight routes against the reference service and run the regression suite.

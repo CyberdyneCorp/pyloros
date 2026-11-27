@@ -1,0 +1,1 @@
+Register the existing catch-all handler first, then add the specific mutation handlers. This lets the endpoint own its method-error response without adding framework-generated Allow headers to successful or unauthorized reads.
