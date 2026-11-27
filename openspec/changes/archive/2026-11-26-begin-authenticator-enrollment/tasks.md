@@ -1,0 +1,1 @@
+- [x] Verify provisioning, confirmation, recovery issuance, failure and cross-version enrollment with the existing client.

@@ -1,0 +1,1 @@
+Generate a random Base32 seed and store it in the existing authenticated encryption format. Encode the same provisioning URI in a QR image. Serialize setup and confirmation on the account. Confirm using an unused authenticator step and commit the enabled flag, hashed recovery codes and enrollment audit before returning the codes.

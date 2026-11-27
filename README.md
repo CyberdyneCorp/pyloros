@@ -92,3 +92,5 @@ The shared frontend signs out through `POST /api/v1/auth/logout`. A valid refres
 From Preferences, a first-party user can sign out on all devices through `POST /api/v1/auth/logout-all`. The operation revokes that account’s live sessions and advances its access-token cutoff. Cookie-authenticated calls require the CSRF header.
 
 The Preferences screen reads `GET /api/v1/auth/mfa/status` with a first-party access token. The response reports the account’s authenticator enrollment and remaining unused recovery codes.
+
+Preferences starts authenticator enrollment at `POST /api/v1/auth/mfa/totp/setup`. Scan the QR image or enter its Base32 secret, then confirm a current code at `POST /api/v1/auth/mfa/totp/enable`. Store the ten returned recovery codes when they are shown. `MFA_ISSUER` sets the account label in the authenticator app.

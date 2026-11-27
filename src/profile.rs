@@ -2,6 +2,7 @@
 mod edit;
 mod enrollment;
 mod logout_all;
+mod totp;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
 use axum::{
@@ -125,6 +126,8 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
 }
 
 struct Profile {
+    factor: Option<crate::enrolled_factor::FactorVerifier>,
+    mfa_issuer: String,
     cookies: crate::session_cookies::SessionCookies,
     proxies: usize,
     pool: PgPool,
@@ -136,6 +139,11 @@ struct Profile {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        factor: env::var("MASTER_KEY")
+            .ok()
+            .map(|key| crate::enrolled_factor::FactorVerifier::new(&key))
+            .transpose()?,
+        mfa_issuer: env::var("MFA_ISSUER").unwrap_or_else(|_| "Cyberdyne Auth".into()),
         cookies: crate::session_cookies::SessionCookies::configured(production)?,
         proxies: env::var("TRUSTED_PROXY_COUNT")
             .unwrap_or_else(|_| "0".into())
@@ -149,6 +157,8 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     Ok(Router::new()
         .route("/api/v1/users/me", any(current))
         .route("/api/v1/auth/mfa/status", any(enrollment::handle))
+        .route("/api/v1/auth/mfa/totp/setup", any(totp::setup))
+        .route("/api/v1/auth/mfa/totp/enable", any(totp::enable))
         .route("/api/v1/auth/logout-all", any(logout_all::handle))
         .route("/api/v1/users/me/entitlements", any(entitlements))
         .with_state(Arc::new(state)))

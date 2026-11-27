@@ -131,6 +131,7 @@ pub(crate) enum AuditActivity<'a> {
     },
     PasswordLogin(Uuid),
     LogoffAll(u64),
+    Enroll(Option<&'static str>),
     Logoff {
         reason: Option<&'static str>,
         details: Value,
@@ -222,6 +223,15 @@ pub(crate) async fn write_activity<'e>(
             } else {
                 json!({})
             },
+        ),
+        AuditActivity::Enroll(reason) => (
+            "credential",
+            "mfa_enroll",
+            Some("totp"),
+            "",
+            outcome(reason.is_some()),
+            reason,
+            json!({}),
         ),
         AuditActivity::LogoffAll(count) => (
             "session",

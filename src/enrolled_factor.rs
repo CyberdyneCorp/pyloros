@@ -1,7 +1,10 @@
 //! Verify a previously enrolled authenticator inside the session transaction.
 use chrono::{DateTime, Utc};
 use data_encoding::BASE32_NOPAD;
-use ring::{aead, hkdf, hmac};
+use ring::{
+    aead, hkdf, hmac,
+    rand::{SecureRandom, SystemRandom},
+};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 use subtle::ConstantTimeEq;
@@ -65,6 +68,35 @@ impl FactorVerifier {
         Ok(Zeroizing::new(seed))
     }
 
+    pub(crate) fn pending_seed(&self) -> Result<(String, Vec<u8>), FactorError> {
+        let random = SystemRandom::new();
+        let mut seed = Zeroizing::new([0u8; 20]);
+        random.fill(seed.as_mut()).map_err(|_| FactorError::Seed)?;
+        let secret = BASE32_NOPAD.encode(seed.as_ref());
+        let mut nonce = [0u8; 12];
+        random.fill(&mut nonce).map_err(|_| FactorError::Seed)?;
+        let mut ciphertext = secret.as_bytes().to_vec();
+        self.0
+            .seal_in_place_append_tag(
+                aead::Nonce::assume_unique_for_key(nonce),
+                aead::Aad::empty(),
+                &mut ciphertext,
+            )
+            .map_err(|_| FactorError::Seed)?;
+        let mut encrypted = nonce.to_vec();
+        encrypted.extend(ciphertext);
+        Ok((secret, encrypted))
+    }
+
+    pub(crate) fn timestep(
+        &self,
+        encrypted: &[u8],
+        code: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Option<i64>, FactorError> {
+        Ok(matched_step(&self.seed(encrypted)?, code, now.timestamp()))
+    }
+
     pub async fn consume(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -82,8 +114,7 @@ impl FactorVerifier {
             Some((true, true, Some(blob))) => blob,
             _ => return Ok(NotEnrolled),
         };
-        let seed = self.seed(&encrypted)?;
-        if let Some(step) = matched_step(&seed, code, now.timestamp()) {
+        if let Some(step) = self.timestep(&encrypted, code, now)? {
             let updated = sqlx::query(
                 "UPDATE users SET totp_last_used_step=$2 WHERE id=$1
                  AND (totp_last_used_step IS NULL OR totp_last_used_step<$2)",
@@ -134,6 +165,25 @@ fn matched_step(seed: &[u8], submitted: &str, timestamp: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_seeds_are_random_and_only_open_under_their_enrollment_key() {
+        let factor = FactorVerifier::new("synthetic-test-key").unwrap();
+        let (secret, encrypted) = factor.pending_seed().unwrap();
+        assert_eq!(secret.len(), 32);
+        assert_eq!(
+            BASE32_NOPAD.encode(&factor.seed(&encrypted).unwrap()),
+            secret
+        );
+        let (next, _) = factor.pending_seed().unwrap();
+        assert_ne!(secret, next);
+        assert!(
+            FactorVerifier::new("different-key")
+                .unwrap()
+                .seed(&encrypted)
+                .is_err()
+        );
+    }
 
     #[test]
     fn authenticator_accepts_one_adjacent_step_in_each_direction() {
