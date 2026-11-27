@@ -1,0 +1,3 @@
+- [x] Implement the operator endpoint and audit writes.
+- [x] Compare authorization, validation, rollback, credential state and overlapping writes.
+- [x] Exercise the unchanged browser and CLI.

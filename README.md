@@ -87,7 +87,7 @@ Administrators can read and update the password sign-in policy at `/api/v1/admin
 
 Administrators can search accounts with `GET /api/v1/admin/users`. The directory supports pagination, literal email or wallet substring search, and filters for account activity, email verification and organization. Each entry includes its linked identity count. `GET /api/v1/admin/users/{user_id}` includes identity summaries, MFA status, the most recent session activity and whether the bootstrap email list manages the account's administrator flag.
 
-`GET /api/v1/admin/users/{user_id}/passkeys` lists the user’s active credentials across relying parties in creation order. Administrators can inspect this list even when passkey sign-in is disabled.
+`GET /api/v1/admin/users/{user_id}/passkeys` lists the user’s active credentials across relying parties in creation order. Administrators can inspect this list even when passkey sign-in is disabled. Use `DELETE /api/v1/admin/users/{user_id}/passkeys/{passkey_id}` to revoke a lost device, including the user’s last passkey. Existing sessions stay valid. The change is recorded in both the account activity and operator audit.
 
 Use `POST /api/v1/admin/users` with an email and password to provision an active account with a verified email and a managed wallet. The response includes the account ID, email, wallet address and public key. The account, matching registration webhook deliveries and both audit records commit together. Concurrent registrations for the same email return one creation and one conflict. Deployments with an active registration hook must route these creates to the existing dispatcher-capable backend during coexistence. Pyloros currently returns 503 for that configuration before storing an account.
 

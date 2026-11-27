@@ -173,6 +173,10 @@ pub(crate) enum AuditActivity<'a> {
     PasskeyLogin(Uuid, Uuid),
     PasskeyRefused(bool),
     PasskeyChallenge,
+    AdminPasskeyRevoked {
+        operator: Uuid,
+        key: Uuid,
+    },
     PasskeyRevoked(Uuid),
     PasskeyEnrolled(Uuid),
     LogoffAll(u64),
@@ -395,6 +399,15 @@ fn classify(activity: AuditActivity<'_>) -> Classification<'_> {
                 json!({})
             },
         ),
+        AuditActivity::AdminPasskeyRevoked { key, .. } => (
+            "credential",
+            "passkey_revoke",
+            None,
+            "",
+            "success",
+            None,
+            json!({"passkey_id":key}),
+        ),
         AuditActivity::PasskeyRevoked(id) | AuditActivity::PasskeyEnrolled(id) => (
             "credential",
             if matches!(activity, AuditActivity::PasskeyEnrolled(_)) {
@@ -576,6 +589,7 @@ pub(crate) async fn write_activity<'e>(
     } = subject;
     let operator = match &activity {
         AuditActivity::SessionRevoked { operator, .. }
+        | AuditActivity::AdminPasskeyRevoked { operator, .. }
         | AuditActivity::UserCreated { operator, .. } => Some(*operator),
         _ => None,
     };
