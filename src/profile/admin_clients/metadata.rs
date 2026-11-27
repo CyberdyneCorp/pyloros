@@ -101,8 +101,8 @@ impl Fields<'_> {
         self.issues.push(json!({"type":"literal_error","loc":["body","client_type"],"msg":"Input should be 'confidential' or 'public'","input":value,"ctx":{"expected":"'confidential' or 'public'"}}));
         String::new()
     }
-    fn trusted(&mut self) -> bool {
-        let Some(v) = self.body.get("trusted") else {
+    fn boolean(&mut self, key: &str) -> bool {
+        let Some(v) = self.body.get(key) else {
             return false;
         };
         if let Some(b) = v.as_bool() {
@@ -130,23 +130,71 @@ impl Fields<'_> {
             }
         }
         self.issues
-            .push(json!({"type":kind,"loc":["body","trusted"],"msg":msg,"input":v}));
+            .push(json!({"type":kind,"loc":["body",key],"msg":msg,"input":v}));
         false
     }
 }
 
+pub(super) fn patch_fields(body: &Value) -> Result<Map<String, Value>, Vec<Value>> {
+    let map = object(body)?;
+    let mut fields = Fields {
+        body: map,
+        issues: vec![],
+    };
+    let mut patch = Map::new();
+    for key in [
+        "name",
+        "description",
+        "allowed_scopes",
+        "allowed_audiences",
+        "max_token_ttl_s",
+        "active",
+        "grant_types",
+        "client_type",
+        "redirect_uris",
+        "post_logout_redirect_uris",
+        "access_token_audience",
+        "trusted",
+    ] {
+        let Some(input) = map.get(key) else { continue };
+        let value = if input.is_null() {
+            Value::Null
+        } else {
+            match key {
+                "name" => json!(fields.string(key, Some(128), true)),
+                "description" => json!(fields.string(key, Some(1024), false)),
+                "access_token_audience" => json!(fields.string(key, None, false)),
+                "active" | "trusted" => json!(fields.boolean(key)),
+                "max_token_ttl_s" => json!(fields.ttl()),
+                "client_type" => json!(fields.kind()),
+                _ => json!(fields.list(key, true)),
+            }
+        };
+        patch.insert(key.to_owned(), value);
+    }
+    if fields.issues.is_empty() {
+        Ok(patch)
+    } else {
+        Err(fields.issues)
+    }
+}
+
+fn object(body: &Value) -> Result<&Map<String, Value>, Vec<Value>> {
+    if body.is_null() {
+        return Err(vec![
+            json!({"type":"missing","loc":["body"],"msg":"Field required","input":null}),
+        ]);
+    }
+    let Some(map) = body.as_object() else {
+        return Err(vec![
+            json!({"type":"model_attributes_type","loc":["body"],"msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
+        ]);
+    };
+    Ok(map)
+}
 impl Metadata {
     pub fn parse(body: Value) -> Result<Self, Vec<Value>> {
-        if body.is_null() {
-            return Err(vec![
-                json!({"type":"missing","loc":["body"],"msg":"Field required","input":null}),
-            ]);
-        }
-        let Some(map) = body.as_object() else {
-            return Err(vec![
-                json!({"type":"model_attributes_type","loc":["body"],"msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
-            ]);
-        };
+        let map = object(&body)?;
         let mut f = Fields {
             body: map,
             issues: Vec::new(),
@@ -165,7 +213,7 @@ impl Metadata {
             redirects: f.list("redirect_uris", true),
             logout: f.list("post_logout_redirect_uris", true),
             audience: f.string("access_token_audience", None, false),
-            trusted: f.trusted(),
+            trusted: f.boolean("trusted"),
         };
         if f.issues.is_empty() {
             Ok(data)

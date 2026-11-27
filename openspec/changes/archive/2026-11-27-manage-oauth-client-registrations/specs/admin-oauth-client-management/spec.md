@@ -63,3 +63,13 @@ The issuer SHALL allow an authorized operator to create, update, rotate the secr
 
 - **WHEN** an operator edits a dynamic client
 - **THEN** enforce the public-client, consent, grant and scope restrictions while allowing eligible changes.
+
+#### Scenario: Edit a legacy registration
+
+- **WHEN** an operator changes a field unrelated to a previously stored redirect or scope
+- **THEN** preserve the legacy registration and apply current field validation when the operator explicitly resubmits the redirect or scope.
+
+#### Scenario: An update cannot be audited
+
+- **WHEN** the administrative audit write fails after the service validates a partial update
+- **THEN** return a failure and leave the client registration unchanged.

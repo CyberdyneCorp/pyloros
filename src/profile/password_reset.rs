@@ -255,6 +255,7 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
+            patch_resources: Default::default(),
             client_scopes: Default::default(),
             admin_enabled: true,
             passkeys: passkeys::Inventory::new(None, 10),

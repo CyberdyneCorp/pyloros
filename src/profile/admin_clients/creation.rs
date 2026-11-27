@@ -44,7 +44,7 @@ fn parse_authority(raw: &str) -> Option<axum::http::uri::Authority> {
     format!("{name}:{port}").parse().ok()
 }
 
-fn redirect(uri: &str, kind: &str, clean: bool) -> Result<(), String> {
+pub(super) fn redirect(uri: &str, kind: &str, clean: bool) -> Result<(), String> {
     let quoted = quoted_string(uri);
     let parts = uri.split_once(':');
     let (scheme, rest) = parts.unwrap_or(("", ""));
@@ -107,8 +107,43 @@ fn redirect(uri: &str, kind: &str, clean: bool) -> Result<(), String> {
 }
 
 fn validate(m: &Metadata, scopes: &BTreeMap<String, String>) -> Result<(), String> {
-    let unknown: Vec<_> = m
-        .scopes
+    validate_scopes(&m.scopes, scopes)?;
+    validate_audience(m.audience.as_deref())?;
+    validate_grants(&m.grants)?;
+    redirects(
+        &m.kind,
+        m.grants.contains("authorization_code"),
+        m.redirects.as_ref(),
+        m.logout.as_ref(),
+        true,
+    )
+}
+
+pub(super) fn redirects(
+    kind: &str,
+    code_grant: bool,
+    registered: Option<&BTreeSet<String>>,
+    logout: Option<&BTreeSet<String>>,
+    supplied: bool,
+) -> Result<(), String> {
+    if supplied || code_grant {
+        for uri in registered.into_iter().flatten() {
+            redirect(uri, kind, supplied)?;
+        }
+    }
+    if code_grant && registered.is_none_or(BTreeSet::is_empty) {
+        return Err("authorization_code grant requires at least one redirect_uri".into());
+    }
+    for uri in logout.into_iter().flatten() {
+        redirect(uri, kind, false)?;
+    }
+    Ok(())
+}
+pub(super) fn validate_scopes(
+    requested: &BTreeSet<String>,
+    scopes: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let unknown: Vec<_> = requested
         .iter()
         .filter(|s| !scopes.contains_key(*s))
         .map(String::as_str)
@@ -116,13 +151,18 @@ fn validate(m: &Metadata, scopes: &BTreeMap<String, String>) -> Result<(), Strin
     if !unknown.is_empty() {
         return Err(format!("unknown scopes: {}", quoted_list(&unknown)));
     }
-    if m.audience.as_ref().is_some_and(|s| {
+    Ok(())
+}
+pub(super) fn validate_audience(audience: Option<&str>) -> Result<(), String> {
+    if audience.is_some_and(|s| {
         s.is_empty() || s.chars().count() > 255 || s.chars().any(char::is_whitespace)
     }) {
         return Err("access_token_audience must be 1-255 characters with no whitespace".into());
     }
-    let unknown: Vec<_> = m
-        .grants
+    Ok(())
+}
+pub(super) fn validate_grants(grants: &BTreeSet<String>) -> Result<(), String> {
+    let unknown: Vec<_> = grants
         .iter()
         .map(String::as_str)
         .filter(|s| {
@@ -137,17 +177,6 @@ fn validate(m: &Metadata, scopes: &BTreeMap<String, String>) -> Result<(), Strin
         .collect();
     if !unknown.is_empty() {
         return Err(format!("unknown grant_types: {}", quoted_list(&unknown)));
-    }
-    for uri in m.redirects.iter().flatten() {
-        redirect(uri, &m.kind, true)?
-    }
-    if m.grants.contains("authorization_code")
-        && m.redirects.as_ref().is_none_or(BTreeSet::is_empty)
-    {
-        return Err("authorization_code grant requires at least one redirect_uri".into());
-    }
-    for uri in m.logout.iter().flatten() {
-        redirect(uri, &m.kind, false)?
     }
     Ok(())
 }

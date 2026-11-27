@@ -9,7 +9,13 @@ use rsa::{
 };
 use serde::Deserialize;
 use sqlx::PgPool;
-use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env,
+    error::Error,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::watch;
 
 type Audiences = BTreeMap<String, Option<String>>;
@@ -66,7 +72,26 @@ struct ResourceOptions {
     audience: Option<String>,
 }
 
+fn permitted_scope(scope: &str) -> bool {
+    !scope.starts_with("admin:")
+        && !matches!(
+            scope,
+            "users:provision" | "directory:read" | "roles:read" | "roles:manage" | "iam:read.tier"
+        )
+}
+
 impl ResourceRegistry {
+    pub(crate) fn registration_scopes(&self) -> BTreeSet<&str> {
+        let mut allowed: BTreeSet<_> = ["email", "offline_access", "openid", "profile"].into();
+        allowed.extend(
+            self.scopes
+                .values()
+                .flatten()
+                .map(String::as_str)
+                .filter(|s| permitted_scope(s)),
+        );
+        allowed
+    }
     pub(crate) fn from_env() -> Result<Self, Box<dyn Error>> {
         configured_resources(
             &env::var("OAUTH_PROTECTED_RESOURCES").unwrap_or_default(),

@@ -2,7 +2,9 @@
 pub(super) mod creation;
 mod metadata;
 mod page;
+mod update;
 use crate::request_json;
+pub(super) use update::update;
 mod rotation;
 use super::*;
 use crate::{
@@ -106,6 +108,7 @@ fn method_refused() -> Response {
     response
 }
 enum Operation<'a> {
+    Patch(&'a str, Option<Value>, SessionOrigin<'a>),
     Create(Option<Value>, SessionOrigin<'a>),
     Page(&'a str),
     Client(&'a str),
@@ -119,7 +122,9 @@ async fn handle(state: &Profile, headers: &HeaderMap, op: Operation<'_>) -> Resp
     else {
         return unauthorized();
     };
-    if matches!(op, Operation::Create(_, _)) && state.client_scopes.get().is_none() {
+    if matches!(op, Operation::Create(_, _) | Operation::Patch(..))
+        && state.client_scopes.get().is_none()
+    {
         let Ok(seconds) = crate::token_runtime::number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)
             .and_then(|n| Ok(u64::try_from(n)?))
         else {
@@ -131,6 +136,12 @@ async fn handle(state: &Profile, headers: &HeaderMap, op: Operation<'_>) -> Resp
                 creation::scope_catalog(state.pool.clone(), std::time::Duration::from_secs(seconds))
             })
             .await;
+    }
+    if matches!(op, Operation::Patch(..))
+        && state.patch_resources.get().is_none()
+        && update::init_resources(state).await.is_err()
+    {
+        return internal();
     }
     authorized_operation(state, &id, op)
         .await
@@ -166,6 +177,9 @@ async fn authorized_operation(
         return Ok(problem(StatusCode::FORBIDDEN, "Admin access required"));
     }
     match op {
+        Operation::Patch(target, body, origin) => {
+            update::apply(state, tx, (id.user, email.as_deref()), target, body, origin).await
+        }
         Operation::Create(body, origin) => {
             creation::apply(state, tx, (id.user, email.as_deref()), body, origin).await
         }

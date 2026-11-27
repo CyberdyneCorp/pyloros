@@ -104,14 +104,6 @@ fn https_origin(uri: &str) -> Option<String> {
     Some(format!("https://{}", raw.to_ascii_lowercase()))
 }
 
-fn permitted_scope(scope: &str) -> bool {
-    !scope.starts_with("admin:")
-        && !matches!(
-            scope,
-            "users:provision" | "directory:read" | "roles:read" | "roles:manage" | "iam:read.tier"
-        )
-}
-
 struct Client {
     name: String,
     uris: BTreeSet<String>,
@@ -166,15 +158,7 @@ fn metadata(input: input::Metadata, registry: &ResourceRegistry) -> Result<Clien
             );
         }
     }
-    let mut allowed: BTreeSet<_> = ["email", "offline_access", "openid", "profile"].into();
-    allowed.extend(
-        registry
-            .scopes
-            .values()
-            .flatten()
-            .map(String::as_str)
-            .filter(|s| permitted_scope(s)),
-    );
+    let mut allowed = registry.registration_scopes();
     let requested: BTreeSet<_> = input
         .scope
         .as_deref()

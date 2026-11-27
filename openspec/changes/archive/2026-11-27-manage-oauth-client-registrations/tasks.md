@@ -1,6 +1,6 @@
 - [x] Capture initial reference responses and state changes for the four mutation endpoints.
 - [x] Implement administrative creation and verify request validation, scope policy, cross-backend credential use and audit rollback.
-- [ ] Implement partial updates and compare omitted, empty and null fields for existing registrations.
+- [x] Implement partial updates and compare omitted, empty and null fields for existing registrations.
 - [x] Implement audited deactivation and verify shared client status, credential refusal and repeated requests.
 - [x] Implement secret rotation and verify the previous credential, grace expiry, audit rollback and existing administrative consumers.
-- [ ] Compare policy enforcement, audit continuity and credential use across both services and exercise existing consumers.
+- [x] Compare policy enforcement, audit continuity and credential use across both services and exercise existing consumers.

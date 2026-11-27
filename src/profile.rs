@@ -229,6 +229,9 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    patch_resources: tokio::sync::OnceCell<
+        tokio::sync::watch::Receiver<Arc<crate::token_runtime::ResourceRegistry>>,
+    >,
     client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeCatalog>,
     admin_enabled: bool,
     passkeys: passkeys::Inventory,
@@ -271,6 +274,7 @@ fn build_routes(
     client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeCatalog>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        patch_resources: Default::default(),
         client_scopes,
         admin_enabled: config::flag_with_default("ADMIN_API_ENABLED", true)?,
         passkeys: passkeys::Inventory::configured()?,
@@ -310,7 +314,7 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/oauth/clients/{client_id}",
-            any(admin_clients::detail),
+            axum::routing::patch(admin_clients::update).fallback(admin_clients::detail),
         )
         .route("/api/v1/auth/oauth2/userinfo", any(userinfo::handle))
         .route(
