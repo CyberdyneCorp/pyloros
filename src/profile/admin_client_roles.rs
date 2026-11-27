@@ -2,7 +2,9 @@
 use super::*;
 mod creation;
 mod grant;
+mod revoke;
 pub(super) use grant::grant;
+pub(super) use revoke::revoke;
 mod user_inventory;
 pub(super) use user_inventory::list_user;
 mod removal;
@@ -13,6 +15,51 @@ pub(super) use creation::create;
 pub(super) use removal::remove;
 pub(super) use replacement::put;
 use serde::Serialize;
+
+struct Assignment {
+    user: Uuid,
+    client: String,
+    key: String,
+    org: Option<Uuid>,
+}
+
+impl Assignment {
+    fn metadata(&self) -> Value {
+        let mut item = json!({"client_id":self.client,"role_key":self.key});
+        if let Some(org) = self.org {
+            item["organization_id"] = json!(org);
+        }
+        item
+    }
+
+    async fn check_target(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<Option<Response>, sqlx::Error> {
+        use crate::login_http::problem;
+        if sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE")
+            .bind(self.user)
+            .fetch_optional(&mut **tx)
+            .await?
+            .is_none()
+        {
+            return Ok(Some(problem(StatusCode::NOT_FOUND, "User not found")));
+        }
+        if !active_client_for_update(tx, &self.client).await? {
+            return Ok(Some(admin_permissions::unknown_client(&self.client)));
+        }
+        if !crate::token_authorization::valid_role_key(&self.key) {
+            return Ok(Some(problem(
+                StatusCode::BAD_REQUEST,
+                &format!(
+                    "invalid role_key {}: must match [a-z0-9][a-z0-9_-]{{0,47}}",
+                    crate::browser_prompt::quoted_string(&self.key)
+                ),
+            )));
+        }
+        Ok(None)
+    }
+}
 
 pub(super) async fn list(
     State(state): State<Arc<Profile>>,

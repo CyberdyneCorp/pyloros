@@ -1,0 +1,1 @@
+Lock the target account and client in the same order as grants. Remove only the selected group membership. When the scoped group is absent, record the operator action without delivering an event. Preserve the selected IAM authority.

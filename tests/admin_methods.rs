@@ -48,12 +48,16 @@ async fn administrative_oauth_routes_advertise_methods_only_on_method_errors() {
 }
 
 #[tokio::test]
-async fn deleting_an_invalid_account_requires_an_operator_even_on_the_bulk_path() {
+async fn operator_delete_routes_authenticate_before_validating_the_target() {
     let pool = PgPoolOptions::new()
         .connect_lazy("postgresql://localhost/pyloros")
         .unwrap();
     let routes = pyloros::profile::routes(pool, false).unwrap();
-    for target in ["bulk", "invalid"] {
+    for target in [
+        "bulk",
+        "invalid",
+        "invalid/roles/app/reader?organization_id=invalid",
+    ] {
         let request = Request::delete(format!("/api/v1/admin/users/{target}"))
             .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
             .body(Body::empty())

@@ -3,14 +3,7 @@ use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem, request_json::fields};
 use serde_json::value::RawValue;
 
-struct Grant {
-    user: Uuid,
-    client: String,
-    key: String,
-    org: Option<Uuid>,
-}
-
-fn input(path: &str, raw: &RawValue) -> Result<Grant, Box<Response>> {
+fn input(path: &str, raw: &RawValue) -> Result<Assignment, Box<Response>> {
     let submitted = fields::object_fields(raw)?;
     let value = fields::project(
         raw,
@@ -55,7 +48,7 @@ fn input(path: &str, raw: &RawValue) -> Result<Grant, Box<Response>> {
             if let (Ok(user), Some(client), Some(key), Ok(org)) = (user, client, key, org)
                 && issues.is_empty()
             {
-                return Ok(Grant {
+                return Ok(Assignment {
                     user,
                     client,
                     key,
@@ -111,7 +104,7 @@ pub(in crate::profile) async fn grant(
         .unwrap_or_else(|_| internal())
 }
 
-impl Grant {
+impl Assignment {
     async fn apply(
         &self,
         mut tx: Transaction<'_, Postgres>,
@@ -120,25 +113,8 @@ impl Grant {
         actor: (Uuid, Option<&str>),
         origin: SessionOrigin<'_>,
     ) -> Result<Response, sqlx::Error> {
-        if sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE")
-            .bind(self.user)
-            .fetch_optional(&mut *tx)
-            .await?
-            .is_none()
-        {
-            return Ok(problem(StatusCode::NOT_FOUND, "User not found"));
-        }
-        if !active_client_for_update(&mut tx, &self.client).await? {
-            return Ok(admin_permissions::unknown_client(&self.client));
-        }
-        if !crate::token_authorization::valid_role_key(&self.key) {
-            return Ok(problem(
-                StatusCode::BAD_REQUEST,
-                &format!(
-                    "invalid role_key {}: must match [a-z0-9][a-z0-9_-]{{0,47}}",
-                    crate::browser_prompt::quoted_string(&self.key)
-                ),
-            ));
+        if let Some(error) = self.check_target(&mut tx).await? {
+            return Ok(error);
         }
         if let Some(chain) = chain {
             tx.commit().await?;
@@ -246,10 +222,7 @@ impl Grant {
         origin: SessionOrigin<'_>,
     ) -> Result<Response, sqlx::Error> {
         let target = self.user.to_string();
-        let mut item = json!({"client_id":self.client,"role_key":self.key});
-        if let Some(org) = self.org {
-            item["organization_id"] = json!(org);
-        }
+        let item = self.metadata();
         if state.registration.webhooks {
             let mut data = item.clone();
             data["user_id"] = json!(self.user);

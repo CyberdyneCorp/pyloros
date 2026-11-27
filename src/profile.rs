@@ -418,6 +418,10 @@ fn build_routes(
             any(admin_client_roles::list_user).post(admin_client_roles::grant),
         )
         .route(
+            "/api/v1/admin/users/{user_id}/roles/{client_id}/{role_key}",
+            any(admin_client_roles::revoke),
+        )
+        .route(
             "/api/v1/admin/users/{user_id}/passkeys",
             any(passkeys::admin_list),
         )

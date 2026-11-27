@@ -1,0 +1,2 @@
+- [x] 1. Implement global and scoped PostgreSQL revocation.
+- [x] 2. Validate the API, cross-service tokens, audit and outbox.
