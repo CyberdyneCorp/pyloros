@@ -128,6 +128,7 @@ pub(crate) enum AuditActivity<'a> {
     PasswordChanged(Result<u64, &'static str>),
     PasswordReset(Result<u64, &'static str>),
     ResetRequested(Option<&'static str>),
+    EmailVerified(Option<&'static str>),
     PhoneEdit,
     EmailDecision {
         reason: Option<&'static str>,
@@ -231,6 +232,15 @@ pub(crate) async fn write_activity<'e>(
             "credential",
             activity,
             Some("totp"),
+            "",
+            outcome(reason.is_some()),
+            reason,
+            json!({}),
+        ),
+        AuditActivity::EmailVerified(reason) => (
+            "account_lifecycle",
+            "email_verify",
+            None,
             "",
             outcome(reason.is_some()),
             reason,

@@ -1,4 +1,5 @@
 //! Redeem an emailed recovery credential against shared PostgreSQL state.
+use super::email_verification::{Refusal, TokenRow, owner, verify_account};
 use super::*;
 use crate::{
     authorization_codes::digest,
@@ -36,17 +37,6 @@ pub(super) async fn confirm(
     .unwrap_or_else(|_| internal())
 }
 
-type ResetRow = (Uuid, DateTime<Utc>, Option<DateTime<Utc>>);
-type Refusal = (&'static str, Option<Uuid>);
-
-fn owner(row: Option<ResetRow>) -> Result<Uuid, Refusal> {
-    match row {
-        Some((id, expires, None)) if expires < Utc::now() => Err(("expired", Some(id))),
-        Some((id, _, None)) => Ok(id),
-        _ => Err(("invalid_token", None)),
-    }
-}
-
 async fn refuse(
     pool: &PgPool,
     (reason, user): Refusal,
@@ -82,7 +72,7 @@ async fn redeem(
     request: Option<&str>,
 ) -> Result<Response, Box<dyn Error + Send + Sync>> {
     const LOOKUP: &str = "SELECT user_id,expires_at,used_at FROM password_reset_tokens WHERE id=(SELECT id FROM password_reset_tokens WHERE token_hash=$1)";
-    let row = sqlx::query_as::<_, ResetRow>(LOOKUP)
+    let row = sqlx::query_as::<_, TokenRow>(LOOKUP)
         .bind(token_hash)
         .fetch_optional(&state.pool)
         .await?;
@@ -91,7 +81,7 @@ async fn redeem(
     }
     let hash = state.scheme.hash(password).await?;
     let mut tx = state.pool.begin().await?;
-    let row = sqlx::query_as::<_, ResetRow>(&format!("{LOOKUP} FOR UPDATE"))
+    let row = sqlx::query_as::<_, TokenRow>(&format!("{LOOKUP} FOR UPDATE"))
         .bind(token_hash)
         .fetch_optional(&mut *tx)
         .await?;
@@ -103,22 +93,12 @@ async fn redeem(
         }
     };
     let now = Utc::now();
-    let account = sqlx::query_as::<_, (Option<String>, Option<Uuid>)>(
-        "SELECT primary_email,organization_id FROM users WHERE id=$1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let Some((email, organization)) = account else {
+    let Some(subject) = verify_account(&mut tx, id).await? else {
         tx.rollback().await?;
         return Ok(refuse(&state.pool, ("user_not_found", Some(id)), origin, request).await);
     };
-    let organization = match organization {
-        Some(org) => Some(org),
-        None => join_email_domain(&mut tx, id, email.as_deref()).await?,
-    };
-    sqlx::query("UPDATE users SET password_hash=$2,is_email_verified=true,organization_id=$3,tokens_valid_after=GREATEST(tokens_valid_after,$4) WHERE id=$1")
-        .bind(id).bind(hash).bind(organization).bind(now).execute(&mut *tx).await?;
+    sqlx::query("UPDATE users SET password_hash=$2,tokens_valid_after=GREATEST(tokens_valid_after,$3) WHERE id=$1")
+        .bind(id).bind(hash).bind(now).execute(&mut *tx).await?;
     sqlx::query("UPDATE password_reset_tokens SET used_at=$2 WHERE token_hash=$1")
         .bind(token_hash)
         .bind(now)
@@ -128,11 +108,7 @@ async fn redeem(
     write_activity(
         &mut *tx,
         AuditActivity::PasswordReset(Ok(count)),
-        AuditSubject {
-            user: Some(id),
-            email,
-            organization,
-        },
+        subject,
         origin,
         request,
         now,
@@ -140,27 +116,6 @@ async fn redeem(
     .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT.into_response())
-}
-
-async fn join_email_domain(
-    tx: &mut Transaction<'_, Postgres>,
-    user: Uuid,
-    email: Option<&str>,
-) -> Result<Option<Uuid>, sqlx::Error> {
-    let Some((_, domain)) = email.and_then(|s| s.rsplit_once('@')) else {
-        return Ok(None);
-    };
-    let org: Option<Uuid> = sqlx::query_scalar(
-        "SELECT (SELECT id FROM organizations WHERE is_active AND lower(domain_name)=lower($1))",
-    )
-    .bind(domain)
-    .fetch_one(&mut **tx)
-    .await?;
-    if let Some(id) = org {
-        sqlx::query("INSERT INTO user_organizations(user_id,organization_id) VALUES($1,$2) ON CONFLICT(user_id,organization_id) DO NOTHING")
-            .bind(user).bind(id).execute(&mut **tx).await?;
-    }
-    Ok(org)
 }
 
 pub(super) async fn request(

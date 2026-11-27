@@ -1,5 +1,6 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
 mod edit;
+mod email_verification;
 mod enrollment;
 mod logout_all;
 mod password_change;
@@ -169,6 +170,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     };
     Ok(Router::new()
         .route("/api/v1/users/me", any(current))
+        .route("/api/v1/auth/verify-email", any(email_verification::handle))
         .route("/api/v1/auth/mfa/status", any(enrollment::handle))
         .route("/api/v1/auth/mfa/totp/setup", any(totp::setup))
         .route("/api/v1/auth/mfa/totp/enable", any(totp::enable))

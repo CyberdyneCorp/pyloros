@@ -1,0 +1,1 @@
+Look up the credential digest and lock its row before accepting it. Lock the account before applying verified-email and domain membership changes. Commit the account update, token consumption and success audit together. Keep password reset tokens and email verification tokens in their respective credential stores.
