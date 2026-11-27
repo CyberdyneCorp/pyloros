@@ -1,0 +1,4 @@
+- [x] Verify signed envelopes and nested records against the configured application.
+- [x] Apply grants, grace, expiry and refunds with transactional replay handling.
+- [x] Compare both backends and verify concurrent deliveries and failure recovery.
+- [ ] Verify live Apple delivery and active entitlement hook execution before migration signoff.

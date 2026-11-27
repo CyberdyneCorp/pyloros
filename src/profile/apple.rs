@@ -2,6 +2,7 @@
 use super::*;
 use crate::{login_http::problem, request_json::fields};
 use axum::body::Bytes;
+pub(super) mod notifications;
 mod ocsp;
 mod verifier;
 
@@ -67,20 +68,22 @@ impl Store {
     }
 }
 impl Purchase {
+    fn matches(&self, bundle: &str, environment: &str, now: DateTime<Utc>) -> bool {
+        self.signed_date <= now.timestamp_millis().saturating_add(60000)
+            && self.bundle_id == bundle
+            && self.environment == environment
+            && !self.original_transaction_id.is_empty()
+            && !self.transaction_id.is_empty()
+            && !self.product_id.is_empty()
+    }
+
     fn expiry(
         &self,
         bundle: &str,
         environment: &str,
         now: DateTime<Utc>,
     ) -> Result<Option<DateTime<Utc>>, verifier::Fault> {
-        if self.signed_date > now.timestamp_millis().saturating_add(60000)
-            || self.bundle_id != bundle
-            || self.environment != environment
-            || self.revocation_date.is_some()
-            || self.original_transaction_id.is_empty()
-            || self.transaction_id.is_empty()
-            || self.product_id.is_empty()
-        {
+        if !self.matches(bundle, environment, now) || self.revocation_date.is_some() {
             return Err(verifier::Fault::Invalid);
         }
         match self.expires_date {
@@ -191,21 +194,14 @@ async fn claim(
 ) -> sqlx::Result<Response> {
     let mut tx = pool.begin().await?;
     let reference = &purchase.original_transaction_id;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('apple-purchase'),hashtext($1))")
-        .bind(reference)
-        .execute(&mut *tx)
-        .await?;
+    lock_purchase(&mut tx, reference).await?;
     let missing = || {
         problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             "Unknown or unmapped App Store product",
         )
     };
-    let mapping: Option<(String, Option<String>)> =
-        sqlx::query_as("SELECT product_key,plan FROM apple_products WHERE app_store_product_id=$1")
-            .bind(&purchase.product_id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let mapping = mapping(&mut tx, &purchase.product_id).await?;
     let Some((product, plan)) = mapping else {
         return Ok(missing());
     };
@@ -278,6 +274,22 @@ async fn claim(
     )
 }
 
+async fn lock_purchase(tx: &mut Transaction<'_, Postgres>, reference: &str) -> sqlx::Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('apple-purchase'),hashtext($1))")
+        .bind(reference)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+async fn mapping(
+    tx: &mut Transaction<'_, Postgres>,
+    store_id: &str,
+) -> sqlx::Result<Option<(String, Option<String>)>> {
+    sqlx::query_as("SELECT product_key,plan FROM apple_products WHERE app_store_product_id=$1")
+        .bind(store_id)
+        .fetch_optional(&mut **tx)
+        .await
+}
 async fn stale_purchase(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,

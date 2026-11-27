@@ -90,6 +90,7 @@ impl Policy {
                     | crate::consent_http::PATH
                     | "/api/v1/auth/oauth2/token"
                     | "/api/v1/auth/oauth2/logout"
+                    | "/api/v1/webhooks/apple"
                     | "/api/v1/webhooks/google"
                     | "/api/v1/webhooks/stripe"
                     | "/api/v1/auth/magic-link/inspect"
@@ -203,7 +204,11 @@ mod tests {
     fn billing_pushes_use_provider_credentials_even_with_browser_cookies() {
         let policy = Policy::new(watch::channel(BTreeSet::new()).1, "csrf".into());
         let origin = "https://outside.example";
-        for path in ["/api/v1/webhooks/google", "/api/v1/webhooks/stripe"] {
+        for path in [
+            "/api/v1/webhooks/apple",
+            "/api/v1/webhooks/google",
+            "/api/v1/webhooks/stripe",
+        ] {
             assert_eq!(policy.refusal(&request(path, origin, "")), None);
         }
         assert!(

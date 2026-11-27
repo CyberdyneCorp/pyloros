@@ -459,6 +459,7 @@ fn build_routes(
             "/api/v1/billing/google/validate",
             any(google_play::handle).layer(axum::extract::DefaultBodyLimit::disable()),
         )
+        .route("/api/v1/webhooks/apple", any(apple::notifications::handle))
         .route(
             "/api/v1/webhooks/google",
             any(google_play::notifications::handle),

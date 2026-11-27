@@ -40,6 +40,8 @@ Set `BILLING_ENABLED=true`, `APPLE_BUNDLE_ID` and `APPLE_ROOT_CA_DIR` on the ser
 
 Signed-in customers submit the StoreKit JWS in `signed_transaction` to `POST /api/v1/billing/apple/validate`. Successful claims return the mapped entitlement token and expiry. An original transaction can belong to one account. Pyloros rejects receipts that show revocation or expiry and checks a replay against the stored entitlement. An unavailable certificate status service returns HTTP 503 so the app can retry.
 
+Configure App Store Server Notifications V2 to send `signedPayload` to `POST /api/v1/webhooks/apple`. Pyloros verifies the envelope and nested StoreKit records before changing access. Renewals extend the mapped grant, including a verified billing-retry grace period. Expiry and refund events withdraw the corresponding App Store grant. Processed notification IDs are acknowledged on replay. An unresolved purchase or product is recorded as deferred and can be resubmitted once it is mapped.
+
 ## Google Play purchases
 
 Enable billing with `BILLING_ENABLED=true`, set `GOOGLE_PACKAGE_NAME` to the Android application ID, and supply `GOOGLE_SERVICE_ACCOUNT_JSON` as a server-side secret with Android Publisher access. Signed-in users submit `purchase_token` and `product_id` to `POST /api/v1/billing/google/validate`. Pyloros checks the purchased line item and expiry with Google before granting the mapped product. A purchase can belong to one account. An active entitlement hook requires the dispatcher before the grant can commit.
