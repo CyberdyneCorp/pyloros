@@ -29,18 +29,42 @@ const STATEMENTS: Shape = List(&Object(&[
     Field("conditions", &CONDITIONS, DefaultList),
     Field("sid", &Text, Nullable),
 ]));
+const REPLACE: Shape = Object(&[
+    Field("name", &Text, Nullable),
+    Field("description", &Text, Nullable),
+    Field("statements", &STATEMENTS, Required),
+]);
 const CREATE: Shape = Object(&[
     Field("name", &Text, Required),
     Field("description", &Text, Nullable),
     Field("statements", &STATEMENTS, Required),
 ]);
 
-#[derive(Default, Serialize)]
+#[derive(Default)]
 struct Errors<'a> {
     detail: Vec<FieldIssue<'a>>,
 }
 
 impl<'a> Errors<'a> {
+    fn response(self, path: Option<Value>) -> Box<Response> {
+        #[derive(Serialize)]
+        #[serde(untagged)]
+        enum Issue<'a> {
+            Path(Value),
+            Body(FieldIssue<'a>),
+        }
+        #[derive(Serialize)]
+        struct Invalid<'a> {
+            detail: Vec<Issue<'a>>,
+        }
+        let detail = path
+            .into_iter()
+            .map(Issue::Path)
+            .chain(self.detail.into_iter().map(Issue::Body))
+            .collect();
+        Box::new((StatusCode::UNPROCESSABLE_ENTITY, Json(Invalid { detail })).into_response())
+    }
+
     fn reject(
         &mut self,
         raw: &'a RawValue,
@@ -113,19 +137,27 @@ impl<'a> Errors<'a> {
     }
 }
 
-pub(super) fn create(raw: &RawValue) -> Result<Value, Box<Response>> {
+pub(super) fn parse(
+    raw: &RawValue,
+    path: Option<Result<Uuid, Value>>,
+) -> Result<(Option<Uuid>, Value), Box<Response>> {
+    let shape = if path.is_some() { &REPLACE } else { &CREATE };
     let mut errors = Errors::default();
     let mut loc = vec![json!("body")];
     let policy = if raw.get() == "null" {
         errors.reject(raw, &loc, "missing", "Field required")?
     } else {
-        errors.project(raw, &mut loc, &CREATE)?
+        errors.project(raw, &mut loc, shape)?
     };
-    if !errors.detail.is_empty() {
-        return Err(Box::new(
-            (StatusCode::UNPROCESSABLE_ENTITY, Json(errors)).into_response(),
-        ));
-    }
+    let id = match path.transpose() {
+        Ok(id) if errors.detail.is_empty() => id,
+        result => return Err(errors.response(result.err())),
+    };
+    validate_statements(&policy)?;
+    Ok((id, policy))
+}
+
+fn validate_statements(policy: &Value) -> Result<(), Box<Response>> {
     for statement in policy["statements"]
         .as_array()
         .expect("validated statements")
@@ -147,7 +179,7 @@ pub(super) fn create(raw: &RawValue) -> Result<Value, Box<Response>> {
             }
         }
     }
-    Ok(policy)
+    Ok(())
 }
 
 fn invalid(value: &str, kind: &str) -> Box<Response> {
@@ -163,9 +195,28 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn replacement_lists_path_then_body_errors_and_accepts_omitted_metadata() {
+        let id = Uuid::new_v4();
+        let (_, policy) = parse(
+            serde_json::from_str(r#"{"statements":[]}"#).unwrap(),
+            Some(Ok(id)),
+        )
+        .unwrap();
+        assert!(policy["name"].is_null());
+        let invalid = crate::query::path_uuid("bad", "policy_id");
+        let error = parse(serde_json::from_str("{}").unwrap(), Some(invalid)).unwrap_err();
+        let bytes = axum::body::to_bytes(error.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let doc: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(doc["detail"][0]["loc"], json!(["path", "policy_id"]));
+        assert_eq!(doc["detail"][1]["loc"], json!(["body", "statements"]));
+    }
+
+    #[tokio::test]
     async fn nested_type_errors_preserve_arbitrary_integer_inputs_before_effect_validation() {
         let body = r#"{"name":"example","statements":[{"effect":"unknown","actions":[12345678901234567890123456789],"resources":[]}]}"#;
-        let response = create(serde_json::from_str(body).unwrap()).unwrap_err();
+        let response = parse(serde_json::from_str(body).unwrap(), None).unwrap_err();
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await

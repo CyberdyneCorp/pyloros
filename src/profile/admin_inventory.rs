@@ -5,7 +5,7 @@ use serde::Serialize;
 mod policy_input;
 mod statements;
 mod writes;
-pub(super) use writes::create;
+pub(super) use writes::{create, replace};
 
 #[derive(Clone, Copy)]
 enum Catalog {

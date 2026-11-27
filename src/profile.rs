@@ -417,7 +417,9 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/policies/{policy_id}",
-            any(admin_inventory::policy),
+            any(admin_inventory::policy)
+                .put(admin_inventory::replace)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
             "/api/v1/admin/policies",
