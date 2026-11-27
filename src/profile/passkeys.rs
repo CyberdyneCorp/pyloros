@@ -1,5 +1,7 @@
 mod binding_cookie;
 mod creation;
+mod finish;
+pub(super) use finish::handle as finish_enrollment;
 mod rename;
 mod revoke;
 use super::*;
@@ -31,6 +33,7 @@ pub(super) struct Inventory {
     rp: Option<String>,
     creation: Option<creation::Settings>,
     start_quota: LoginThrottle,
+    finish_quota: LoginThrottle,
     quota: LoginThrottle,
     rename_quota: LoginThrottle,
     revoke_quota: LoginThrottle,
@@ -58,6 +61,7 @@ impl Inventory {
             rp,
             creation: None,
             start_quota: LoginThrottle::new(limit),
+            finish_quota: LoginThrottle::new(limit),
             quota: LoginThrottle::new(limit),
             rename_quota: LoginThrottle::new(limit),
             revoke_quota: LoginThrottle::new(limit),
@@ -121,12 +125,16 @@ pub(super) async fn start_enrollment(
         .passkeys
         .creation
         .as_ref()
-        .and_then(|settings| settings.transport(&headers, peer.ip()));
+        .and_then(|settings| settings.transport(&headers, peer.ip(), true));
     run(&state, &headers, peer.ip(), Operation::Enroll(binding)).await
 }
 
 enum Operation {
     Enroll(Option<creation::Transport>),
+    Finish(
+        Result<finish::Proof, Vec<Value>>,
+        Option<creation::Transport>,
+    ),
     List,
     Revoke(Result<Uuid, Value>),
     Rename(Result<(Uuid, String), Vec<Value>>),
@@ -192,6 +200,7 @@ async fn inventory(
         return Ok(problem(StatusCode::NOT_FOUND, "Passkeys disabled"));
     };
     let quota = match &operation {
+        Operation::Finish(_, _) => &state.passkeys.finish_quota,
         Operation::Enroll(_) => &state.passkeys.start_quota,
         Operation::List => &state.passkeys.quota,
         Operation::Revoke(_) => &state.passkeys.revoke_quota,
@@ -199,6 +208,33 @@ async fn inventory(
     };
     if !quota.allow(origin.ip) {
         return Ok(RateLimited.into_response());
+    }
+    if let Operation::Finish(input, binding) = operation {
+        let proof = match input {
+            Ok(proof) => proof,
+            Err(issues) => return Ok(validation(issues)),
+        };
+        let Some(binding) = binding else {
+            return Ok(finish::invalid());
+        };
+        let enrollment = crate::passkey_ceremonies::Enrollment {
+            user: id.user,
+            session,
+            relying_party: rp,
+            origin: &binding.origin,
+            binding: &binding.secret,
+            policy_digest: &state
+                .passkeys
+                .creation
+                .as_ref()
+                .expect("validated enrollment settings")
+                .digest,
+        };
+        let Some(challenge) = enrollment.claim(tx, proof.ceremony).await? else {
+            return Ok(finish::invalid());
+        };
+        return finish::register(state, id, &enrollment, proof, challenge, origin, request_id)
+            .await;
     }
     if matches!(operation, Operation::Enroll(None)) {
         return Ok(problem(

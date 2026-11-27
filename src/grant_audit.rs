@@ -136,6 +136,7 @@ pub(crate) enum AuditActivity<'a> {
     },
     PasswordLogin(Uuid),
     PasskeyRevoked(Uuid),
+    PasskeyEnrolled(Uuid),
     LogoffAll(u64),
     Authenticator(&'static str, Option<&'static str>),
     Logoff {
@@ -231,9 +232,13 @@ pub(crate) async fn write_activity<'e>(
                 json!({})
             },
         ),
-        AuditActivity::PasskeyRevoked(id) => (
+        AuditActivity::PasskeyRevoked(id) | AuditActivity::PasskeyEnrolled(id) => (
             "credential",
-            "passkey_revoke",
+            if matches!(activity, AuditActivity::PasskeyEnrolled(_)) {
+                "passkey_enroll"
+            } else {
+                "passkey_revoke"
+            },
             Some("passkey"),
             "",
             "success",

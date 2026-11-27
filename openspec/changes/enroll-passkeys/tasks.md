@@ -1,5 +1,6 @@
 - [x] Establish a reference enrollment fixture in the unchanged frontend.
 - [x] Implement enrollment options, account handles and client binding.
 - [x] Atomically claim an eligible registration challenge and commit its consumption before credential verification.
-- [ ] Verify attestation and persist the credential with its audit event.
-- [ ] Verify both directions of a backend switch, single-use claims, rejected proofs and frontend enrollment.
+- [x] Verify browser and native enrollment proofs and persist the credential with its audit event.
+- [x] Verify both directions of a backend switch, single-use claims, rejected proofs and frontend enrollment.
+- [ ] Match vendor-specific attestation trust chains and validate hardware-backed formats against reference fixtures.

@@ -277,6 +277,10 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
             "/api/v1/auth/passkeys/register/options",
             any(passkeys::start_enrollment),
         )
+        .route(
+            "/api/v1/auth/passkeys/register/verify",
+            any(passkeys::finish_enrollment),
+        )
         .route("/api/v1/auth/passkeys", any(passkeys::list))
         .route("/api/v1/auth/passkeys/{passkey_id}", any(passkeys::modify))
         .route("/api/v1/auth/register", any(registration::handle))

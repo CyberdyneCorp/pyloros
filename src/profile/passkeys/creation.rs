@@ -9,7 +9,7 @@ pub(super) struct Settings {
     ttl: i64,
     browser: Vec<String>,
     native: Vec<String>,
-    digest: String,
+    pub(super) digest: String,
     dev: bool,
     secure: bool,
     proxy_peers: Vec<ipnet::IpNet>,
@@ -86,7 +86,12 @@ impl Settings {
         })
     }
 
-    pub(super) fn transport(&self, headers: &HeaderMap, peer: IpAddr) -> Option<Transport> {
+    pub(super) fn transport(
+        &self,
+        headers: &HeaderMap,
+        peer: IpAddr,
+        starting: bool,
+    ) -> Option<Transport> {
         let origin = header_value(headers, "origin")?.to_owned();
         let native = header_value(headers, "x-passkey-client") == Some("native");
         let trusted = if native { &self.native } else { &self.browser };
@@ -106,11 +111,15 @@ impl Settings {
             }
         }
         let binding = if native {
-            None
+            header_value(headers, "x-passkey-binding")
+                .filter(|_| !starting)
+                .map(str::to_owned)
         } else {
             binding_cookie::read(headers).filter(|s| !s.is_empty())
         };
-        let secret = binding.unwrap_or_else(|| URL_SAFE_NO_PAD.encode(random_bytes()));
+        let secret = binding
+            .filter(|s| !s.is_empty())
+            .or_else(|| starting.then(|| URL_SAFE_NO_PAD.encode(random_bytes())))?;
         if secret.chars().count() > 128 {
             return None;
         }
@@ -123,8 +132,8 @@ impl Settings {
 }
 
 pub(super) struct Transport {
-    origin: String,
-    secret: String,
+    pub(super) origin: String,
+    pub(super) secret: String,
     native: bool,
 }
 
@@ -226,18 +235,18 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("origin", origin.parse().unwrap());
         headers.insert("x-passkey-client", "native".parse().unwrap());
-        assert!(settings.transport(&headers, trusted).is_none());
+        assert!(settings.transport(&headers, trusted, true).is_none());
         headers.insert("x-forwarded-proto", "https".parse().unwrap());
         assert!(
             settings
-                .transport(&headers, "198.51.100.1".parse().unwrap())
+                .transport(&headers, "198.51.100.1".parse().unwrap(), true)
                 .is_none()
         );
-        assert!(settings.transport(&headers, trusted).is_some());
+        assert!(settings.transport(&headers, trusted, true).is_some());
         headers.insert("cookie", "session=value".parse().unwrap());
-        assert!(settings.transport(&headers, trusted).is_none());
+        assert!(settings.transport(&headers, trusted, true).is_none());
         headers.remove("cookie");
         headers.insert("origin", "https://other.example".parse().unwrap());
-        assert!(settings.transport(&headers, trusted).is_none());
+        assert!(settings.transport(&headers, trusted, true).is_none());
     }
 }
