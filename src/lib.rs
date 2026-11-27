@@ -185,3 +185,5 @@ mod readiness_db;
 mod admin_audit;
 
 mod unicode_decimal;
+
+mod stored_json;

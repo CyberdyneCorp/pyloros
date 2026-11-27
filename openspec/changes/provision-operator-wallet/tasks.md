@@ -1,0 +1,4 @@
+- [x] Implement operator authorization, wallet lookup, encrypted key persistence and audit rollback.
+- [x] Compare both services for creation, existing wallets, errors and overlapping calls.
+- [x] Verify the original clients.
+- [ ] Resolve development behavior when the wallet encryption key is unset.

@@ -130,37 +130,11 @@ pub(super) struct ExportPolicy {
 }
 
 fn transfer_statements(raw: &str, for_database: bool) -> Result<Box<RawValue>, sqlx::Error> {
-    use crate::request_json::iam_document::unquoted_tokens;
-    // PostgreSQL renders JSONB numbers in decimal notation. The reference store
-    // decodes integers up to 4300 digits and fractional values as binary64.
-    for (_, token) in unquoted_tokens(raw) {
-        let digits = token.trim_start_matches('-');
-        if digits.len() > 4300 && digits.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(invalid());
-        }
-    }
+    crate::stored_json::check_integers(raw)?;
     let statements = project::<Box<RawValue>, ExportCondition>(raw)?;
     let json = serde_json::to_string(&statements).map_err(|_| invalid())?;
-    let mut normalized = String::new();
-    let mut cursor = 0;
-    for (start, token) in unquoted_tokens(&json) {
-        if token.contains(['.', 'e', 'E'])
-            && token.starts_with(|c: char| c.is_ascii_digit() || c == '-')
-        {
-            let value = token.parse::<f64>().map_err(|_| invalid())?;
-            if for_database && !value.is_finite() {
-                return Err(invalid());
-            }
-            normalized.push_str(&json[cursor..start]);
-            normalized.push_str(&serde_json::to_string(&value).map_err(|_| invalid())?);
-            cursor = start + token.len();
-        }
-    }
-    if cursor == 0 {
-        return RawValue::from_string(json).map_err(|_| invalid());
-    }
-    normalized.push_str(&json[cursor..]);
-    RawValue::from_string(normalized).map_err(|_| invalid())
+    RawValue::from_string(crate::stored_json::project_fractions(json, for_database)?)
+        .map_err(|_| invalid())
 }
 
 pub(super) async fn export(

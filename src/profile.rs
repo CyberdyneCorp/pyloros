@@ -10,6 +10,7 @@ mod admin_permissions;
 mod admin_role;
 mod admin_sessions;
 mod admin_users;
+mod admin_wallet;
 mod administrator;
 mod auth_policy;
 mod blockchain;
@@ -592,6 +593,10 @@ fn build_routes(
         .route(
             "/api/v1/admin/users/{user_id}/passkeys/{passkey_id}",
             any(passkeys::admin_revoke),
+        )
+        .route(
+            "/api/v1/admin/users/{user_id}/wallet",
+            any(crate::token_http::post_only).post(admin_wallet::ensure),
         )
         .route("/api/v1/admin/users/{user_id}/mfa", any(admin_mfa::reset))
         .route(
