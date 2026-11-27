@@ -58,6 +58,10 @@ async fn postgres_readiness() {
     let (status, body) = get(&app, path).await;
     assert_eq!(status, 503);
     assert_eq!(body["database"], true);
+    assert_eq!(
+        body["detail"],
+        "migration state unreadable: ProgrammingError"
+    );
     sqlx::query("CREATE TEMP TABLE alembic_version(version_num text)")
         .execute(&pool)
         .await
@@ -81,5 +85,61 @@ async fn postgres_readiness() {
         .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(get(&app, path).await.0, 503);
+    let (status, body) = get(&app, path).await;
+    assert_eq!(status, 503);
+    assert_eq!(
+        body["detail"],
+        "migration state unreadable: MultipleResultsFound"
+    );
+}
+
+#[tokio::test]
+async fn foundation_routes_reject_head_and_post_before_running_get() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://localhost:1/unavailable")
+        .unwrap();
+    pool.close().await;
+    let app = pyloros::router("test".into(), pool).merge(pyloros::discovery::routes(None));
+    for path in [
+        "/api/v1/health",
+        "/api/v1/health/ready",
+        "/.well-known/jwks.json",
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
+    ] {
+        for method in ["HEAD", "POST"] {
+            let req = Request::builder()
+                .method(method)
+                .uri(path)
+                .body(Body::empty())
+                .unwrap();
+            let res = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(res.status(), 405, "{method} {path}");
+            assert_eq!(res.headers()["allow"], "GET");
+            let body = to_bytes(res.into_body(), 2048).await.unwrap();
+            if method == "HEAD" {
+                assert!(body.is_empty());
+            } else {
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&body).unwrap()["detail"],
+                    "Method Not Allowed"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn trailing_slash_redirects_preserve_query_and_method() {
+    let app = pyloros::discovery::routes(None);
+    let request = Request::post("/.well-known/jwks.json/?name=a%20b&v=2")
+        .header("host", "auth.example:8443")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), 307);
+    assert_eq!(
+        response.headers()["location"],
+        "http://auth.example:8443/.well-known/jwks.json?name=a%20b&v=2"
+    );
 }

@@ -59,21 +59,7 @@ impl Settings {
         if !(30..=300).contains(&ttl) {
             return Err("invalid PASSKEYS_CHALLENGE_TTL_SECONDS".into());
         }
-        let proxy_peers = env::var("FORWARDED_ALLOW_IPS").unwrap_or_else(|_| "127.0.0.1".into());
-        let proxy_peers = proxy_peers
-            .split(',')
-            .map(str::trim)
-            .flat_map(|p| {
-                if p == "*" {
-                    return vec!["0.0.0.0/0".parse().unwrap(), "::/0".parse().unwrap()];
-                }
-                p.parse()
-                    .ok()
-                    .or_else(|| p.parse::<IpAddr>().ok().map(Into::into))
-                    .into_iter()
-                    .collect()
-            })
-            .collect();
+        let proxy_peers = crate::config::forwarded_peers();
         Ok(Self {
             name: env::var("PASSKEYS_RP_NAME").unwrap_or_else(|_| "CyberdyneAuth".into()),
             browser,

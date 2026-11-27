@@ -11,7 +11,11 @@ The service SHALL expose metadata at `/.well-known/openid-configuration` and `/.
 
 #### Scenario: Disabled provider
 - **WHEN** any of these three paths receives a GET while discovery is disabled
-- **THEN** the response is HTTP 404 with JSON body `{"detail":"OIDC disabled"}`
+- **THEN** return HTTP 404 with the standard problem document, using OIDC disabled as its title and detail.
+
+#### Scenario: Trailing slash on discovery
+- **WHEN** a client requests the trailing-slash spelling of a discovery URL
+- **THEN** return a 307 redirect to its canonical URL before evaluating issuer availability.
 
 ### Requirement: Issuer metadata
 Both metadata routes SHALL return HTTP 200 with the same JSON document when enabled. The issuer and endpoint URLs SHALL use the configured issuer base, including its path prefix. The scope list SHALL contain each configured scope once in sorted order.
@@ -48,3 +52,11 @@ When discovery is enabled, each replica SHALL load active PostgreSQL scope names
 #### Scenario: Registry read fails
 - **WHEN** a refresh fails
 - **THEN** discovery continues to serve the last successful scope set, or its base scopes if no refresh has succeeded
+
+### Requirement: Reject unsupported discovery methods
+
+All three discovery routes SHALL accept GET and return the service method-error response with Allow set to GET for other methods, independently of issuer availability.
+
+#### Scenario: HEAD on discovery
+- **WHEN** a client sends HEAD to the key set or either metadata route
+- **THEN** return HTTP 405 with the GET allowance and an empty body.

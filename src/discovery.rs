@@ -5,7 +5,7 @@ use crate::{
     config::flag,
     token_runtime::{ResourceCatalog, ResourceRegistry},
 };
-use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
+use axum::{Json, Router, extract::State, http::StatusCode};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rsa::{RsaPublicKey, pkcs8::DecodePublicKey, traits::PublicKeyParts};
 use serde_json::{Value, json};
@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use url::Url;
 
 type ConfigError = Box<dyn Error>;
-type Document = Result<Json<Value>, (StatusCode, Json<Value>)>;
+type Document = Result<Json<Value>, axum::response::Response>;
 
 pub struct Provider {
     metadata: Value,
@@ -303,31 +303,31 @@ impl ScopePublisher {
 
 type ProviderState = Option<Arc<Provider>>;
 
-fn enabled(provider: &ProviderState) -> Result<&Provider, (StatusCode, Json<Value>)> {
-    provider.as_deref().ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(json!({"detail":"OIDC disabled"})),
-        )
-    })
+fn disabled() -> axum::response::Response {
+    crate::login_http::problem(StatusCode::NOT_FOUND, "OIDC disabled")
 }
 
 async fn metadata(State(provider): State<ProviderState>) -> Document {
-    let issuer = enabled(&provider)?;
+    let issuer = provider.as_ref().ok_or_else(disabled)?;
     let mut document = issuer.metadata.clone();
     document["scopes_supported"] = json!(issuer.scopes.borrow().keys().collect::<Vec<_>>());
     Ok(Json(document))
 }
 
 async fn keys(State(provider): State<ProviderState>) -> Document {
-    Ok(Json(enabled(&provider)?.keys.clone()))
+    Ok(Json(provider.as_ref().ok_or_else(disabled)?.keys.clone()))
 }
 
 pub fn routes(provider: Option<Provider>) -> Router {
-    Router::new()
-        .route("/.well-known/openid-configuration", get(metadata))
-        .route("/.well-known/oauth-authorization-server", get(metadata))
-        .route("/.well-known/jwks.json", get(keys))
+    crate::foundation::get_resource("/.well-known/openid-configuration", metadata)
+        .merge(crate::foundation::get_resource(
+            "/.well-known/oauth-authorization-server",
+            metadata,
+        ))
+        .merge(crate::foundation::get_resource(
+            "/.well-known/jwks.json",
+            keys,
+        ))
         .with_state(provider.map(Arc::new))
 }
 

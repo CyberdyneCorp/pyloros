@@ -29,7 +29,10 @@ async fn disabled_routes_report_the_same_error() {
     for path in [OIDC, OAUTH, KEYS] {
         assert_eq!(
             get(&app, path).await,
-            (404, json!({"detail":"OIDC disabled"}))
+            (
+                404,
+                json!({"type":"about:blank","title":"OIDC disabled","status":404,"detail":"OIDC disabled"})
+            )
         );
     }
 }

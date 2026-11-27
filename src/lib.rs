@@ -17,6 +17,7 @@ pub mod email_challenge;
 pub mod email_delivery;
 pub mod email_link_http;
 pub mod first_party;
+mod foundation;
 mod grant_audit;
 pub mod grant_response;
 pub mod grant_sessions;
@@ -45,7 +46,7 @@ mod token_runtime;
 
 use std::time::Duration;
 
-use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
+use axum::{Json, Router, extract::State, http::StatusCode};
 use serde::Serialize;
 use sqlx::PgPool;
 
@@ -91,9 +92,8 @@ pub async fn application(
 }
 
 pub fn router(environment: String, pool: PgPool) -> Router {
-    Router::new()
-        .route("/api/v1/health", get(liveness))
-        .route("/api/v1/health/ready", get(readiness))
+    foundation::get_resource("/api/v1/health", liveness)
+        .merge(foundation::get_resource("/api/v1/health/ready", readiness))
         .with_state(App { environment, pool })
 }
 
@@ -148,6 +148,12 @@ async fn check_revision(pool: &PgPool) -> (bool, Option<String>) {
         )),
         Ok(Ok(rows)) if rows.is_empty() => {
             Some(format!("schema at None, expected '{}'", SCHEMA_REVISION))
+        }
+        Ok(Ok(_)) => Some("migration state unreadable: MultipleResultsFound".into()),
+        Ok(Err(sqlx::Error::Database(error)))
+            if error.code().is_some_and(|code| code.starts_with("42")) =>
+        {
+            Some("migration state unreadable: ProgrammingError".into())
         }
         _ => Some("migration state unreadable".into()),
     };

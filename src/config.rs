@@ -62,3 +62,21 @@ pub(crate) fn bootstrap_admin(email: Option<&str>, allowed: &[String]) -> bool {
                 .any(|entry| entry.trim().to_lowercase() == email)
     })
 }
+
+pub(crate) fn forwarded_peers() -> Vec<ipnet::IpNet> {
+    let proxy_peers = std::env::var("FORWARDED_ALLOW_IPS").unwrap_or_else(|_| "127.0.0.1".into());
+    proxy_peers
+        .split(',')
+        .map(str::trim)
+        .flat_map(|p| {
+            if p == "*" {
+                return vec!["0.0.0.0/0".parse().unwrap(), "::/0".parse().unwrap()];
+            }
+            p.parse()
+                .ok()
+                .or_else(|| p.parse::<std::net::IpAddr>().ok().map(Into::into))
+                .into_iter()
+                .collect()
+        })
+        .collect()
+}

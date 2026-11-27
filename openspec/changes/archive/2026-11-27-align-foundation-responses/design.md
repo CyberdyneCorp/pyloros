@@ -1,0 +1,1 @@
+Handle HEAD and other unsupported methods before dispatching probe and discovery logic. Use the existing method-error response. Detect multiple revisions using the bounded two-row query and classify PostgreSQL schema access errors by SQLSTATE.
