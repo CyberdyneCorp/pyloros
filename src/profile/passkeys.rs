@@ -36,6 +36,27 @@ pub async fn limit_passkey_body(req: Request, next: axum::middleware::Next) -> R
     }
 }
 
+pub(crate) async fn proof_document(
+    headers: &HeaderMap,
+    body: axum::body::Body,
+) -> Result<Value, Box<Response>> {
+    use crate::request_json::{encoding, is_json, json_issue, parse_body};
+    let bytes = axum::body::to_bytes(body, 65536)
+        .await
+        .map_err(|_| Box::new(StatusCode::PAYLOAD_TOO_LARGE.into_response()))?;
+    if bytes.is_empty() || !is_json(headers) {
+        return parse_body(headers, &bytes).map_err(|issue| Box::new(validation(vec![issue])));
+    }
+    let text = encoding::text(&bytes).map_err(|_| {
+        Box::new(problem(
+            StatusCode::BAD_REQUEST,
+            "There was an error parsing the body",
+        ))
+    })?;
+    serde_json::from_str(&text)
+        .map_err(|error| Box::new(validation(vec![json_issue(text.as_bytes(), error)])))
+}
+
 pub(super) struct Inventory {
     rp: Option<String>,
     creation: Option<creation::Settings>,
@@ -444,6 +465,26 @@ fn record(row: sqlx::postgres::PgRow) -> Result<Record, sqlx::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn wide_verification_envelopes_preserve_credential_strings_and_reject_invalid_text() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            "application/webauthn+json".parse().unwrap(),
+        );
+        let input = json!({"name":"東京","credential":{"response":{"clientDataJSON":"e30"}}});
+        let utf32: Vec<_> = input
+            .to_string()
+            .chars()
+            .flat_map(|c| u32::from(c).to_be_bytes())
+            .collect();
+        assert_eq!(proof_document(&headers, utf32.into()).await.unwrap(), input);
+        let bad = proof_document(&headers, vec![0xff, 0xfe, 0x41].into())
+            .await
+            .unwrap_err();
+        assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
+    }
 
     #[tokio::test]
     async fn oversized_passkey_requests_stop_before_dispatch() {

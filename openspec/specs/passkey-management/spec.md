@@ -23,3 +23,14 @@ The service SHALL restrict inventory operations to a first-party credential with
 #### Scenario: Simultaneous removal of the last credentials
 - **WHEN** two requests try to revoke the only remaining sign-in credentials for one account
 - **THEN** serialize recovery checks so at least one method remains, and commit a successful revocation and its audit record together.
+
+### Requirement: Decode Unicode JSON for passkey enrollment and reauthentication
+The service SHALL decode supported UTF-8, UTF-16 and UTF-32 verification documents within the existing request byte limit.
+
+#### Scenario: Encoded verification request
+- **WHEN** a caller submits a validly encoded proof
+- **THEN** apply the ordinary ceremony, binding and signature checks
+
+#### Scenario: Invalid text
+- **WHEN** a JSON body cannot be decoded as Unicode
+- **THEN** return the HTTP 400 body-parsing problem

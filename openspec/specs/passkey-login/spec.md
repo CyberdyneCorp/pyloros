@@ -47,3 +47,14 @@ The service SHALL allow a live first-party session to establish recent authentic
 
 - **WHEN** a client reuses a consumed challenge or submits it from another session
 - **THEN** refuse the request and preserve the existing recent-authentication state.
+
+### Requirement: Decode Unicode JSON for passkey login
+The service SHALL decode supported UTF-8, UTF-16 and UTF-32 verification documents within the existing request byte limit.
+
+#### Scenario: Encoded verification request
+- **WHEN** a caller submits a validly encoded proof
+- **THEN** apply the ordinary ceremony, binding and signature checks
+
+#### Scenario: Invalid text
+- **WHEN** a JSON body cannot be decoded as Unicode
+- **THEN** return the HTTP 400 body-parsing problem

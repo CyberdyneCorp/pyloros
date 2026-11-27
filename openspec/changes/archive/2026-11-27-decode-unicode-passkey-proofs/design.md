@@ -1,0 +1,1 @@
+Apply the existing byte limit before decoding. Use the shared JSON character decoder for all three verification handlers, then validate the original credential fields. Preserve signed authenticator data and client data exactly as submitted.

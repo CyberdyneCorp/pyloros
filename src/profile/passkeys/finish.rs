@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     grant_audit::{AuditActivity, AuditSubject, write_activity},
     passkey_ceremonies::Enrollment,
-    request_json::{parse_body, token_field},
+    request_json::token_field,
 };
 
 pub(crate) struct Proof {
@@ -38,12 +38,9 @@ async fn complete(
         return post_required();
     }
     let (parts, body) = req.into_parts();
-    let Ok(bytes) = axum::body::to_bytes(body, 65536).await else {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
-    };
-    let input = match parse_body(&parts.headers, &bytes) {
-        Ok(body) => parse(body),
-        Err(issue) => return validation(vec![issue]),
+    let input = match proof_document(&parts.headers, body).await {
+        Ok(document) => parse(document),
+        Err(response) => return *response,
     };
     let binding = state
         .passkeys

@@ -40,12 +40,9 @@ pub(super) async fn handle(
         return passkeys::post_required();
     }
     let (parts, body) = req.into_parts();
-    let Ok(bytes) = axum::body::to_bytes(body, 65536).await else {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
-    };
-    let document = match crate::request_json::parse_body(&parts.headers, &bytes) {
-        Ok(v) => v,
-        Err(e) => return passkeys::validation(vec![e]),
+    let document = match passkeys::proof_document(&parts.headers, body).await {
+        Ok(document) => document,
+        Err(response) => return *response,
     };
     let Some(login) = login else {
         if !crate::config::flag("PASSKEYS_ENABLED").unwrap_or(false) {

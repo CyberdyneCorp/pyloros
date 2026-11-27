@@ -1,0 +1,2 @@
+- [x] Share proof envelope decoding and test byte limits and Unicode diagnostics.
+- [x] Compare the packaged endpoints and complete cross-service assertions.
