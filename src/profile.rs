@@ -384,6 +384,10 @@ fn build_routes(
             "/api/v1/admin/clients/{client_id}/roles",
             any(admin_client_roles::list),
         )
+        .route(
+            "/api/v1/admin/clients/{client_id}/roles/{role_key}/permissions",
+            any(admin_client_roles::mapping),
+        )
         .route("/api/v1/admin/blockchain/health", any(blockchain::health))
         .route(
             "/api/v1/admin/settings/auth-policy",

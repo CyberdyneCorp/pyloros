@@ -1,0 +1,2 @@
+- [x] Reuse role catalog authorization and provider selection for the mapping read.
+- [x] Compare provider switching, isolation and error precedence and verify both clients.

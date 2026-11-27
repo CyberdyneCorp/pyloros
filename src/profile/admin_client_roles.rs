@@ -10,14 +10,33 @@ pub(super) async fn list(
     headers: HeaderMap,
     Path(client): Path<String>,
 ) -> Response {
+    read(&state, method, &headers, &client, None).await
+}
+
+pub(super) async fn mapping(
+    State(state): State<Arc<Profile>>,
+    method: Method,
+    headers: HeaderMap,
+    Path((client, role)): Path<(String, String)>,
+) -> Response {
+    read(&state, method, &headers, &client, Some(&role)).await
+}
+
+async fn read(
+    state: &Profile,
+    method: Method,
+    headers: &HeaderMap,
+    client: &str,
+    role: Option<&str>,
+) -> Response {
     if method != Method::GET {
         return crate::browser_http::method_not_allowed().await;
     }
-    let (tx, _, _) = match administrator::operator(&state, &headers).await {
+    let (tx, _, _) = match administrator::operator(state, headers).await {
         Ok(operator) => operator,
         Err(error) => return *error,
     };
-    catalog(&state, tx, &client)
+    catalog(state, tx, client, role)
         .await
         .unwrap_or_else(|_| internal())
 }
@@ -26,6 +45,7 @@ async fn catalog(
     state: &Profile,
     mut tx: Transaction<'_, Postgres>,
     client: &str,
+    role: Option<&str>,
 ) -> Result<Response, sqlx::Error> {
     let chain = state.blockchain.membership_source().await;
     if let Some(source) = &chain {
@@ -39,6 +59,24 @@ async fn catalog(
     .await?;
     if !active {
         return Ok(admin_permissions::unknown_client(client));
+    }
+    if let Some(key) = role
+        && !crate::token_authorization::valid_role_key(key)
+    {
+        let key = crate::browser_prompt::quoted_string(key);
+        return Ok(crate::login_http::problem(
+            StatusCode::BAD_REQUEST,
+            &format!("invalid role_key {key}: must match [a-z0-9][a-z0-9_-]{{0,47}}"),
+        ));
+    }
+    if let (None, Some(key)) = (&chain, role) {
+        let name = format!("rp:{client}:{key}");
+        let exists = !client.contains('@')
+            && sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT FROM iam_groups WHERE name=$1)")
+                .bind(name)
+                .fetch_one(&mut *tx)
+                .await?;
+        return role_mapping(&mut *tx, client, key, exists).await;
     }
     let groups = if let Some(chain) = chain {
         tx.commit().await?;
@@ -62,7 +100,44 @@ async fn catalog(
              FROM iam_groups g WHERE starts_with(g.name,$1) ORDER BY g.name"
         ).bind(format!("rp:{client}:")).fetch_all(&mut *tx).await?
     };
-    Ok(Json(json!({"client_id":client,"roles":roles(client, groups)})).into_response())
+    let roles = roles(client, groups);
+    match role {
+        None => Ok(Json(json!({"client_id":client,"roles":roles})).into_response()),
+        Some(key) => {
+            role_mapping(
+                &state.pool,
+                client,
+                key,
+                roles.iter().any(|r| r.role_key == key),
+            )
+            .await
+        }
+    }
+}
+
+async fn role_mapping<'a>(
+    db: impl sqlx::PgExecutor<'a>,
+    client: &str,
+    key: &str,
+    exists: bool,
+) -> Result<Response, sqlx::Error> {
+    if !exists {
+        let client = crate::browser_prompt::quoted_string(client);
+        let role = crate::browser_prompt::quoted_string(key);
+        return Ok(crate::login_http::problem(
+            StatusCode::NOT_FOUND,
+            &format!("role {role} not found for client {client}"),
+        ));
+    }
+    let permissions: Vec<String> = sqlx::query_scalar(
+        r#"SELECT permission_key FROM client_role_permissions
+           WHERE client_id=$1 AND role_key=$2 ORDER BY permission_key COLLATE "C""#,
+    )
+    .bind(client)
+    .bind(key)
+    .fetch_all(db)
+    .await?;
+    Ok(Json(json!({"client_id":client,"role_key":key,"permissions":permissions})).into_response())
 }
 
 #[derive(Serialize)]
@@ -94,6 +169,34 @@ fn roles(client: &str, groups: Vec<(String, Option<String>, i64)>) -> Vec<Role<'
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn mapping_is_sorted_and_scoped_to_an_existing_role() {
+        let db = PgPool::connect(&env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = db.begin().await.unwrap();
+        sqlx::raw_sql("CREATE TEMP TABLE client_role_permissions(client_id text, role_key text, permission_key text);
+            INSERT INTO client_role_permissions VALUES ('a','reader','view'),('a','reader','export'),('b','reader','manage'),('a','owner','manage');")
+            .execute(&mut *tx).await.unwrap();
+        let response = role_mapping(&mut *tx, "a", "reader", true).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({"client_id":"a","role_key":"reader","permissions":["export","view"]})
+        );
+        assert_eq!(
+            role_mapping(&mut *tx, "a", "reader", false)
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+    }
 
     #[test]
     fn catalog_projects_only_global_roles_owned_by_the_requested_client() {

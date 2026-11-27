@@ -12,16 +12,17 @@ pub(crate) fn assignment(name: &str) -> Option<(String, Option<Uuid>)> {
         None => (body, None),
     };
     let (client, key) = token.rsplit_once(':')?;
+    (valid_role_key(key) && !client.is_empty()).then(|| (token.to_owned(), organization))
+}
+
+pub(crate) fn valid_role_key(key: &str) -> bool {
     let slug = key.strip_suffix('\n').unwrap_or(key);
-    let valid = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
-    if client.is_empty()
-        || slug.len() > 48
-        || !valid(*slug.as_bytes().first()?)
-        || !slug.bytes().all(|b| valid(b) || matches!(b, b'-' | b'_'))
-    {
-        return None;
-    }
-    Some((token.to_owned(), organization))
+    let alphanumeric = |b: u8| b.is_ascii_digit() || b.is_ascii_lowercase();
+    slug.len() <= 48
+        && slug.bytes().next().is_some_and(alphanumeric)
+        && slug
+            .bytes()
+            .all(|b| alphanumeric(b) || matches!(b, b'-' | b'_'))
 }
 
 type Buckets = BTreeMap<Option<Uuid>, BTreeSet<String>>;
