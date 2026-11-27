@@ -1,0 +1,2 @@
+- [x] Add a transactional migration and exercise uniqueness, isolated ownership and lifecycle cleanup on PostgreSQL.
+- [x] Verify installation against an existing migrated database and document the delivery status.

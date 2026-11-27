@@ -8,6 +8,8 @@ Role-based access control (RBAC) will let an application assign permissions to r
 
 Relationship-based access control (ReBAC) will let an application grant access through relationships between people and resources. A reviewer might be allowed to open a particular submission because it belongs to a collection shared with their team. Applications can require both the reviewer role and access to that submission.
 
+The first ReBAC migration adds client-owned graph storage to an existing PostgreSQL database. It supports relationships to accounts and between application objects. Deleting an account removes its direct relationships. Deleting a client removes its graph. Model management and online permission checks are planned. [PostgreSQL migration](migrations/005_relationship_graphs.sql)
+
 ## Frontend
 
 Pyloros will use the existing frontend source and build. For compatibility testing, run the same frontend artifact against both backends and switch the API destination through deployment routing. Browser workflows must pass with the existing client code.
