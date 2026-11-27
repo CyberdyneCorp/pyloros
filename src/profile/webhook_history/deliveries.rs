@@ -91,7 +91,7 @@ async fn history(tx: &mut Tx<'_>, page: Page) -> sqlx::Result<Response> {
     )
 }
 
-fn delivery(row: &PgRow, id: Uuid, attempts: Vec<Value>) -> sqlx::Result<Value> {
+pub(super) fn delivery(row: &PgRow, id: Uuid, attempts: Vec<Value>) -> sqlx::Result<Value> {
     let status: &str = row.try_get("status")?;
     if !valid_status(status) {
         return Err(sqlx::Error::Decode("invalid stored delivery status".into()));

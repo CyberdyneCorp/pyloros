@@ -256,9 +256,7 @@ pub(in crate::profile) async fn enqueue_event(
     now: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     let event = Uuid::new_v4();
-    let body = crate::admin_audit::ascii_json(
-        &json!({"type":kind,"timestamp":now.to_rfc3339_opts(SecondsFormat::Secs,true),"data":data}),
-    );
+    let body = event_body(kind, data, now);
     sqlx::query(
         "WITH subscriptions AS (
         SELECT id FROM webhook_subscriptions WHERE is_active AND event_types::jsonb ? $4
@@ -275,6 +273,12 @@ pub(in crate::profile) async fn enqueue_event(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+pub(in crate::profile) fn event_body(kind: &str, data: Value, now: DateTime<Utc>) -> String {
+    crate::admin_audit::ascii_json(
+        &json!({"type":kind,"timestamp":now.to_rfc3339_opts(SecondsFormat::Secs,true),"data":data}),
+    )
 }
 
 #[cfg(test)]

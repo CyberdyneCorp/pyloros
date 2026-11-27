@@ -5,11 +5,20 @@ use axum::extract::{Path, RawQuery};
 use sqlx::{Row, postgres::PgRow};
 mod deliveries;
 mod management;
+mod queue;
 type Tx<'a> = Transaction<'a, Postgres>;
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
         .route("/api/v1/admin/webhooks", any(list))
+        .route(
+            "/api/v1/admin/webhooks/{subscription_id}/test",
+            any(queue::perform),
+        )
+        .route(
+            "/api/v1/admin/webhooks/deliveries/{delivery_id}/redeliver",
+            any(queue::perform),
+        )
         .route(
             "/api/v1/admin/webhooks/{subscription_id}",
             any(detail).delete(management::remove),

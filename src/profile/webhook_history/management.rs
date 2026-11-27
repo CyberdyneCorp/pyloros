@@ -58,10 +58,21 @@ async fn run(
         Ok(None) => return missing(),
         Err(_) => return internal(),
     };
+    commit_change(tx, actor, email.as_deref(), id, origin, change).await
+}
+
+pub(super) async fn commit_change(
+    mut tx: Tx<'_>,
+    actor: Uuid,
+    email: Option<&str>,
+    id: Uuid,
+    origin: SessionOrigin<'_>,
+    change: Change,
+) -> Response {
     if crate::admin_audit::append(
         &mut tx,
         change.action,
-        Some((actor, email.as_deref())),
+        Some((actor, email)),
         ("webhook", &id.to_string()),
         change.metadata,
         origin,
@@ -77,10 +88,10 @@ async fn run(
     change.response
 }
 
-struct Change {
-    action: &'static str,
-    metadata: Value,
-    response: Response,
+pub(super) struct Change {
+    pub(super) action: &'static str,
+    pub(super) metadata: Value,
+    pub(super) response: Response,
 }
 
 async fn delete(tx: &mut Tx<'_>, id: Uuid) -> sqlx::Result<Option<Change>> {
