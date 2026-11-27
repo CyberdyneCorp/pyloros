@@ -1,0 +1,1 @@
+Apply exact filters to the count and page queries. Read the stored actor identity so deleted accounts and delegated clients remain distinguishable. Preserve historical JSON metadata types and read the newest events first.

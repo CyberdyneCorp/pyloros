@@ -1,0 +1,2 @@
+- [x] Implement the authenticated directory and query validation.
+- [x] Compare PostgreSQL results, errors, original clients and historical metadata with the reference service.
