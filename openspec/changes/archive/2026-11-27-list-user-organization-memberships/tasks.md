@@ -1,0 +1,2 @@
+- [x] Serve the PostgreSQL organization membership inventory.
+- [x] Compare authorization, errors, ordering, directory fields and existing clients.

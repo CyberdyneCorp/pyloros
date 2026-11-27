@@ -1,0 +1,1 @@
+Authorize the operator before validating the target account. Read explicit membership records joined to active organizations and order by case-insensitive short name. Return the public directory fields and format timestamps using the existing profile convention.
