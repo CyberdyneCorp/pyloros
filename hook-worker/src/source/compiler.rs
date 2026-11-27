@@ -1,6 +1,6 @@
 //! Detect context errors that arise after parsing and restricted-language validation.
 use ruff_python_ast::{
-    AnyNodeRef as Node, Stmt,
+    AnyNodeRef as Node, Comprehension, Parameters, Stmt,
     visitor::source_order::{SourceOrderVisitor, TraversalSignal},
 };
 use ruff_text_size::{Ranged, TextRange};
@@ -29,12 +29,85 @@ fn scope(node: Node<'_>) -> Option<(Scope, TextRange)> {
 }
 
 #[derive(Default)]
-struct Context {
+struct Context<'a> {
+    module_names: HashSet<&'a str>,
+    namespaces: Vec<Namespace<'a>>,
     scopes: Vec<(Scope, TextRange)>,
     invalid: bool,
 }
 
-impl Context {
+struct Namespace<'a> {
+    body: TextRange,
+    outer_iter: Option<TextRange>,
+    names: HashSet<&'a str>,
+}
+
+impl<'a> Namespace<'a> {
+    fn new(body: TextRange, params: Option<&'a Parameters>) -> Self {
+        Self {
+            body,
+            outer_iter: None,
+            names: params
+                .into_iter()
+                .flat_map(|p| p.iter())
+                .map(|p| p.name().as_str())
+                .collect(),
+        }
+    }
+
+    fn comprehension(body: TextRange, clauses: &[Comprehension]) -> Self {
+        Self {
+            body,
+            outer_iter: clauses.first().map(|c| c.iter.range()),
+            names: HashSet::new(),
+        }
+    }
+
+    fn for_node(node: Node<'a>) -> Option<Self> {
+        Some(match node {
+            Node::StmtFunctionDef(f) => Self::new(body_range(&f.body)?, Some(&f.parameters)),
+            Node::StmtClassDef(c) => Self::new(body_range(&c.body)?, None),
+            Node::ExprLambda(f) => Self::new(f.body.range(), f.parameters.as_deref()),
+            Node::ExprListComp(c) => Self::comprehension(node.range(), &c.generators),
+            Node::ExprDictComp(c) => Self::comprehension(node.range(), &c.generators),
+            Node::ExprSetComp(c) => Self::comprehension(node.range(), &c.generators),
+            Node::ExprGenerator(c) => Self::comprehension(node.range(), &c.generators),
+            _ => return None,
+        })
+    }
+}
+
+impl<'a> Context<'a> {
+    fn names(&mut self, node: Node<'_>) -> &mut HashSet<&'a str> {
+        let namespace = self.namespaces.iter_mut().rev().find(|n| {
+            n.body.contains_range(node.range())
+                && match n.outer_iter {
+                    None => true,
+                    Some(iter) => !iter.contains_range(node.range()),
+                }
+        });
+        namespace.map_or(&mut self.module_names, |n| &mut n.names)
+    }
+
+    fn conflicting_declaration(&mut self, node: Node<'a>) -> bool {
+        let name = match node {
+            Node::StmtGlobal(s) => {
+                let names = self.names(node);
+                return s.names.iter().any(|name| names.contains(name.as_str()));
+            }
+            Node::ExprName(n) => n.id.as_str(),
+            Node::StmtFunctionDef(f) => f.name.as_str(),
+            Node::StmtClassDef(c) => c.name.as_str(),
+            Node::ExceptHandlerExceptHandler(h) => match &h.name {
+                Some(name) => name.as_str(),
+                None => return false,
+            },
+            _ => return false,
+        };
+        self.names(node).insert(name);
+        false
+    }
+
     // Loop else suites, decorators and parameter defaults run in the enclosing scope.
     fn allows(&self, node: Node<'_>, wanted: Scope) -> bool {
         for &(kind, body) in self.scopes.iter().rev() {
@@ -51,19 +124,30 @@ impl Context {
     }
 }
 
-impl<'a> SourceOrderVisitor<'a> for Context {
+impl<'a> SourceOrderVisitor<'a> for Context<'a> {
     fn enter_node(&mut self, node: Node<'a>) -> TraversalSignal {
+        self.invalid |= self.conflicting_declaration(node);
         self.invalid |= match node {
             Node::StmtReturn(_) | Node::ExprYield(_) | Node::ExprYieldFrom(_) => {
                 !self.allows(node, Scope::Function)
             }
             Node::StmtBreak(_) | Node::StmtContinue(_) => !self.allows(node, Scope::Loop),
+            Node::Arguments(a) => {
+                let mut keys = HashSet::new();
+                a.keywords
+                    .iter()
+                    .filter_map(|k| k.arg.as_ref())
+                    .any(|k| !keys.insert(k.as_str()))
+            }
             Node::Parameters(p) => {
                 let mut names = HashSet::new();
                 p.iter().any(|param| !names.insert(param.name().as_str()))
             }
             _ => false,
         };
+        if let Some(namespace) = Namespace::for_node(node) {
+            self.namespaces.push(namespace);
+        }
         if let Some(scope) = scope(node) {
             self.scopes.push(scope);
         }
@@ -71,6 +155,18 @@ impl<'a> SourceOrderVisitor<'a> for Context {
     }
 
     fn leave_node(&mut self, node: Node<'a>) {
+        if matches!(
+            node,
+            Node::StmtFunctionDef(_)
+                | Node::StmtClassDef(_)
+                | Node::ExprLambda(_)
+                | Node::ExprListComp(_)
+                | Node::ExprDictComp(_)
+                | Node::ExprSetComp(_)
+                | Node::ExprGenerator(_)
+        ) {
+            self.namespaces.pop();
+        }
         if scope(node).is_some() {
             self.scopes.pop();
         }
@@ -81,4 +177,31 @@ pub(super) fn fails(body: &[Stmt]) -> bool {
     let mut context = Context::default();
     context.visit_body(body);
     context.invalid
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::inspect;
+
+    #[test]
+    fn global_conflicts_use_the_current_namespace() {
+        for (source, expected) in [
+            ("fncall(x=1, x=2)", "compiler_error"),
+            ("def f(a):\n    global a", "compiler_error"),
+            ("x = 1\nglobal x", "compiler_error"),
+            ("[x for x in xs]\nglobal xs", "compiler_error"),
+            ("[x for x in xs]\nglobal x", "parsed"),
+            ("def f():\n    x=1\nglobal x", "parsed"),
+            (
+                "def f():\n    def g(x=y): pass\n    global y",
+                "compiler_error",
+            ),
+        ] {
+            assert_eq!(
+                inspect(source.as_bytes()).unwrap()["status"],
+                expected,
+                "{source}"
+            );
+        }
+    }
 }

@@ -176,6 +176,56 @@ impl Policy<'_> {
 }
 
 impl<'a> SourceOrderVisitor<'a> for Policy<'_> {
+    // The legacy AST groups dictionary keys and positional defaults into separate fields.
+    fn visit_expr(&mut self, expr: &'a Expr) {
+        match expr {
+            Expr::If(e) => {
+                self.visit_expr(&e.test);
+                self.visit_expr(&e.body);
+                self.visit_expr(&e.orelse);
+            }
+            Expr::Dict(d) => {
+                for key in d.items.iter().filter_map(|item| item.key.as_ref()) {
+                    self.visit_expr(key);
+                }
+                for item in &d.items {
+                    self.visit_expr(&item.value);
+                }
+            }
+            _ => ruff_python_ast::visitor::source_order::walk_expr(self, expr),
+        }
+    }
+
+    fn visit_parameters(&mut self, params: &'a Parameters) {
+        for p in params.posonlyargs.iter().chain(&params.args) {
+            self.visit_parameter(&p.parameter);
+        }
+        if let Some(p) = &params.vararg {
+            self.visit_parameter(p);
+        }
+        for p in &params.kwonlyargs {
+            self.visit_parameter(&p.parameter);
+        }
+        for expr in params
+            .kwonlyargs
+            .iter()
+            .filter_map(|p| p.default.as_deref())
+        {
+            self.visit_expr(expr);
+        }
+        if let Some(p) = &params.kwarg {
+            self.visit_parameter(p);
+        }
+        for expr in params
+            .posonlyargs
+            .iter()
+            .chain(&params.args)
+            .filter_map(|p| p.default.as_deref())
+        {
+            self.visit_expr(expr);
+        }
+    }
+
     fn enter_node(&mut self, node: Node<'a>) -> TraversalSignal {
         if let Some(kind) = prohibited_statement(node) {
             self.report(node, format_args!("{kind} statements are not allowed."));

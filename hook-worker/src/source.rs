@@ -1,15 +1,13 @@
 //! First-stage checks for stored hook source. Parsing never runs the module.
 mod compiler;
 mod policy;
+mod syntax;
 
 use ruff_python_ast::{
     AnyNodeRef, ModModule, PySourceType,
-    token::{TokenKind, Tokens},
     visitor::source_order::{SourceOrderVisitor, TraversalSignal},
 };
-use ruff_python_parser::{ParseError, ParseErrorType, Parsed, parse_unchecked_source};
-use ruff_source_file::LineIndex;
-use ruff_text_size::Ranged;
+use ruff_python_parser::{Parsed, parse_unchecked_source};
 use serde_json::{Value, json};
 use std::io::Read;
 
@@ -55,67 +53,12 @@ impl<'a> SourceOrderVisitor<'a> for Prescan {
     }
 }
 
-fn missing_suite(source: &str, tokens: &Tokens, error: &ParseError) -> Option<String> {
-    let ParseErrorType::OtherError(message) = &error.error else {
-        return None;
-    };
-    let kind = message.strip_prefix("Expected an indented block after ")?;
-    let prefix = tokens.before(error.location.start());
-    let colon = prefix
-        .iter()
-        .rposition(|token| token.kind() == TokenKind::Colon)?;
-    let stmt = prefix[..colon]
-        .rsplit(|token| token.kind() == TokenKind::Newline)
-        .next()?;
-    let mut significant = stmt.iter().filter(|token| {
-        !token.kind().is_trivia() && !matches!(token.kind(), TokenKind::Indent | TokenKind::Dedent)
-    });
-    let first = significant.next()?;
-    let label = match first.kind() {
-        TokenKind::Class => "class definition".to_owned(),
-        TokenKind::Except
-            if significant
-                .next()
-                .is_some_and(|t| t.kind() == TokenKind::Star) =>
-        {
-            "'except*' statement".to_owned()
-        }
-        _ => kind
-            .replace('`', "'")
-            .replace(" clause", " statement")
-            .replace(" block", " statement"),
-    };
-    let line = LineIndex::from_source_text(source).line_index(first.start());
-    Some(format!(
-        "syntax error: expected an indented block after {label} on line {line}"
-    ))
-}
-
 fn rejection(source: &str, parsed: &Parsed<ModModule>) -> Option<String> {
+    if source.contains('\0') {
+        return Some("syntax error: source code string cannot contain null bytes".into());
+    }
     if let Some(error) = parsed.errors().first() {
-        if let Some(message) = missing_suite(source, parsed.tokens(), error) {
-            return Some(message);
-        }
-        let mut brackets = Vec::new();
-        for token in parsed.tokens().iter() {
-            match token.kind() {
-                TokenKind::Lpar => brackets.push('('),
-                TokenKind::Lsqb => brackets.push('['),
-                TokenKind::Lbrace => brackets.push('{'),
-                TokenKind::Rpar | TokenKind::Rsqb | TokenKind::Rbrace => {
-                    brackets.pop();
-                }
-                _ => {}
-            }
-        }
-        let message = if matches!(error.error, ParseErrorType::UnexpectedIndentation) {
-            "unexpected indent".to_owned()
-        } else if let Some(open) = brackets.last() {
-            format!("'{open}' was never closed")
-        } else {
-            "invalid syntax".to_owned()
-        };
-        return Some(format!("syntax error: {message}"));
+        return Some(syntax::diagnostic(source, parsed.tokens(), error));
     }
     let mut scan = Prescan::default();
     for stmt in &parsed.syntax().body {
