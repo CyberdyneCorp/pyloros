@@ -5,6 +5,7 @@ use serde_json::value::RawValue;
 
 enum Shape {
     Context,
+    Integer,
     Identifier,
     String,
     Object(&'static [Field]),
@@ -128,6 +129,10 @@ impl<'a> Errors<'a> {
                 }
                 Ok(Value::Array(values))
             }
+            Shape::Integer => match integer_text(raw) {
+                Ok(number) => Ok(json!(number)),
+                Err((kind, msg)) => self.reject(raw, loc, kind, msg),
+            },
             Shape::Context => self.context(raw, loc),
             Object(fields) => self.object(raw, loc, fields),
         }
@@ -177,6 +182,65 @@ impl<'a> Errors<'a> {
         }
         Ok(Value::Object(result))
     }
+}
+
+// Keep the normalized digits for the role-limit error, including numbers beyond i128.
+fn integer_text(raw: &RawValue) -> Result<String, (&'static str, &'static str)> {
+    let text = raw.get();
+    let size_error = (
+        "int_parsing_size",
+        "Unable to parse input string as an integer, exceeded maximum size",
+    );
+    let digits = match text.as_bytes()[0] {
+        b'"' => crate::query::integer(&serde_json::from_str::<String>(text).expect("JSON string"))?,
+        b't' => return Ok("1".into()),
+        b'f' => return Ok("0".into()),
+        b'-' | b'0'..=b'9' if text.contains(['.', 'e', 'E']) => {
+            let n = text.parse::<f64>().map_err(|_| size_error)?;
+            if n.abs() >= -(i64::MIN as f64) {
+                return Err(size_error);
+            }
+            if n.fract() != 0.0 {
+                return Err((
+                    "int_from_float",
+                    "Input should be a valid integer, got a number with a fractional part",
+                ));
+            }
+            return Ok((n as i64).to_string());
+        }
+        b'-' | b'0'..=b'9' => text.to_owned(),
+        _ => return Err(("int_type", "Input should be a valid integer")),
+    };
+    let magnitude = digits
+        .trim_start_matches(['+', '-'])
+        .trim_start_matches('0');
+    if magnitude.is_empty() {
+        return Ok("0".into());
+    }
+    if digits.starts_with('-') {
+        Ok(format!("-{magnitude}"))
+    } else {
+        Ok(magnitude.into())
+    }
+}
+
+pub(super) fn assumption(
+    raw: &RawValue,
+    path: Result<Uuid, Value>,
+) -> Result<(Uuid, Uuid, String), Box<Response>> {
+    const REQUEST: Shape = Object(&[
+        Field("identity_id", &Shape::Identifier, Required),
+        Field("duration_s", &Shape::Integer, Required),
+    ]);
+    let (role, doc) = project(raw, &REQUEST, Some(path))?;
+    Ok((
+        role.expect("role path supplied"),
+        serde_json::from_value(doc["identity_id"].clone()).expect("validated identity"),
+        doc["duration_s"]
+            .as_str()
+            .expect("validated integer")
+            .into(),
+    ))
 }
 
 pub(super) fn relation_ids(

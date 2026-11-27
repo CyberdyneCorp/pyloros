@@ -66,13 +66,27 @@ async fn postgres(
     let sessions = rows
         .into_iter()
         .map(|(session, identity, start, expiry)| {
-            json!({
-                "id":session, "role_id":id,"identity_id":identity,"active":true,
-                "start_at":timestamp(start),"expiry_at":timestamp(expiry)
-            })
+            active_session(session, id, identity, start, expiry)
         })
         .collect();
     Ok(Some(sessions))
+}
+
+pub(super) fn active_session(
+    id: Uuid,
+    role: Uuid,
+    identity: Uuid,
+    start: DateTime<Utc>,
+    expiry: DateTime<Utc>,
+) -> Value {
+    json!({
+        "id":id,
+        "role_id":role,
+        "identity_id":identity,
+        "start_at":timestamp(start),
+        "expiry_at":timestamp(expiry),
+        "active":true
+    })
 }
 
 // The two role-session route templates intersect at /roles/sessions/sessions.

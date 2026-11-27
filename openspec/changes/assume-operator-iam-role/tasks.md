@@ -1,2 +1,0 @@
-- [ ] Implement provider-selected role assumption, duration validation and PostgreSQL session and audit persistence.
-- [ ] Verify cross-service access, inventory, revocation, existing clients, failures and simultaneous grants.

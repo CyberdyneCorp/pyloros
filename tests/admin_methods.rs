@@ -79,6 +79,8 @@ async fn role_session_routes_preserve_method_priority_at_their_intersection() {
     for (method, path, status, allowed) in [
         (Method::GET, "sessions/sessions", 401, None),
         (Method::DELETE, "sessions/sessions", 401, None),
+        (Method::POST, "sessions/sessions", 401, None),
+        (Method::POST, "sessions/unknown", 405, Some("DELETE")),
         (Method::HEAD, "sessions/sessions", 405, Some("GET")),
         (Method::PUT, "sessions/sessions", 405, Some("GET")),
         (Method::GET, "sessions/unknown", 405, Some("DELETE")),

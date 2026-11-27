@@ -489,12 +489,16 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/roles/{role_id}/sessions",
-            any(admin_inventory::role_sessions::list),
+            any(admin_inventory::role_sessions::list)
+                .post(admin_inventory::assume_role::create)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
             "/api/v1/admin/roles/sessions/{session_id}",
             any(admin_inventory::role_sessions::session_method)
-                .delete(admin_inventory::role_sessions::revoke),
+                .delete(admin_inventory::role_sessions::revoke)
+                .post(admin_inventory::assume_role::create)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route("/api/v1/admin/roles", any(admin_inventory::roles))
         .route(
