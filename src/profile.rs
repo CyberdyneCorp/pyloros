@@ -361,7 +361,10 @@ fn build_routes(
         production,
     };
     Ok(Router::new()
-        .route("/api/v1/admin/settings/blockchain", any(blockchain::get))
+        .route(
+            "/api/v1/admin/settings/blockchain",
+            any(blockchain::get).put(blockchain::update),
+        )
         .route("/api/v1/admin/blockchain/health", any(blockchain::health))
         .route(
             "/api/v1/admin/settings/auth-policy",

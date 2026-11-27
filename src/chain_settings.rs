@@ -10,6 +10,7 @@ use zeroize::Zeroizing;
 #[derive(Default)]
 pub struct ChainSettings {
     state: RwLock<Configuration>,
+    pub(crate) admin_updates: tokio::sync::Mutex<()>,
 }
 
 #[derive(Default)]
@@ -33,7 +34,7 @@ pub struct View {
     enabled: bool,
     rpc_url: Option<String>,
     has_private_key: bool,
-    signer_address: Option<String>,
+    pub(crate) signer_address: Option<String>,
     identity_contract_address: Option<String>,
     policy_contract_address: Option<String>,
     group_contract_address: Option<String>,

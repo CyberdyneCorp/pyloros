@@ -66,3 +66,22 @@ The service SHALL allow an authenticated administrator to check whether the sele
 
 - **WHEN** the provider answers successfully after an earlier RPC error
 - **THEN** the next health read reports available and clears the error
+
+### Requirement: Operator chain settings updates
+
+The service SHALL accept partial updates from an authenticated administrator and report the resulting signer address. The audit record SHALL contain sorted names of submitted settings and secret fields. Credentials SHALL stay out of the audit record and the success response.
+
+#### Scenario: Mnemonic and raw key submitted together
+
+- **WHEN** the submitted mnemonic is valid
+- **THEN** the signer is derived from the Ethereum account at the requested index, with index zero as the default
+
+#### Scenario: Invalid mnemonic
+
+- **WHEN** mnemonic derivation fails
+- **THEN** the service responds with HTTP 400, preserves the prior configuration and writes no settings-change audit event
+
+#### Scenario: Unspecified and null fields
+
+- **WHEN** an operator supplies a partial update
+- **THEN** omitted and null values retain their previous settings
