@@ -67,7 +67,7 @@ fn identity(
 }
 
 impl Login {
-    pub(super) fn configured(
+    pub(crate) fn configured(
         pool: PgPool,
         production: bool,
     ) -> Result<Option<Self>, Box<dyn Error>> {

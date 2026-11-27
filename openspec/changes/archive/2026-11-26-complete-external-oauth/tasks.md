@@ -3,5 +3,5 @@
 - [x] Implement provider exchange and profile resolution for Google, Microsoft and the development provider.
 - [x] Resolve provider subjects and verified email matches, provision managed wallets, and verify account reclamation and concurrent sign-ins.
 - [x] Issue one-time CLI codes in the callback transaction and verify redemption against the existing CLI exchange endpoint.
-- [ ] Connect the HTTP callback to account resolution, browser session or CLI code issuance, and authentication audit.
-- [ ] Verify mixed-backend browser and CLI flows, concurrent completion, rollback, redirect policy changes and inactive-account handling.
+- [x] Connect the HTTP callback to account resolution, browser session or CLI code issuance, and authentication audit.
+- [x] Verify mixed-backend browser and CLI flows, concurrent completion, rollback, redirect policy changes and inactive-account handling.

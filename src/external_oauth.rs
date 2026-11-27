@@ -1,5 +1,6 @@
 //! External identity provider authorization and shared callback state.
 pub mod account;
+mod callback;
 pub mod cli_return;
 mod input;
 pub mod provider;
@@ -35,12 +36,28 @@ struct Service {
     ttl: i64,
     cli: bool,
     forbidden_stub: bool,
+    login: Option<Arc<crate::login_http::Login>>,
+    wallet_key: Option<crate::key_encryption::KeyEncryptionKey>,
+    post_login: Option<String>,
+    proxies: usize,
+    webhooks: bool,
 }
 
 pub async fn routes(
     pool: PgPool,
     environment: &str,
     interval: Duration,
+) -> Result<Router, Box<dyn Error>> {
+    let login = crate::login_http::Login::configured(pool.clone(), environment == "production")?
+        .map(Arc::new);
+    with_login(pool, environment, interval, login).await
+}
+
+pub(crate) async fn with_login(
+    pool: PgPool,
+    environment: &str,
+    interval: Duration,
+    login: Option<Arc<crate::login_http::Login>>,
 ) -> Result<Router, Box<dyn Error>> {
     let stub = flag("OAUTH_STUB_ENABLED")?;
     let mut providers = HashMap::new();
@@ -82,10 +99,24 @@ pub async fn routes(
         allowed,
         ttl: crate::token_runtime::number("OAUTH_STATE_TTL_SECONDS", 600)?,
         cli: flag("CLI_LOGIN_ENABLED")?,
+        login,
+        wallet_key: env::var("MASTER_KEY")
+            .ok()
+            .map(|s| crate::key_encryption::KeyEncryptionKey::new(&s))
+            .transpose()?,
+        post_login: env::var("OAUTH_POST_LOGIN_URL")
+            .ok()
+            .filter(|s| !s.is_empty()),
+        proxies: crate::token_runtime::number("TRUSTED_PROXY_COUNT", 0)?.try_into()?,
+        webhooks: env::var_os("WEBHOOKS_ENABLED").is_none() || flag("WEBHOOKS_ENABLED")?,
         forbidden_stub: stub && environment == "production",
     };
     Ok(Router::new()
         .route("/api/v1/auth/oauth/{provider}", any(start))
+        .route(
+            "/api/v1/auth/oauth/callback/{provider}",
+            any(callback::handle),
+        )
         .with_state(Arc::new(service)))
 }
 

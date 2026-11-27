@@ -120,6 +120,11 @@ pub(crate) struct AuditSubject {
 }
 
 pub(crate) enum AuditActivity<'a> {
+    Federated {
+        identity: Option<(&'a str, &'a str)>,
+        reason: Option<&'a str>,
+        details: serde_json::Value,
+    },
     Grant {
         client: &'a str,
         reason: Option<&'static str>,
@@ -184,7 +189,22 @@ pub(crate) async fn write_activity<'e>(
         activity,
         AuditActivity::FactorLogin(_, _, _) | AuditActivity::PasskeyLogin(_, _)
     );
+    let federated_identity = match &activity {
+        AuditActivity::Federated { identity, .. } => *identity,
+        _ => None,
+    };
     let (class, activity, protocol, client, outcome, reason, details) = match activity {
+        AuditActivity::Federated {
+            reason, details, ..
+        } => (
+            "authentication",
+            "logon",
+            Some("oauth2"),
+            "",
+            outcome(reason.is_some()),
+            reason,
+            details,
+        ),
         AuditActivity::Grant {
             client,
             reason,
@@ -476,6 +496,11 @@ pub(crate) async fn write_activity<'e>(
         "user_agent": origin.user_agent.filter(|s| !s.is_empty()).map(|s| s.chars().take(512).collect::<String>()),
         "details": details
     });
+    if let Some((provider, identifier)) = federated_identity {
+        event["subject_format"] = json!("iss_sub");
+        event["subject_issuer"] = json!(provider.chars().take(255).collect::<String>());
+        event["subject_identifier"] = json!(identifier.chars().take(255).collect::<String>());
+    }
     event.sort_all_objects();
     let digest = Sha256::digest(event.to_string().as_bytes());
     event["content_hash"] = json!(format!("{digest:x}"));

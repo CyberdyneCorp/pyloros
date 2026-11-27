@@ -1,6 +1,7 @@
 //! Password login for the PostgreSQL identity backend.
 mod config;
 mod end_session;
+mod federated;
 mod input;
 pub(crate) use input::email_field;
 mod logout;
@@ -37,7 +38,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::{env, error::Error, net::SocketAddr, sync::Arc};
 use uuid::Uuid;
 
-struct Login {
+pub(crate) struct Login {
     signed_out: String,
     passkeys: Option<passkey::Policy>,
     pool: PgPool,
@@ -63,6 +64,20 @@ struct Login {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let login = Login::configured(pool, production)?.map(Arc::new);
+    with_state(login)
+}
+
+pub async fn routes_with_external(
+    pool: PgPool,
+    environment: &str,
+    interval: std::time::Duration,
+) -> Result<Router, Box<dyn Error>> {
+    let login = Login::configured(pool.clone(), environment == "production")?.map(Arc::new);
+    let router = with_state(login.clone())?;
+    Ok(router.merge(crate::external_oauth::with_login(pool, environment, interval, login).await?))
+}
+
+fn with_state(login: Option<Arc<Login>>) -> Result<Router, Box<dyn Error>> {
     let end_session = if crate::config::flag("OIDC_ENABLED")? {
         any(end_session::handle)
     } else {

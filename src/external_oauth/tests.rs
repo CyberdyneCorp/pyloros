@@ -25,6 +25,11 @@ async fn only_valid_cli_requests_persist_callback_state() {
         ttl: 60,
         cli: true,
         forbidden_stub: false,
+        login: None,
+        wallet_key: None,
+        post_login: None,
+        proxies: 0,
+        webhooks: false,
     });
     let request = |query: String| {
         start(
