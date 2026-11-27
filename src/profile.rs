@@ -1,4 +1,5 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
+mod admin_client_roles;
 mod admin_clients;
 mod admin_fields;
 mod admin_mfa;
@@ -378,6 +379,10 @@ fn build_routes(
         .route(
             "/api/v1/admin/clients/{client_id}/permissions",
             any(admin_permissions::list),
+        )
+        .route(
+            "/api/v1/admin/clients/{client_id}/roles",
+            any(admin_client_roles::list),
         )
         .route("/api/v1/admin/blockchain/health", any(blockchain::health))
         .route(

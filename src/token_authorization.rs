@@ -5,18 +5,19 @@ use sqlx::{Acquire, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
-fn assignment(name: &str) -> Option<(String, Option<Uuid>)> {
+pub(crate) fn assignment(name: &str) -> Option<(String, Option<Uuid>)> {
     let body = name.strip_prefix("rp:")?;
     let (token, organization) = match body.split_once('@') {
         Some((token, id)) => (token, Some(Uuid::parse_str(id).ok()?)),
         None => (body, None),
     };
     let (client, key) = token.rsplit_once(':')?;
+    let slug = key.strip_suffix('\n').unwrap_or(key);
     let valid = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
     if client.is_empty()
-        || key.len() > 48
-        || !valid(*key.as_bytes().first()?)
-        || !key.bytes().all(|b| valid(b) || matches!(b, b'-' | b'_'))
+        || slug.len() > 48
+        || !valid(*slug.as_bytes().first()?)
+        || !slug.bytes().all(|b| valid(b) || matches!(b, b'-' | b'_'))
     {
         return None;
     }

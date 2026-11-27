@@ -1,0 +1,2 @@
+- [x] Serve client role inventory and verify isolation and ordering.
+- [x] Compare PostgreSQL and chain responses and exercise the existing clients.

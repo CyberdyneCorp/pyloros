@@ -50,10 +50,17 @@ impl ChainSettings {
 
 type TokenId = <sol!(uint256) as alloy_sol_types::SolType>::RustType;
 
+#[derive(Debug, Clone)]
+struct Group {
+    name: String,
+    description: String,
+    members: Vec<TokenId>,
+}
+
 #[derive(Default)]
 struct Inventory {
     identities: Vec<TokenId>,
-    groups: Vec<(String, Vec<TokenId>)>,
+    groups: Vec<Group>,
 }
 
 impl Inventory {
@@ -63,8 +70,8 @@ impl Inventory {
         }
         self.groups
             .into_iter()
-            .filter(|(_, members)| members.contains(&token))
-            .map(|(name, _)| name)
+            .filter(|g| g.members.contains(&token))
+            .map(|g| g.name)
             .collect()
     }
 }
@@ -74,6 +81,11 @@ enum ReadError {
     Failure,
     Transport,
     Reverted,
+}
+
+pub(crate) enum SnapshotError {
+    Deadline,
+    Unavailable,
 }
 
 impl Chain {
@@ -111,13 +123,32 @@ impl Chain {
         let Some(id) = id else {
             return Ok(Some(Vec::new()));
         };
-        let inventory = tokio::time::timeout(Duration::from_secs(60), self.inventory())
-            .await
-            .ok()
-            .and_then(Result::ok);
+        let inventory = self.snapshot().await.ok();
         Ok(inventory.map(|i| {
             u32::try_from(id).map_or_else(|_| Vec::new(), |n| i.memberships(TokenId::from(n)))
         }))
+    }
+
+    async fn snapshot(&self) -> Result<Inventory, SnapshotError> {
+        tokio::time::timeout(Duration::from_secs(60), self.inventory())
+            .await
+            .map_err(|_| SnapshotError::Deadline)?
+            .map_err(|_| SnapshotError::Unavailable)
+    }
+
+    pub(crate) async fn group_catalog(
+        &self,
+    ) -> Result<Vec<(String, Option<String>, i64)>, SnapshotError> {
+        Ok(self
+            .snapshot()
+            .await?
+            .groups
+            .into_iter()
+            .map(|g| {
+                let description = (!g.description.is_empty()).then_some(g.description);
+                (g.name, description, g.members.len() as i64)
+            })
+            .collect())
     }
 
     async fn inventory(&self) -> Result<Inventory, ReadError> {
@@ -137,7 +168,11 @@ impl Chain {
                 }
                 Err(_) => Vec::new(),
             };
-            inventory.groups.push((entry.name, members));
+            inventory.groups.push(Group {
+                name: entry.name,
+                description: entry.description,
+                members,
+            });
         }
         Ok(inventory)
     }
@@ -239,7 +274,11 @@ mod tests {
     #[test]
     fn role_groups_require_an_identity_in_the_same_inventory() {
         let token = TokenId::from(17);
-        let groups = vec![("app:owner".to_owned(), vec![token])];
+        let groups = vec![Group {
+            name: "app:owner".into(),
+            description: String::new(),
+            members: vec![token],
+        }];
         assert!(
             Inventory {
                 identities: vec![],
@@ -309,7 +348,9 @@ mod tests {
         });
         let inventory = chain.inventory().await.unwrap();
         let token = TokenId::from(17);
-        assert_eq!(inventory.groups, vec![("rp:app:owner".into(), vec![token])]);
+        assert_eq!(inventory.groups.len(), 1);
+        assert_eq!(inventory.groups[0].name, "rp:app:owner");
+        assert_eq!(inventory.groups[0].members, vec![token]);
         assert!(inventory.memberships(token).is_empty());
         server.abort();
     }

@@ -39,11 +39,7 @@ async fn catalog(
     .fetch_all(&mut **tx)
     .await?;
     if rows.is_empty() {
-        let name = crate::browser_prompt::quoted_string(client);
-        return Ok(crate::login_http::problem(
-            StatusCode::NOT_FOUND,
-            &format!("unknown OAuth client {name}"),
-        ));
+        return Ok(unknown_client(client));
     }
     let mut permissions = Vec::new();
     for row in rows {
@@ -57,6 +53,14 @@ async fn catalog(
         }
     }
     Ok(Json(json!({"client_id":client,"permissions":permissions})).into_response())
+}
+
+pub(super) fn unknown_client(client: &str) -> Response {
+    let name = crate::browser_prompt::quoted_string(client);
+    crate::login_http::problem(
+        StatusCode::NOT_FOUND,
+        &format!("unknown OAuth client {name}"),
+    )
 }
 
 #[cfg(test)]
