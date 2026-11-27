@@ -485,6 +485,12 @@ fn build_routes(
             any(admin_inventory::delete_only).delete(admin_inventory::detach_user_policy),
         )
         .route(
+            "/api/v1/admin/identities",
+            any(crate::token_http::post_only)
+                .post(admin_inventory::create_identity::create)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
             "/api/v1/admin/identities/{identity_id}",
             any(admin_inventory::boundary::lookup),
         )

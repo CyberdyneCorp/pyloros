@@ -15,6 +15,7 @@ struct Field(&'static str, &'static Shape, Presence);
 use Presence::{DefaultList, Nullable, Required};
 enum Presence {
     DefaultObject,
+    DefaultText(&'static str),
     Required,
     Nullable,
     DefaultList,
@@ -172,6 +173,7 @@ impl<'a> Errors<'a> {
             let value = match (source.get(*key), presence) {
                 (None, Required) => self.reject(raw, loc, "missing", "Field required")?,
                 (None, Presence::DefaultObject) => json!({}),
+                (None, Presence::DefaultText(text)) => json!(text),
                 (None, DefaultList) => json!([]),
                 (None, Nullable) => Value::Null,
                 (Some(v), Nullable) if v.get() == "null" => Value::Null,
@@ -267,6 +269,20 @@ pub(super) fn evaluation(raw: &RawValue) -> Result<super::evaluation::Request, B
     ]);
     let (_, doc) = project(raw, &REQUEST, None)?;
     serde_json::from_value(doc).map_err(|_| Box::new(internal()))
+}
+
+pub(super) fn identity(raw: &RawValue) -> Result<super::create_identity::Request, Box<Response>> {
+    const REQUEST: Shape = Object(&[
+        Field("user_id", &Shape::Identifier, Nullable),
+        Field("owner_address", &Text, Nullable),
+        Field("public_key", &Text, Nullable),
+        Field("email", &Text, Nullable),
+        Field("metadata_uri", &Text, Nullable),
+        Field("transfer_mode", &Text, Presence::DefaultText("soulbound")),
+        Field("status", &Text, Presence::DefaultText("active")),
+    ]);
+    let (_, body) = project(raw, &REQUEST, None)?;
+    serde_json::from_value(body).map_err(|_| Box::new(internal()))
 }
 
 pub(super) fn role(raw: &RawValue) -> Result<Value, Box<Response>> {

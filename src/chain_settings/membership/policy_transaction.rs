@@ -32,6 +32,7 @@ sol! {
     function addMember(uint256 groupId,uint256 identityId);
     function removeMember(uint256 groupId,uint256 identityId);
     function deleteGroup(uint256 id);
+    function mint(address owner,string publicKey,string email,string metadataURI);
     function createRole(string name,string description,uint256 duration);
     function createGroup(string name,string description);
 }
@@ -331,6 +332,23 @@ impl Chain {
             _ => self.policy.as_deref(),
         };
         self.prepare_contract(address, call).await
+    }
+
+    pub(crate) async fn prepare_identity_creation(
+        &self,
+        owner: &str,
+        public_key: &str,
+        metadata_uri: &str,
+    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+        validate_address(owner).map_err(|_| PrepareError::Invalid)?;
+        let call = mintCall {
+            owner: owner.parse().map_err(|_| PrepareError::Invalid)?,
+            publicKey: public_key.into(),
+            email: String::new(),
+            metadataURI: metadata_uri.into(),
+        };
+        self.prepare_contract(self.identity.as_deref(), call.abi_encode())
+            .await
     }
 
     pub(crate) async fn prepare_role_creation(

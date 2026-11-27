@@ -1,0 +1,1 @@
+Validate the optional user identifier, identity attributes, lifecycle status and transfer mode. With PostgreSQL, commit the identity and audit event together. With chain IAM, construct a mint request using only the owner address, public key and metadata URI. Keep the contract email argument empty.
