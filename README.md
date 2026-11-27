@@ -89,6 +89,8 @@ Administrators can search accounts with `GET /api/v1/admin/users`. The directory
 
 `GET /api/v1/admin/users/{user_id}/passkeys` lists the user’s active credentials across relying parties in creation order. Administrators can inspect this list even when passkey sign-in is disabled. Use `DELETE /api/v1/admin/users/{user_id}/passkeys/{passkey_id}` to revoke a lost device, including the user’s last passkey. Existing sessions stay valid. The change is recorded in both the account activity and operator audit.
 
+Use `PUT /api/v1/admin/users/{user_id}/admin` with a JSON `is_admin` flag to grant or revoke administrator access. Operators cannot change their own role or a configuration-managed account. Demoting a stored administrator advances the account’s token cutoff.
+
 Use `PUT /api/v1/admin/users/{user_id}/password` with a JSON `new_password` to replace an account credential and revoke its sessions. The operator audit records the reset, and account activity records how many sessions it revoked. Argon2id and legacy bcrypt credential handoffs have been verified. Deployments with a failing bcrypt provider have an open compatibility decision because Pyloros can generate a replacement hash.
 
 Use `DELETE /api/v1/admin/users/{user_id}/mfa` to recover an account after the user loses their authenticator. A reset clears the TOTP secret and recovery codes, keeps existing sessions valid, and records the operator and prior enrollment state.

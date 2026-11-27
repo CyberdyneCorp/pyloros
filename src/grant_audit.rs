@@ -177,6 +177,11 @@ pub(crate) enum AuditActivity<'a> {
         operator: Uuid,
         sessions: u64,
     },
+    AdminRole {
+        operator: Uuid,
+        grant: bool,
+        previous: Result<bool, &'static str>,
+    },
     AdminMfaReset {
         operator: Uuid,
         was_enabled: bool,
@@ -416,6 +421,17 @@ fn classify(activity: AuditActivity<'_>) -> Classification<'_> {
             None,
             json!({"sessions_revoked":sessions}),
         ),
+        AuditActivity::AdminRole {
+            grant, previous, ..
+        } => (
+            "authorization",
+            if grant { "admin_grant" } else { "admin_revoke" },
+            None,
+            "",
+            outcome(previous.is_err()),
+            previous.err(),
+            previous.map_or_else(|_| json!({}), |old| json!({"was_admin":old})),
+        ),
         AuditActivity::AdminMfaReset { was_enabled, .. } => (
             "credential",
             "admin_mfa_reset",
@@ -616,6 +632,7 @@ pub(crate) async fn write_activity<'e>(
     let operator = match &activity {
         AuditActivity::SessionRevoked { operator, .. }
         | AuditActivity::AdminPasswordReset { operator, .. }
+        | AuditActivity::AdminRole { operator, .. }
         | AuditActivity::AdminMfaReset { operator, .. }
         | AuditActivity::AdminPasskeyRevoked { operator, .. }
         | AuditActivity::UserCreated { operator, .. } => Some(*operator),

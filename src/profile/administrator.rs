@@ -57,3 +57,41 @@ pub(super) async fn operator(
     let (tx, email) = session(state, &identity).await?;
     Ok((tx, identity.user, email))
 }
+
+pub(super) async fn put_required() -> Response {
+    let mut r = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+    r.headers_mut()
+        .insert(header::ALLOW, header::HeaderValue::from_static("PUT"));
+    r
+}
+
+pub(super) struct UserUpdate<T> {
+    pub(super) tx: Transaction<'static, Postgres>,
+    pub(super) actor: Uuid,
+    pub(super) email: Option<String>,
+    pub(super) user: Uuid,
+    pub(super) input: T,
+}
+
+pub(super) async fn user_update<T>(
+    state: &Profile,
+    headers: &HeaderMap,
+    raw: &str,
+    bytes: &[u8],
+    key: &str,
+    parse: impl FnOnce(Value) -> Result<T, Value>,
+) -> Result<UserUpdate<T>, Box<Response>> {
+    let body = input::document(headers, bytes)?;
+    let (tx, actor, email) = operator(state, headers).await?;
+    let body = body.ok_or_else(|| Box::new(internal()))?;
+    let (user, input) = input::validate(raw, &body, key, parse)?;
+    Ok(UserUpdate {
+        tx,
+        actor,
+        email,
+        user,
+        input,
+    })
+}
+
+mod input;

@@ -8,13 +8,6 @@ use crate::{
 };
 use axum::extract::Path;
 
-pub(super) async fn wrong_method() -> Response {
-    let mut r = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
-    r.headers_mut()
-        .insert(header::ALLOW, header::HeaderValue::from_static("PUT"));
-    r
-}
-
 pub(super) async fn reset(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -22,34 +15,24 @@ pub(super) async fn reset(
     Path(raw): Path<String>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let body = match admin_fields::body(&headers, &bytes) {
-        Ok(v) => v,
-        Err(r) => return *r,
-    };
-    let (tx, actor, email) = match administrator::operator(&state, &headers).await {
-        Ok(v) => v,
-        Err(r) => return *r,
-    };
-    let Some(body) = body else {
-        return internal();
-    };
-    let user = crate::query::path_uuid(&raw, "user_id");
-    let password = password_change::password_field(body, "new_password");
-    let (user, password) = match (user, password) {
-        (Ok(id), Ok(pw)) => (id, pw),
-        (id, pw) => {
-            return password_change::invalid([id.err(), pw.err()].into_iter().flatten().collect());
-        }
-    };
+    let update =
+        match administrator::user_update(&state, &headers, &raw, &bytes, "new_password", |body| {
+            password_change::password_field(body, "new_password")
+        })
+        .await
+        {
+            Ok(update) => update,
+            Err(r) => return *r,
+        };
     let origin = SessionOrigin {
         ip: client_ip(&headers, peer.ip(), state.proxies),
         user_agent: value(&headers, "user-agent"),
     };
     replace(
-        tx,
+        update.tx,
         &state,
-        (user, password),
-        (actor, email.as_deref()),
+        (update.user, update.input),
+        (update.actor, update.email.as_deref()),
         origin,
         value(&headers, "x-request-id"),
     )

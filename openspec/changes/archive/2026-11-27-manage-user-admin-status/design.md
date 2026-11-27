@@ -1,0 +1,1 @@
+Validate the operator and both path and request fields. Protect the acting account and configuration-managed accounts. Compare the previous stored status with the requested value to determine whether to advance the credential cutoff. Commit successful changes, activity and operator audit together. Retain the policy refusal if its audit write fails.

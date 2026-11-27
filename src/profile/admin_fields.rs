@@ -67,7 +67,7 @@ impl Fields<'_> {
             if n == 0.0 || n == 1.0 {
                 return n == 1.0;
             }
-            if n.fract() == 0.0 {
+            if v.is_i64() || (v.is_f64() && n.fract() == 0.0 && n.abs() < 2f64.powi(63)) {
                 kind = "bool_parsing";
                 msg = "Input should be a valid boolean, unable to interpret input";
             }
@@ -89,15 +89,17 @@ impl Fields<'_> {
 }
 
 pub(super) fn object(body: &Value) -> Result<&Map<String, Value>, Vec<Value>> {
+    object_field(body).map_err(|issue| vec![issue])
+}
+
+pub(super) fn object_field(body: &Value) -> Result<&Map<String, Value>, Value> {
     if body.is_null() {
-        return Err(vec![
-            json!({"type":"missing","loc":["body"],"msg":"Field required","input":null}),
-        ]);
+        return Err(json!({"type":"missing","loc":["body"],"msg":"Field required","input":null}));
     }
     let Some(map) = body.as_object() else {
-        return Err(vec![
+        return Err(
             json!({"type":"model_attributes_type","loc":["body"],"msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
-        ]);
+        );
     };
     Ok(map)
 }

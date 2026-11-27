@@ -3,6 +3,7 @@ mod admin_clients;
 mod admin_fields;
 mod admin_mfa;
 mod admin_password;
+mod admin_role;
 mod admin_sessions;
 mod admin_users;
 mod administrator;
@@ -383,8 +384,14 @@ fn build_routes(
         .route("/api/v1/admin/users/{user_id}/mfa", any(admin_mfa::reset))
         .route(
             "/api/v1/admin/users/{user_id}/password",
-            any(admin_password::wrong_method)
+            any(administrator::put_required)
                 .put(admin_password::reset)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/api/v1/admin/users/{user_id}/admin",
+            any(administrator::put_required)
+                .put(admin_role::set)
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route("/api/v1/admin/sessions", any(admin_sessions::list))

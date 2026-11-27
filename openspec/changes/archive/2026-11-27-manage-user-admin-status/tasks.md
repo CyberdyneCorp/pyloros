@@ -1,0 +1,3 @@
+- [x] Implement administrative access changes and policy protections.
+- [x] Compare role checks, timestamps, tokens, audit records, concurrency and rollback.
+- [x] Verify the unchanged browser and CLI workflows.

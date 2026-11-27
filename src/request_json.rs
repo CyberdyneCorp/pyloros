@@ -25,7 +25,7 @@ pub(crate) fn parse_body(headers: &HeaderMap, bytes: &[u8]) -> Result<Value, Val
     serde_json::from_slice(bytes).map_err(|error| json_issue(bytes, error))
 }
 
-fn json_issue(bytes: &[u8], error: serde_json::Error) -> Value {
+pub(crate) fn json_issue(bytes: &[u8], error: serde_json::Error) -> Value {
     let text = String::from_utf8_lossy(bytes);
     let start: usize = text
         .split_inclusive('\n')
