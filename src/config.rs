@@ -2,6 +2,11 @@ use std::{env, error::Error};
 
 pub(crate) const PACKAGED_SCOPES: Option<&str> = option_env!("PYLOROS_BUILD_SCOPE_CATALOG");
 
+/// The catalog supplied at build time, before runtime overrides and database entries.
+pub fn build_scope_catalog() -> Option<Vec<&'static str>> {
+    PACKAGED_SCOPES.map(|names| names.split_whitespace().collect())
+}
+
 pub fn flag(name: &str) -> Result<bool, Box<dyn Error>> {
     flag_with_default(name, false)
 }

@@ -1,0 +1,2 @@
+- [x] Add the inspection command, documentation and a binary regression test.
+- [x] Verify portable and configured releases, then compare discovery on the deployed package.

@@ -173,3 +173,19 @@ async fn rsa_public_key_encodings_publish_the_same_thumbprint_with_an_empty_key_
     assert_eq!(documents[0], documents[1]);
     assert_eq!(documents[1].1["keys"][0]["kid"].as_str().unwrap().len(), 43);
 }
+
+#[test]
+fn packaged_scope_report_runs_offline_and_ignores_discovery_overrides() {
+    let report = std::process::Command::new(env!("CARGO_BIN_EXE_pyloros"))
+        .arg("--print-build-scope-catalog")
+        .env_remove("DATABASE_URL")
+        .env("OIDC_SCOPES", "runtime-only")
+        .env("PYLOROS_BUILD_SCOPE_CATALOG", "runtime-build-setting")
+        .output()
+        .unwrap();
+    assert!(report.status.success());
+    let actual: Option<Vec<String>> = serde_json::from_slice(&report.stdout).unwrap();
+    let expected = option_env!("PYLOROS_BUILD_SCOPE_CATALOG")
+        .map(|names| names.split_whitespace().map(str::to_owned).collect());
+    assert_eq!(actual, expected);
+}

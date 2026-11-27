@@ -5,6 +5,13 @@ use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    if env::args_os().skip(1).eq(["--print-build-scope-catalog"]) {
+        println!(
+            "{}",
+            serde_json::to_string(&pyloros::config::build_scope_catalog())?
+        );
+        return Ok(());
+    }
     let pool = PgPoolOptions::new()
         .max_connections(15)
         .acquire_timeout(Duration::from_secs(2))

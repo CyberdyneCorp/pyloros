@@ -1,0 +1,1 @@
+Read the same compile-time catalog consumed by issuer discovery. Print JSON null for a portable build or an array for an explicitly supplied catalog, including an empty one. Perform the check before listener or database initialization.
