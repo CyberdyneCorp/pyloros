@@ -7,7 +7,7 @@ mod creation;
 mod edit;
 mod input;
 mod metadata;
-pub(super) use metadata::normalized_storage;
+pub(crate) use metadata::normalized_storage;
 mod removal;
 pub(super) use assignment::assign;
 pub(super) use catalog::list;

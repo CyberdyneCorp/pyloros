@@ -5,6 +5,7 @@ mod admin_fields;
 mod admin_inventory;
 mod admin_mfa;
 mod admin_organizations;
+pub(crate) use admin_organizations::normalized_storage;
 mod admin_password;
 mod admin_permissions;
 mod admin_role;

@@ -18,6 +18,7 @@ mod passkey;
 mod poll;
 mod refresh;
 mod revoke;
+mod wallet;
 use crate::mfa_challenges::ChallengeVerifier;
 use crate::{
     email_challenge::{self, ConfirmationDecision, ConfirmationError, ConfirmationPolicy},
@@ -70,6 +71,8 @@ pub(crate) struct Login {
     throttle: LoginThrottle,
     poll_quota: LoginThrottle,
     mfa_quota: LoginThrottle,
+    wallet_quota: LoginThrottle,
+    wallet_webhooks: bool,
     factor: Option<FactorVerifier>,
     verifier: ChallengeVerifier,
 }
@@ -124,6 +127,12 @@ fn with_state(login: Option<Arc<Login>>) -> Result<Router, Box<dyn Error>> {
         .route(
             "/api/v1/auth/cli/exchange",
             any(cli::handle).layer(axum::Extension(crate::config::flag("CLI_LOGIN_ENABLED")?)),
+        )
+        .route(
+            "/api/v1/auth/wallet/verify",
+            any(crate::token_http::post_only)
+                .post(wallet::handle)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route("/api/v1/auth/login", any(handle))
         .route("/api/v1/auth/refresh", any(refresh::handle))

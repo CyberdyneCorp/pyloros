@@ -108,6 +108,8 @@ impl Login {
             cli_quota: LoginThrottle::configured()?,
             throttle: LoginThrottle::configured()?,
             mfa_quota: LoginThrottle::configured()?,
+            wallet_quota: LoginThrottle::new(number("RATELIMIT_WALLET_PER_MIN", 10)?),
+            wallet_webhooks: crate::config::flag_with_default("WEBHOOKS_ENABLED", true)?,
             factor: env::var("MASTER_KEY")
                 .ok()
                 .map(|key| FactorVerifier::new(&key))

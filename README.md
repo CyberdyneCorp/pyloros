@@ -89,7 +89,7 @@ Administrators can inspect this process’s chain settings with `GET /api/v1/adm
 
 Administrators can read and update the password sign-in policy at `/api/v1/admin/settings/auth-policy` with `GET` and `PUT`. Set `magic_link_interval` to `never` or a whole number of hours or days from `1h` through `30d`. Enabling confirmation requires an account link base and a configured mail provider. The development environment also supports mock mail. Each update records the interval the operator replaced and the new interval. Both backends apply the stored cadence to subsequent password sign-ins.
 
-Wallet sign-in starts with `POST /api/v1/auth/wallet/challenge`. Submit a `wallet_address` and an optional `chain_id` (default 1). Sign the returned `message` exactly as received, including its trailing newline. Poll `GET /api/v1/auth/wallet/challenge/{challenge_id}` for its status. During migration, the existing verification service can consume challenges issued by Pyloros against the shared PostgreSQL database.
+Wallet sign-in starts with `POST /api/v1/auth/wallet/challenge`. Submit a `wallet_address` and an optional `chain_id` (default 1). Sign the returned `message` exactly as received, including its trailing newline. Poll `GET /api/v1/auth/wallet/challenge/{challenge_id}` for its status. Submit the challenge ID and signature to `POST /api/v1/auth/wallet/verify` to receive a first-party session. Either backend can verify a challenge from the other when both use the same PostgreSQL database.
 
 `WALLET_AUTH_DOMAIN` selects the signing domain (default `cyberdyne.local`). Challenges expire after `WALLET_CHALLENGE_TTL_SECONDS` (default 300). `RATELIMIT_WALLET_PER_MIN` sets the per-source issuance quota (default 10).
 

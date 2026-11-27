@@ -174,6 +174,11 @@ pub(crate) enum AuditActivity<'a> {
     EmailDecision {
         reason: Option<&'static str>,
     },
+    Wallet {
+        did: Option<&'a str>,
+        reason: Option<&'static str>,
+        details: Value,
+    },
     PasswordLogin(Uuid),
     PasskeyLogin(Uuid, Uuid),
     PasskeyRefused(bool),
@@ -344,6 +349,17 @@ fn classify(activity: AuditActivity<'_>) -> Classification<'_> {
                 details,
             )
         }
+        AuditActivity::Wallet {
+            reason, details, ..
+        } => (
+            "authentication",
+            "logon",
+            Some("siwe"),
+            "",
+            outcome(reason.is_some()),
+            reason,
+            details,
+        ),
         AuditActivity::Federated {
             reason, details, ..
         } => (
@@ -685,6 +701,10 @@ pub(crate) async fn write_activity<'e>(
         activity,
         AuditActivity::FactorLogin(_, _, _) | AuditActivity::PasskeyLogin(_, _)
     );
+    let wallet_identifier = match &activity {
+        AuditActivity::Wallet { did, .. } => *did,
+        _ => None,
+    };
     let federated_identity = match &activity {
         AuditActivity::Federated { identity, .. } => *identity,
         _ => None,
@@ -729,6 +749,10 @@ pub(crate) async fn write_activity<'e>(
         "user_agent": origin.user_agent.filter(|s| !s.is_empty()).map(|s| s.chars().take(512).collect::<String>()),
         "details": details
     });
+    if let Some(did) = wallet_identifier {
+        event["subject_format"] = json!("did");
+        event["subject_identifier"] = json!(did);
+    }
     if let Some(operator) = operator {
         event["actor_type"] = json!("admin");
         event["actor_user_id"] = json!(operator);
