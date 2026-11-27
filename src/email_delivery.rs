@@ -26,6 +26,7 @@ pub struct ConfirmationMailer {
 struct Outbox {
     confirmations: Mutex<Vec<ConfirmationEmail>>,
     resets: Mutex<Vec<(String, String)>>,
+    verifications: Mutex<Vec<(String, String)>>,
 }
 enum Provider {
     Mock(Outbox),
@@ -123,6 +124,43 @@ impl ConfirmationMailer {
             }
         }
         Ok(())
+    }
+
+    pub(crate) async fn send_verification(
+        &self,
+        recipient: &str,
+        token: &str,
+    ) -> Result<(), MailError> {
+        match &self.provider {
+            Provider::Mock(outbox) => outbox
+                .verifications
+                .lock()
+                .expect("verification outbox")
+                .push((recipient.into(), token.into())),
+            Provider::Smtp { relay, from, .. } => {
+                let body = format!(
+                    "Enter this code to verify your account email.\n\n{token}\n\nIf you did not register, ignore this message."
+                );
+                let message = Message::builder()
+                    .from(from.clone())
+                    .to(recipient.parse().map_err(|_| MailError::Message)?)
+                    .subject("Confirm your email")
+                    .header(ContentType::TEXT_PLAIN)
+                    .body(body)
+                    .map_err(|_| MailError::Message)?;
+                relay.send(message).await.map_err(MailError::Transport)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn take_mock_verifications(&self) -> Option<Vec<(String, String)>> {
+        match &self.provider {
+            Provider::Mock(outbox) => Some(std::mem::take(
+                &mut *outbox.verifications.lock().expect("verification outbox"),
+            )),
+            Provider::Smtp { .. } => None,
+        }
     }
 
     pub fn take_mock_resets(&self) -> Option<Vec<(String, String)>> {

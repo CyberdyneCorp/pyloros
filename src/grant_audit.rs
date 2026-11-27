@@ -129,6 +129,7 @@ pub(crate) enum AuditActivity<'a> {
     PasswordReset(Result<u64, &'static str>),
     ResetRequested(Option<&'static str>),
     EmailVerified(Option<&'static str>),
+    Registration(Option<&'static str>),
     PhoneEdit,
     EmailDecision {
         reason: Option<&'static str>,
@@ -232,6 +233,19 @@ pub(crate) async fn write_activity<'e>(
             "credential",
             activity,
             Some("totp"),
+            "",
+            outcome(reason.is_some()),
+            reason,
+            json!({}),
+        ),
+        AuditActivity::Registration(reason) => (
+            "account_lifecycle",
+            "register",
+            if reason == Some("rate_limited") {
+                None
+            } else {
+                Some("password")
+            },
             "",
             outcome(reason.is_some()),
             reason,

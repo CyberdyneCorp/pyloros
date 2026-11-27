@@ -5,6 +5,7 @@ mod enrollment;
 mod logout_all;
 mod password_change;
 mod password_reset;
+mod registration;
 mod totp;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
@@ -129,7 +130,8 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
 }
 
 struct Profile {
-    reset_mail: crate::email_delivery::ConfirmationMailer,
+    registration: registration::Settings,
+    account_mail: crate::email_delivery::ConfirmationMailer,
     reset_quota: crate::login_throttle::LoginThrottle,
     scheme: crate::passwords::PasswordScheme,
     factor: Option<crate::enrolled_factor::FactorVerifier>,
@@ -145,7 +147,8 @@ struct Profile {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
-        reset_mail: crate::email_delivery::ConfirmationMailer::configured()?,
+        registration: registration::Settings::configured()?,
+        account_mail: crate::email_delivery::ConfirmationMailer::configured()?,
         reset_quota: crate::login_throttle::LoginThrottle::with_window(
             env::var("RATELIMIT_RESET_PER_HOUR").map_or(Ok(5), |s| s.parse())?,
             std::time::Duration::from_secs(3600),
@@ -169,6 +172,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         production,
     };
     Ok(Router::new()
+        .route("/api/v1/auth/register", any(registration::handle))
         .route("/api/v1/users/me", any(current))
         .route("/api/v1/auth/verify-email", any(email_verification::handle))
         .route("/api/v1/auth/mfa/status", any(enrollment::handle))

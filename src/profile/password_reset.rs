@@ -201,7 +201,7 @@ async fn issue(
     .bind(now + chrono::TimeDelta::hours(1))
     .execute(&mut *tx)
     .await?;
-    state.reset_mail.send_reset(&recipient, &token).await?;
+    state.account_mail.send_reset(&recipient, &token).await?;
     let subject = AuditSubject {
         user: Some(id),
         email: Some(recipient),
@@ -255,7 +255,8 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
-            reset_mail: crate::email_delivery::ConfirmationMailer::mock(),
+            registration: registration::Settings::configured().unwrap(),
+            account_mail: crate::email_delivery::ConfirmationMailer::mock(),
             reset_quota: crate::login_throttle::LoginThrottle::new(0),
             scheme: crate::passwords::PasswordScheme::Bcrypt,
             pool: pool.clone(),
@@ -279,7 +280,7 @@ mod tests {
                 .status(),
             204
         );
-        let messages = state.reset_mail.take_mock_resets().unwrap();
+        let messages = state.account_mail.take_mock_resets().unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].0, "member@example.org");
         let token = digest(&messages[0].1);

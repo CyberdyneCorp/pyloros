@@ -43,17 +43,21 @@ pub(super) fn fields(body: Value, proof_field: &str) -> Result<(String, String),
         ]);
     }
     let current = token_field(body.clone(), proof_field, 0, usize::MAX);
-    let new = token_field(body, "new_password", 8, 128).and_then(|password| {
-        if valid_password(&password) {
-            return Ok(password);
-        }
-        let reason = "password must contain lower, upper, digit, and non-alphanumeric characters";
-        Err(json!({"loc":["body","new_password"],"type":"value_error","msg":format!("Value error, {reason}"),"input":password,"ctx":{"error":reason}}))
-    });
+    let new = password_field(body, "new_password");
     match (current, new) {
         (Ok(old), Ok(new)) => Ok((old, new)),
         (current, new) => Err(current.err().into_iter().chain(new.err()).collect()),
     }
+}
+
+pub(super) fn password_field(body: Value, field: &str) -> Result<String, Value> {
+    token_field(body, field, 8, 128).and_then(|password| {
+        if valid_password(&password) {
+            return Ok(password);
+        }
+        let reason = "password must contain lower, upper, digit, and non-alphanumeric characters";
+        Err(json!({"loc":["body",field],"type":"value_error","msg":format!("Value error, {reason}"),"input":password,"ctx":{"error":reason}}))
+    })
 }
 
 pub(super) fn invalid(issues: Vec<Value>) -> Response {
@@ -220,7 +224,8 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
-            reset_mail: crate::email_delivery::ConfirmationMailer::mock(),
+            registration: registration::Settings::configured().unwrap(),
+            account_mail: crate::email_delivery::ConfirmationMailer::mock(),
             reset_quota: crate::login_throttle::LoginThrottle::new(0),
             scheme: crate::passwords::PasswordScheme::Bcrypt,
             pool: pool.clone(),
