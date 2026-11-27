@@ -1,4 +1,6 @@
-use crate::{discovery::Provider, grant_sessions::GrantSessionIssuer};
+use crate::{
+    browser_client::grant::ResourceScopes, discovery::Provider, grant_sessions::GrantSessionIssuer,
+};
 use chrono::TimeDelta;
 use rsa::{RsaPrivateKey, pkcs1::DecodeRsaPrivateKey, pkcs8::DecodePrivateKey};
 use serde::Deserialize;
@@ -7,6 +9,12 @@ use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Duration};
 use tokio::sync::watch;
 
 type Audiences = BTreeMap<String, Option<String>>;
+#[derive(Clone, Default)]
+pub(crate) struct ResourceRegistry {
+    pub scopes: ResourceScopes,
+    pub audiences: Audiences,
+}
+
 pub(crate) struct Runtime {
     pub pool: PgPool,
     pub signer: GrantSessionIssuer,
@@ -15,7 +23,7 @@ pub(crate) struct Runtime {
     pub admins: Vec<String>,
     pub production: bool,
     pub trusted_proxies: usize,
-    pub audiences: watch::Receiver<Arc<Audiences>>,
+    pub resources: watch::Receiver<Arc<ResourceRegistry>>,
 }
 
 pub(crate) fn number(name: &str, default: i64) -> Result<i64, Box<dyn Error>> {
@@ -43,53 +51,74 @@ enum Resource {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ResourceOptions {
-    #[serde(default, rename = "scopes")]
-    _scopes: Vec<String>,
+    #[serde(default)]
+    scopes: Vec<String>,
     audience: Option<String>,
 }
 
-fn env_audiences() -> Result<Audiences, Box<dyn Error>> {
-    let raw = env::var("OAUTH_PROTECTED_RESOURCES").unwrap_or_default();
-    let mut audiences = Audiences::new();
+fn configured_resources(raw: &str) -> Result<ResourceRegistry, Box<dyn Error>> {
+    let mut registry = ResourceRegistry::default();
     if raw.trim().is_empty() {
-        return Ok(audiences);
+        return Ok(registry);
     }
-    for (uri, entry) in serde_json::from_str::<BTreeMap<String, Resource>>(&raw)? {
+    for (uri, entry) in serde_json::from_str::<BTreeMap<String, Resource>>(raw)? {
         let url = url::Url::parse(&uri)?;
         if url.scheme() != "https" || url.host().is_none() || url.fragment().is_some() {
             return Err("invalid protected resource URL".into());
         }
-        let audience = match entry {
-            Resource::Scopes(_scopes) => None,
-            Resource::Configuration(options) => options.audience,
+        let (scopes, audience) = match entry {
+            Resource::Scopes(scopes) => (scopes, None),
+            Resource::Configuration(options) => (options.scopes, options.audience),
         };
         if audience.as_ref().is_some_and(|s| s.trim().is_empty()) {
             return Err("empty protected resource audience".into());
         }
-        audiences.insert(uri, audience);
+        registry
+            .scopes
+            .insert(uri.clone(), scopes.into_iter().collect());
+        registry.audiences.insert(uri, audience);
     }
-    Ok(audiences)
+    Ok(registry)
 }
 
-async fn audience_registry(
+async fn load_resources(
+    pool: &PgPool,
+    base: &ResourceRegistry,
+) -> Result<ResourceRegistry, sqlx::Error> {
+    let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
+        "SELECT resource, scopes, audience FROM oauth_protected_resources WHERE active",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut registry = base.clone();
+    for (uri, scopes, audience) in rows {
+        if !base.scopes.contains_key(&uri) {
+            registry.scopes.insert(
+                uri.clone(),
+                scopes.split_whitespace().map(str::to_owned).collect(),
+            );
+            registry.audiences.insert(uri, audience);
+        }
+    }
+    Ok(registry)
+}
+
+async fn resource_registry(
     pool: PgPool,
-    base: Audiences,
+    base: ResourceRegistry,
     seconds: u64,
-) -> watch::Receiver<Arc<Audiences>> {
+) -> watch::Receiver<Arc<ResourceRegistry>> {
     let (updates, snapshot) = watch::channel(Arc::new(base.clone()));
     if seconds == 0 {
         return snapshot;
     }
-    async fn reload(pool: &PgPool, base: &Audiences, updates: &watch::Sender<Arc<Audiences>>) {
-        match sqlx::query_as::<_, (String, Option<String>)>(
-            "SELECT resource,audience FROM oauth_protected_resources WHERE active",
-        )
-        .fetch_all(pool)
-        .await
-        {
-            Ok(rows) => {
-                let mut active: Audiences = rows.into_iter().collect();
-                active.extend(base.clone());
+    async fn reload(
+        pool: &PgPool,
+        base: &ResourceRegistry,
+        updates: &watch::Sender<Arc<ResourceRegistry>>,
+    ) {
+        match load_resources(pool, base).await {
+            Ok(active) => {
                 updates.send_replace(Arc::new(active));
             }
             Err(_) => eprintln!("could not refresh protected resource registry"),
@@ -135,14 +164,66 @@ impl Runtime {
             admins,
             production,
             trusted_proxies: number("TRUSTED_PROXY_COUNT", 0)?.try_into()?,
-            audiences: audience_registry(
+            resources: resource_registry(
                 pool.clone(),
-                env_audiences()?,
+                configured_resources(&env::var("OAUTH_PROTECTED_RESOURCES").unwrap_or_default())?,
                 number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)?.try_into()?,
             )
             .await,
             pool,
             signer,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn refreshes_scope_ceilings_and_audiences_together() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        sqlx::query("CREATE TEMP TABLE oauth_protected_resources(resource text, scopes text, audience text, active boolean)").execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO oauth_protected_resources VALUES
+            ('https://fixed.example','database','ignored',true),
+            ('https://mutable.example','read write read','custom',true),
+            ('https://inactive.example','read',NULL,false)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let base = configured_resources(r#"{"https://fixed.example":["roles"],"https://other.example":{"scopes":[],"audience":"other"}}"#).unwrap();
+        let snapshot = load_resources(&pool, &base).await.unwrap();
+        assert_eq!(snapshot.scopes.len(), 3);
+        assert_eq!(
+            snapshot.scopes["https://fixed.example"],
+            ["roles".into()].into()
+        );
+        assert_eq!(snapshot.audiences["https://fixed.example"], None);
+        assert_eq!(
+            snapshot.audiences["https://other.example"].as_deref(),
+            Some("other")
+        );
+        assert_eq!(
+            snapshot.scopes["https://mutable.example"],
+            ["read".into(), "write".into()].into()
+        );
+        assert_eq!(
+            snapshot.audiences["https://mutable.example"].as_deref(),
+            Some("custom")
+        );
+        sqlx::query("UPDATE oauth_protected_resources SET active=false")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let refreshed = load_resources(&pool, &base).await.unwrap();
+        assert_eq!(refreshed.scopes, base.scopes);
+        assert_eq!(refreshed.audiences, base.audiences);
     }
 }

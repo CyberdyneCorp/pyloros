@@ -149,13 +149,13 @@ async fn exchange(
         redirect_uri: get("redirect_uri"),
         resources: &resources,
     };
-    let audiences = rt.audiences.borrow().clone();
+    let registry = rt.resources.borrow().clone();
     let settings = GrantSettings {
         access_lifetime: rt.access_ttl,
         id_lifetime: rt.id_ttl,
         admin_emails: &rt.admins,
         require_verified_admin_email: rt.production,
-        resources: &audiences,
+        resources: &registry.audiences,
     };
     let origin = SessionOrigin {
         user_agent: header(&headers, "user-agent"),

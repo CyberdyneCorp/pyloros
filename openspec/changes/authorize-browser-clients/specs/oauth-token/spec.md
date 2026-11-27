@@ -22,3 +22,7 @@ The service SHALL validate the registered client and callback, browser authentic
 #### Scenario: Authorized grant
 - **WHEN** authentication, S256 PKCE, scope and resource policy, and consent requirements are met
 - **THEN** issue a single-use code bound to the account, client, callback, PKCE challenge and approved scopes, preserving nonce, authentication context and resource when supplied.
+
+#### Scenario: Resource policy refresh
+- **WHEN** a protected resource is configured both locally and in PostgreSQL
+- **THEN** use the local scope ceiling and audience together. For database-only resources, publish the active scope ceiling and audience from the same refresh.
