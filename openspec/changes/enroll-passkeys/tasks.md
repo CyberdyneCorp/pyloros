@@ -3,4 +3,5 @@
 - [x] Atomically claim an eligible registration challenge and commit its consumption before credential verification.
 - [x] Verify browser and native enrollment proofs and persist the credential with its audit event.
 - [x] Verify both directions of a backend switch, single-use claims, rejected proofs and frontend enrollment.
-- [ ] Match vendor-specific attestation trust chains and validate hardware-backed formats against reference fixtures.
+- [x] Validate Apple anonymous attestation against its pinned root and compare a recorded Touch ID registration with the reference.
+- [ ] Match the remaining vendor-specific attestation trust chains and validate hardware-backed formats against reference fixtures.

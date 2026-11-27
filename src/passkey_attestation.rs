@@ -3,13 +3,17 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
 use serde_cbor_2::Value as Cbor;
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::{
+    sync::LazyLock,
+    time::{Duration, SystemTime},
+};
 use url::Url;
 use uuid::Uuid;
 use webauthn_rs_core::{
     WebauthnCore,
+    attestation::verify_attestation_ca_chain,
     internals::AuthenticatorData,
-    proto::{RegisterPublicKeyCredential, Registration, RegistrationState},
+    proto::{AttestationCaList, RegisterPublicKeyCredential, Registration, RegistrationState},
 };
 
 pub struct RegisteredKey {
@@ -35,11 +39,27 @@ struct Attestation<'a> {
     auth_data: &'a [u8],
 }
 
+// Published by Apple at https://www.apple.com/certificateauthority/Apple_WebAuthn_Root_CA.pem
+static APPLE_ROOT: LazyLock<AttestationCaList> = LazyLock::new(|| {
+    AttestationCaList::try_from(include_bytes!("attestation_roots/apple-webauthn.pem").as_slice())
+        .expect("bundled Apple WebAuthn root must parse")
+});
+
 pub fn verify(
     rp: &str,
     origin: &str,
     challenge: &[u8],
     input: Value,
+) -> Result<RegisteredKey, InvalidRegistration> {
+    verify_at(rp, origin, challenge, input, SystemTime::now())
+}
+
+fn verify_at(
+    rp: &str,
+    origin: &str,
+    challenge: &[u8],
+    input: Value,
+    now: SystemTime,
 ) -> Result<RegisteredKey, InvalidRegistration> {
     let proof: RegisterPublicKeyCredential =
         serde_json::from_value(input).map_err(|_| InvalidRegistration)?;
@@ -56,10 +76,7 @@ pub fn verify(
         .map_err(|_| InvalidRegistration)?;
     // These formats need vendor trust anchors that the generic attestation verifier
     // does not enforce when constructed without an attestation CA list.
-    if matches!(
-        attestation.fmt,
-        "apple" | "android-key" | "android-safetynet"
-    ) {
+    if matches!(attestation.fmt, "android-key" | "android-safetynet") {
         return Err(InvalidRegistration);
     }
     if attestation.fmt == "none"
@@ -86,6 +103,11 @@ pub fn verify(
     let verified = verifier
         .register_credential(&proof, &state, None)
         .map_err(|_| InvalidRegistration)?;
+    if attestation.fmt == "apple" {
+        verify_attestation_ca_chain(&verified.attestation.data, &APPLE_ROOT, now)
+            .map_err(|_| InvalidRegistration)?
+            .ok_or(InvalidRegistration)?;
+    }
     let data = AuthenticatorData::<Registration>::try_from(attestation.auth_data)
         .map_err(|_| InvalidRegistration)?;
     let key = data.acd.ok_or(InvalidRegistration)?;
@@ -106,4 +128,57 @@ pub fn verify(
         aaguid: Uuid::from_bytes(key.aaguid),
         transports: json!(proof.response.transports.unwrap_or_default()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn touch_id_requires_a_valid_apple_certificate_at_registration_time() {
+        // Hardware capture from webauthn-rs-core 0.6.2, test_touchid_attest_apple_anonymous.
+        let proof: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/apple-touch-id.json")).unwrap();
+        let challenge = URL_SAFE_NO_PAD
+            .decode("JTbk7yekIKOZQwwdGW7NeDIfxrYK0PvuYxsue--G9NI")
+            .unwrap();
+        let captured = SystemTime::UNIX_EPOCH + Duration::from_secs(1607398035);
+        let verify = |time, value| {
+            verify_at(
+                "spectral.local",
+                "https://spectral.local:8443",
+                &challenge,
+                value,
+                time,
+            )
+        };
+        let enrolled = verify(captured, proof.clone()).unwrap();
+        assert_eq!(enrolled.credential_id, proof["id"]);
+        assert_eq!(enrolled.algorithm, -7);
+        assert!(verify(captured + Duration::from_secs(86400 * 365), proof.clone()).is_err());
+        let mut missing_intermediate = proof.clone();
+        let object = &mut missing_intermediate["response"]["attestationObject"];
+        let bytes = URL_SAFE_NO_PAD.decode(object.as_str().unwrap()).unwrap();
+        let mut fields: std::collections::BTreeMap<String, Cbor> =
+            serde_cbor_2::from_slice(&bytes).unwrap();
+        let Some(Cbor::Map(statement)) = fields.get_mut("attStmt") else {
+            panic!("expected statement")
+        };
+        let Some(Cbor::Array(chain)) = statement.get_mut(&Cbor::Text("x5c".into())) else {
+            panic!("expected certificate chain")
+        };
+        assert_eq!(chain.len(), 2);
+        chain.truncate(1);
+        *object = URL_SAFE_NO_PAD
+            .encode(serde_cbor_2::to_vec(&fields).unwrap())
+            .into();
+        assert!(verify(captured, missing_intermediate).is_err());
+
+        let mut modified = proof;
+        let client = &mut modified["response"]["clientDataJSON"];
+        let mut bytes = URL_SAFE_NO_PAD.decode(client.as_str().unwrap()).unwrap();
+        bytes.push(b' ');
+        *client = URL_SAFE_NO_PAD.encode(bytes).into();
+        assert!(verify(captured, modified).is_err());
+    }
 }

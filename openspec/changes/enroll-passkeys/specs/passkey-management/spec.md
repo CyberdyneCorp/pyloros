@@ -23,3 +23,8 @@ The service SHALL let a recently authenticated account enroll a discoverable, us
 
 - **WHEN** the body of a passkey request exceeds 65536 bytes
 - **THEN** return HTTP 413 before dispatching the request or creating enrollment state.
+
+#### Scenario: Apple anonymous attestation
+
+- **WHEN** a client submits Apple anonymous attestation
+- **THEN** verify its nonce and credential public key and require a certificate path valid at verification time under the Apple WebAuthn root.
