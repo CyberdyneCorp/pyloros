@@ -1,8 +1,8 @@
 use super::mailbox::address;
 use axum::{
     body::{Body, to_bytes},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    http::HeaderMap,
+    response::Response,
 };
 use serde_json::{Value, json};
 
@@ -109,15 +109,37 @@ pub(super) async fn read<T>(
     keys: &[&str],
     parse: fn(&Value) -> Inputs<T>,
 ) -> Result<T, Box<Response>> {
-    let bytes = to_bytes(body, 2 * 1024 * 1024)
+    let bytes = to_bytes(body, usize::MAX)
         .await
-        .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE.into_response())?;
-    crate::request_json::fields::validate_fields(headers, &bytes, keys, |body| fields(&body, parse))
+        .map_err(|_| Box::new(super::internal_error()))?;
+    let raw = crate::request_json::iam_document::document(headers, &bytes)?
+        .ok_or_else(|| Box::new(super::internal_error()))?;
+    crate::request_json::fields::validate_scalar_document(&raw, keys, |body| fields(&body, parse))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::StatusCode;
+
+    #[tokio::test]
+    async fn large_refresh_documents_preserve_oversized_numeric_credentials_in_errors() {
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", "application/json".parse().unwrap());
+        let digits = "9".repeat(402);
+        let document = format!(
+            r#"{{"extra":"{}","refresh_token":{digits}}}"#,
+            "a".repeat(2 << 20)
+        );
+        let response = read(&headers, Body::from(document), &["refresh_token"], refresh)
+            .await
+            .unwrap_err();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let error = to_bytes(response.into_body(), 1024).await.unwrap();
+        let error = std::str::from_utf8(&error).unwrap();
+        assert!(error.contains("string_type"));
+        assert!(error.contains(&digits));
+    }
 
     #[tokio::test]
     async fn refresh_validation_uses_the_request_encoding_and_exact_json_input() {

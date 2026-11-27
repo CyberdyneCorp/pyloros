@@ -1,0 +1,1 @@
+Reuse the request decoder that recognizes non-finite literals and validates integer length before model projection. Preserve raw scalar values for field errors and perform body validation before credential mutation.

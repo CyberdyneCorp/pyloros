@@ -1,0 +1,2 @@
+- [x] Align session request decoding and cover large and out-of-range inputs.
+- [x] Compare both services, cross-issued token revocation, and unchanged clients.
