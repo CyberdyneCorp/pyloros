@@ -1,0 +1,2 @@
+- [x] Implement the operator inventory for PostgreSQL and chain-backed IAM.
+- [x] Compare HTTP responses, provider changes, failure behavior and existing clients against the reference.

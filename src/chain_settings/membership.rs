@@ -52,9 +52,48 @@ type TokenId = <sol!(uint256) as alloy_sol_types::SolType>::RustType;
 
 #[derive(Debug, Clone)]
 struct Group {
+    id: TokenId,
+    policy_ids: Vec<TokenId>,
     name: String,
     description: String,
     members: Vec<TokenId>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct OperatorGroup {
+    id: Uuid,
+    name: String,
+    description: Option<String>,
+    is_active: bool,
+    member_count: usize,
+    policy_ids: Vec<Uuid>,
+    chain_group_id: Box<serde_json::value::RawValue>,
+    created_at: Option<String>,
+}
+
+fn chain_uuid(kind: &str, id: TokenId) -> Uuid {
+    const NAMESPACE: Uuid = Uuid::from_u128(0x6f1d4d2a_9b3e_5c7a_8f21_0a1b2c3d4e5f);
+    Uuid::new_v5(&NAMESPACE, format!("{kind}:{id}").as_bytes())
+}
+
+impl From<Group> for OperatorGroup {
+    fn from(group: Group) -> Self {
+        Self {
+            id: chain_uuid("group", group.id),
+            name: group.name,
+            description: (!group.description.is_empty()).then_some(group.description),
+            is_active: true,
+            member_count: group.members.len(),
+            policy_ids: group
+                .policy_ids
+                .into_iter()
+                .map(|id| chain_uuid("policy", id))
+                .collect(),
+            chain_group_id: serde_json::value::RawValue::from_string(group.id.to_string())
+                .expect("uint256 decimal is JSON"),
+            created_at: None,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -157,6 +196,16 @@ impl Chain {
             .collect())
     }
 
+    pub(crate) async fn operator_groups(&self) -> Result<Vec<OperatorGroup>, SnapshotError> {
+        Ok(self
+            .snapshot()
+            .await?
+            .groups
+            .into_iter()
+            .map(OperatorGroup::from)
+            .collect())
+    }
+
     async fn inventory(&self) -> Result<Inventory, ReadError> {
         let policy = self.policy.as_deref().ok_or(ReadError::Failure)?;
         self.list(policy, listPoliciesCall {}).await?;
@@ -165,16 +214,20 @@ impl Chain {
         // These catalogs enumerate policies and groups. They do not attest identity ownership.
         let mut inventory = Inventory::default();
         for entry in entries {
-            let members = match self.call(group, getMembersCall { groupId: entry.id }).await {
-                Ok(members) => {
-                    let _ = self
-                        .call(group, getGroupPoliciesCall { groupId: entry.id })
-                        .await;
-                    members
-                }
-                Err(_) => Vec::new(),
-            };
+            let (members, policy_ids) =
+                match self.call(group, getMembersCall { groupId: entry.id }).await {
+                    Ok(members) => {
+                        let policies = self
+                            .call(group, getGroupPoliciesCall { groupId: entry.id })
+                            .await
+                            .unwrap_or_default();
+                        (members, policies)
+                    }
+                    Err(_) => (Vec::new(), Vec::new()),
+                };
             inventory.groups.push(Group {
+                id: entry.id,
+                policy_ids,
                 name: entry.name,
                 description: entry.description,
                 members,
@@ -281,6 +334,8 @@ mod tests {
     fn role_groups_require_an_identity_in_the_same_inventory() {
         let token = TokenId::from(17);
         let groups = vec![Group {
+            id: TokenId::from(1),
+            policy_ids: Vec::new(),
             name: "app:owner".into(),
             description: String::new(),
             members: vec![token],
@@ -301,6 +356,28 @@ mod tests {
             .memberships(token),
             ["app:owner"]
         );
+    }
+
+    #[test]
+    fn operator_groups_preserve_wide_chain_ids_and_ordered_policy_references() {
+        let group = Group {
+            id: TokenId::MAX,
+            name: "team".into(),
+            description: String::new(),
+            members: vec![TokenId::from(9)],
+            policy_ids: vec![TokenId::from(7), TokenId::from(2)],
+        };
+        let record = OperatorGroup::from(group);
+        let encoded = serde_json::to_string(&record).unwrap();
+        assert!(encoded.contains(&format!(r#""chain_group_id":{}"#, TokenId::MAX)));
+        assert_eq!(
+            record.policy_ids,
+            [
+                chain_uuid("policy", TokenId::from(7)),
+                chain_uuid("policy", TokenId::from(2))
+            ]
+        );
+        assert_ne!(record.id, chain_uuid("policy", TokenId::MAX));
     }
 
     #[tokio::test]

@@ -9,7 +9,7 @@ jsonwebtoken = "9"
 argon2 = "0.5"
 chrono = "0.4"
 rand = "0.8"
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 base64 = "0.22"
 rsa = "0.9"
 sha2 = "0.10"
