@@ -1,4 +1,5 @@
 //! Password login for the PostgreSQL identity backend.
+mod cli;
 mod config;
 mod end_session;
 mod federated;
@@ -55,6 +56,7 @@ pub(crate) struct Login {
     production: bool,
     hooks: bool,
     proxies: usize,
+    cli_quota: LoginThrottle,
     throttle: LoginThrottle,
     poll_quota: LoginThrottle,
     mfa_quota: LoginThrottle,
@@ -86,6 +88,10 @@ fn with_state(login: Option<Arc<Login>>) -> Result<Router, Box<dyn Error>> {
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/logout", end_session)
         .route("/api/v1/auth/passkeys/login/verify", any(passkey::handle))
+        .route(
+            "/api/v1/auth/cli/exchange",
+            any(cli::handle).layer(axum::Extension(crate::config::flag("CLI_LOGIN_ENABLED")?)),
+        )
         .route("/api/v1/auth/login", any(handle))
         .route("/api/v1/auth/refresh", any(refresh::handle))
         .route("/api/v1/auth/logout", any(logout::handle))

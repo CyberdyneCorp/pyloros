@@ -18,3 +18,13 @@ The service SHALL accept a JSON code and verifier at POST /api/v1/auth/cli/excha
 
 - **WHEN** two callers redeem one valid code concurrently
 - **THEN** at most one receives tokens and only one session is created.
+
+#### Scenario: Validate input before redemption
+
+- **WHEN** the submitted JSON lacks the required string fields, contains an empty code or exceeds either field's 128-character limit
+- **THEN** respond with HTTP 400 and the invalid_grant error before claiming any code. An empty verifier on a valid code reaches the proof check and consumes the code.
+
+#### Scenario: Session storage fails
+
+- **WHEN** a valid exchange cannot persist its session
+- **THEN** roll back the code claim so the CLI can retry.

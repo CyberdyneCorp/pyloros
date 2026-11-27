@@ -45,6 +45,11 @@ pub enum Exchange {
     Refused(Refusal),
 }
 
+pub(crate) fn matches_s256(verifier: &str, challenge: &str) -> bool {
+    let proof = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    verifier.is_ascii() && bool::from(proof.as_bytes().ct_eq(challenge.as_bytes()))
+}
+
 fn check_bindings(
     code: &StoredCode,
     req: &ExchangeRequest<'_>,
@@ -61,11 +66,7 @@ fn check_bindings(
         [resource] if Some(resource.as_str()) == code.grant.resource.as_deref() => {}
         _ => return Err(Refusal::InvalidTarget),
     }
-    let proof = URL_SAFE_NO_PAD.encode(Sha256::digest(req.verifier.as_bytes()));
-    if code.challenge_method != "S256"
-        || !req.verifier.is_ascii()
-        || !bool::from(proof.as_bytes().ct_eq(code.grant.challenge.as_bytes()))
-    {
+    if code.challenge_method != "S256" || !matches_s256(req.verifier, &code.grant.challenge) {
         return Err(Refusal::InvalidProof);
     }
     Ok(())

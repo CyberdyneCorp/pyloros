@@ -120,6 +120,10 @@ pub(crate) struct AuditSubject {
 }
 
 pub(crate) enum AuditActivity<'a> {
+    CliExchange {
+        provider: Option<String>,
+        reason: Option<&'static str>,
+    },
     Federated {
         identity: Option<(&'a str, &'a str)>,
         reason: Option<&'a str>,
@@ -194,6 +198,21 @@ pub(crate) async fn write_activity<'e>(
         _ => None,
     };
     let (class, activity, protocol, client, outcome, reason, details) = match activity {
+        AuditActivity::CliExchange { provider, reason } => {
+            let mut details = json!({"grant_type":"cli_login_code"});
+            if let Some(provider) = provider {
+                details["provider"] = json!(provider);
+            }
+            (
+                "authorization",
+                "token_grant",
+                reason.is_none().then_some("oauth2"),
+                "",
+                outcome(reason.is_some()),
+                reason,
+                details,
+            )
+        }
         AuditActivity::Federated {
             reason, details, ..
         } => (

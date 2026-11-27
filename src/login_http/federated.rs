@@ -3,6 +3,30 @@ use crate::external_oauth::{account::Account, state::ReturnInstructions};
 use crate::first_party::SessionPair;
 
 impl Login {
+    pub(crate) async fn federated_pair(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        user: Uuid,
+        authenticated_at: chrono::DateTime<Utc>,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<SessionPair, crate::grant_sessions::SessionError> {
+        let policy = LoginPolicy {
+            access_lifetime: self.access,
+            admin_emails: &self.admins,
+            require_verified_admin_email: self.production,
+        };
+        let login = AuthenticatedLogin {
+            user,
+            authenticated_at,
+            methods: &["fed"],
+            origin: SessionOrigin {
+                ip: None,
+                user_agent: None,
+            },
+        };
+        self.issuer.issue_first_party(tx, login, &policy, now).await
+    }
+
     pub(crate) async fn federated(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -11,24 +35,7 @@ impl Login {
         default_target: Option<&str>,
         now: chrono::DateTime<Utc>,
     ) -> LoginResult {
-        let policy = LoginPolicy {
-            access_lifetime: self.access,
-            admin_emails: &self.admins,
-            require_verified_admin_email: self.production,
-        };
-        let login = AuthenticatedLogin {
-            user: account.user,
-            authenticated_at: now,
-            methods: &["fed"],
-            origin: SessionOrigin {
-                ip: None,
-                user_agent: None,
-            },
-        };
-        let pair = self
-            .issuer
-            .issue_first_party(tx, login, &policy, now)
-            .await?;
+        let pair = self.federated_pair(tx, account.user, now, now).await?;
         let target = delivery
             .frontend_redirect
             .as_deref()
