@@ -235,10 +235,11 @@ A first-party session can edit its phone with `PATCH /api/v1/users/me` or `cyber
 ### Inspect legacy hook source during migration
 
 Run `pyloros-hook-worker --parse-hook-source < hook.py` to check syntax and
-initial source restrictions without executing the module. The worker reads up
+restricted names, attributes, statements and calls without executing the module. The worker reads up
 to 2 MiB of UTF-8 source and returns JSON. A `rejected` result includes a
-diagnostic. A `parsed` result means the module reached the next validation
-stage. Keep the v1 validation route on the existing service while the remaining
+diagnostic. A `compiler_error` result identifies a compilation failure, such as
+a duplicate parameter or a control statement outside its enclosing scope. A
+`parsed` result means the module passed the implemented static checks. Keep the v1 validation route on the existing service while the remaining
 restricted-language and compiler diagnostics are being implemented.
 
 ### Validate a WebAssembly hook

@@ -1,10 +1,15 @@
 //! First-stage checks for stored hook source. Parsing never runs the module.
+mod compiler;
+mod policy;
+
 use ruff_python_ast::{
-    AnyNodeRef, PySourceType,
-    token::TokenKind,
+    AnyNodeRef, ModModule, PySourceType,
+    token::{TokenKind, Tokens},
     visitor::source_order::{SourceOrderVisitor, TraversalSignal},
 };
-use ruff_python_parser::{ParseErrorType, parse_unchecked_source};
+use ruff_python_parser::{ParseError, ParseErrorType, Parsed, parse_unchecked_source};
+use ruff_source_file::LineIndex;
+use ruff_text_size::Ranged;
 use serde_json::{Value, json};
 use std::io::Read;
 
@@ -50,9 +55,47 @@ impl<'a> SourceOrderVisitor<'a> for Prescan {
     }
 }
 
-fn diagnostic(source: &str) -> Option<String> {
-    let parsed = parse_unchecked_source(source, PySourceType::Python);
+fn missing_suite(source: &str, tokens: &Tokens, error: &ParseError) -> Option<String> {
+    let ParseErrorType::OtherError(message) = &error.error else {
+        return None;
+    };
+    let kind = message.strip_prefix("Expected an indented block after ")?;
+    let prefix = tokens.before(error.location.start());
+    let colon = prefix
+        .iter()
+        .rposition(|token| token.kind() == TokenKind::Colon)?;
+    let stmt = prefix[..colon]
+        .rsplit(|token| token.kind() == TokenKind::Newline)
+        .next()?;
+    let mut significant = stmt.iter().filter(|token| {
+        !token.kind().is_trivia() && !matches!(token.kind(), TokenKind::Indent | TokenKind::Dedent)
+    });
+    let first = significant.next()?;
+    let label = match first.kind() {
+        TokenKind::Class => "class definition".to_owned(),
+        TokenKind::Except
+            if significant
+                .next()
+                .is_some_and(|t| t.kind() == TokenKind::Star) =>
+        {
+            "'except*' statement".to_owned()
+        }
+        _ => kind
+            .replace('`', "'")
+            .replace(" clause", " statement")
+            .replace(" block", " statement"),
+    };
+    let line = LineIndex::from_source_text(source).line_index(first.start());
+    Some(format!(
+        "syntax error: expected an indented block after {label} on line {line}"
+    ))
+}
+
+fn rejection(source: &str, parsed: &Parsed<ModModule>) -> Option<String> {
     if let Some(error) = parsed.errors().first() {
+        if let Some(message) = missing_suite(source, parsed.tokens(), error) {
+            return Some(message);
+        }
         let mut brackets = Vec::new();
         for token in parsed.tokens().iter() {
             match token.kind() {
@@ -78,7 +121,9 @@ fn diagnostic(source: &str) -> Option<String> {
     for stmt in &parsed.syntax().body {
         scan.visit_stmt(stmt);
     }
-    scan.first.map(|(_, reason)| reason)
+    scan.first
+        .map(|(_, reason)| reason)
+        .or_else(|| policy::diagnostic(source, &parsed.syntax().body))
 }
 
 pub fn inspect(input: impl Read) -> Option<Value> {
@@ -90,10 +135,20 @@ pub fn inspect(input: impl Read) -> Option<Value> {
     if source.len() as u64 > MAX_SOURCE {
         return None;
     }
-    Some(match diagnostic(&source) {
+    let parsed = parse_unchecked_source(&source, PySourceType::Python);
+    Some(match rejection(&source, &parsed) {
         Some(error) => json!({"status":"rejected","error":error}),
+        None if compiler::fails(&parsed.syntax().body) => json!({"status":"compiler_error"}),
         None => json!({"status":"parsed"}),
     })
+}
+
+#[cfg(test)]
+fn diagnostic(source: &str) -> Option<String> {
+    rejection(
+        source,
+        &parse_unchecked_source(source, PySourceType::Python),
+    )
 }
 
 #[cfg(test)]
@@ -123,6 +178,69 @@ mod tests {
         assert_eq!(
             diagnostic("  pass"),
             Some("syntax error: unexpected indent".into())
+        );
+    }
+
+    #[test]
+    fn locates_missing_bodies_at_the_start_of_multiline_headers() {
+        for (source, expected) in [
+            (
+                "try: pass\nexcept* ValueError:",
+                "syntax error: expected an indented block after 'except*' statement on line 2",
+            ),
+            (
+                "if value: pass\nelse:",
+                "syntax error: expected an indented block after 'else' statement on line 2",
+            ),
+            (
+                "class C:",
+                "syntax error: expected an indented block after class definition on line 1",
+            ),
+            (
+                "if (\n  flag\n):",
+                "syntax error: expected an indented block after 'if' statement on line 1",
+            ),
+            (
+                "@decorator\ndef example():",
+                "syntax error: expected an indented block after function definition on line 2",
+            ),
+            (
+                "if outer:\n    for i in items:\n # unfinished",
+                "syntax error: expected an indented block after 'for' statement on line 2",
+            ),
+        ] {
+            assert_eq!(diagnostic(source).as_deref(), Some(expected));
+        }
+    }
+
+    #[test]
+    fn compiler_errors_respect_nested_scopes_and_policy_precedence() {
+        for source in [
+            "return 1",
+            "def f(a, *, a): pass",
+            "for x in xs:\n    pass\nelse:\n    break",
+            "while True:\n    def inner():\n        continue",
+        ] {
+            assert_eq!(
+                inspect(source.as_bytes()).unwrap()["status"],
+                "compiler_error",
+                "{source}"
+            );
+        }
+        for source in [
+            "def f():\n    for x in xs:\n        return x",
+            "for x in xs:\n    if x: break",
+            "f = lambda x: (yield x)",
+        ] {
+            assert_eq!(
+                inspect(source.as_bytes()).unwrap()["status"],
+                "parsed",
+                "{source}"
+            );
+        }
+        assert_eq!(
+            inspect(b"return _hidden".as_slice()).unwrap()["status"],
+            "rejected"
         );
     }
 
