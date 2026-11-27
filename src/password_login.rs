@@ -19,6 +19,7 @@ pub enum PasswordDecision {
     /// The caller must evaluate the remaining login policies in this transaction.
     Continue {
         user: Uuid,
+        verified_at: chrono::DateTime<Utc>,
         transaction: Transaction<'static, Postgres>,
     },
 }
@@ -146,6 +147,7 @@ pub async fn evaluate(
         )
         .await);
     }
+    let verified_at = Utc::now();
     let mut tx = pool.begin().await?;
     let state = sqlx::query_as::<_, (bool, bool, Option<Uuid>, String)>(
         "SELECT is_active,totp_enabled,organization_id,primary_email
@@ -203,6 +205,7 @@ pub async fn evaluate(
     }
     Ok(PasswordDecision::Continue {
         user: account.id,
+        verified_at,
         transaction: tx,
     })
 }

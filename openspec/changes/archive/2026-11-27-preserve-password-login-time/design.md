@@ -1,0 +1,1 @@
+Capture the time after the hash check and before the transactional account recheck. Preserve that instant for the credentials of a successful single-step login. Record completion audit events at completion. Evaluate any required second factor through its existing completion path.

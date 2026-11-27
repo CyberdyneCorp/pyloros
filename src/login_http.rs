@@ -217,10 +217,19 @@ impl Primary {
 
 enum LoginMethod {
     Passkey(Uuid),
-    Password,
+    Password(chrono::DateTime<Utc>),
     Email(chrono::DateTime<Utc>),
     Totp(Primary),
     Recovery(Primary),
+}
+
+impl LoginMethod {
+    fn issued_at(&self, completion: chrono::DateTime<Utc>) -> chrono::DateTime<Utc> {
+        match self {
+            Self::Password(verified_at) => *verified_at,
+            _ => completion,
+        }
+    }
 }
 
 type LoginResult = Result<Response, Box<dyn Error + Send + Sync>>;
@@ -232,7 +241,7 @@ impl Login {
         }
         let origin = attempt.origin;
         let request_id = attempt.request_id;
-        let (user, tx) = match password_login::evaluate(
+        let (user, tx, verified_at) = match password_login::evaluate(
             &self.pool,
             self.scheme,
             &self.signing,
@@ -248,7 +257,11 @@ impl Login {
                 return Ok(problem(StatusCode::FORBIDDEN, "User is inactive"));
             }
             PasswordDecision::Totp { token } => return Ok(challenge("totp", token, None)),
-            PasswordDecision::Continue { user, transaction } => (user, transaction),
+            PasswordDecision::Continue {
+                user,
+                transaction,
+                verified_at,
+            } => (user, transaction, verified_at),
         };
         let policy = ConfirmationPolicy {
             signer: &self.signing,
@@ -260,8 +273,14 @@ impl Login {
             .await
         {
             Ok(ConfirmationDecision::Continue(tx)) => {
-                self.finish(tx, user, origin, request_id, LoginMethod::Password)
-                    .await
+                self.finish(
+                    tx,
+                    user,
+                    origin,
+                    request_id,
+                    LoginMethod::Password(verified_at),
+                )
+                .await
             }
             Ok(ConfirmationDecision::Pending {
                 mfa_token,
@@ -298,15 +317,16 @@ impl Login {
             }
         }
         let now = Utc::now();
+        let issued_at = method.issued_at(now);
         let account = AuthenticatedLogin {
             user,
             authenticated_at: match method {
                 LoginMethod::Email(at) => at,
-                _ => now,
+                _ => issued_at,
             },
             methods: match method {
                 LoginMethod::Passkey(_) => &["mfa", "swk", "user"],
-                LoginMethod::Password => &["pwd"],
+                LoginMethod::Password(_) => &["pwd"],
                 LoginMethod::Email(_) => &["pwd", "mca"],
                 LoginMethod::Totp(Primary::Password) => &["pwd", "otp", "mfa"],
                 LoginMethod::Totp(Primary::Passkey) => &["swk", "user", "otp", "mfa"],
@@ -322,7 +342,7 @@ impl Login {
         };
         let pair = self
             .issuer
-            .issue_first_party(&mut tx, account, &policy, now)
+            .issue_first_party(&mut tx, account, &policy, issued_at)
             .await?;
         let (email, organization) = sqlx::query_as::<_, (Option<String>, Option<Uuid>)>(
             "SELECT primary_email,organization_id FROM users WHERE id=$1",
@@ -334,7 +354,7 @@ impl Login {
             &mut *tx,
             match method {
                 LoginMethod::Passkey(key) => AuditActivity::PasskeyLogin(pair.session, key),
-                LoginMethod::Password => AuditActivity::PasswordLogin(pair.session),
+                LoginMethod::Password(_) => AuditActivity::PasswordLogin(pair.session),
                 LoginMethod::Email(_) => AuditActivity::EmailLogin(pair.session),
                 LoginMethod::Totp(primary) => {
                     AuditActivity::FactorLogin(pair.session, "totp", primary.audit())
@@ -370,5 +390,25 @@ impl Login {
             self.refresh.num_seconds() as u64,
         )?;
         Ok(res)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn waiting_to_commit_does_not_renew_a_verified_password() {
+        let verified = Utc::now();
+        let completed = verified + chrono::Duration::seconds(4);
+        assert_eq!(
+            LoginMethod::Password(verified).issued_at(completed),
+            verified
+        );
+        assert_eq!(LoginMethod::Email(verified).issued_at(completed), completed);
+        assert_eq!(
+            LoginMethod::Totp(Primary::Password).issued_at(completed),
+            completed
+        );
     }
 }

@@ -1,0 +1,3 @@
+- [x] 1. Preserve password verification time and cover credential timing in a regression test.
+- [x] 2. Set session and refresh registration timestamps at their respective writes and cover them with a PostgreSQL test.
+- [x] 3. Compare cross-service access and refresh after concurrent logout.

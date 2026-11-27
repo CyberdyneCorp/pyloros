@@ -200,8 +200,9 @@ async fn competing_exchanges_and_rollback() {
     else {
         panic!("offline grant refused")
     };
+    let credential_time = now - chrono::Duration::seconds(5);
     let token = issuer
-        .create(&mut aborted, &offline, now, None, None)
+        .create(&mut aborted, &offline, credential_time, None, None)
         .await
         .unwrap()
         .unwrap();
@@ -218,6 +219,18 @@ async fn competing_exchanges_and_rollback() {
     assert_eq!(signed.claims["sid"], offline_session.to_string());
     assert_eq!(signed.claims["type"], "refresh");
     let jti: Uuid = signed.claims["jti"].as_str().unwrap().parse().unwrap();
+    assert_eq!(signed.claims["iat"], credential_time.timestamp());
+    let timestamps_match: bool = sqlx::query_scalar(
+        "SELECT s.created_at=transaction_timestamp() AND s.last_used_at=s.created_at
+                AND r.issued_at > $2 AND r.expires_at=s.expires_at
+         FROM refresh_tokens r JOIN sessions s ON s.id=r.session_id WHERE r.jti=$1",
+    )
+    .bind(jti)
+    .bind(credential_time)
+    .fetch_one(&mut *aborted)
+    .await
+    .unwrap();
+    assert!(timestamps_match);
     let scopes: String = sqlx::query_scalar("SELECT scopes FROM refresh_tokens WHERE jti=$1")
         .bind(jti)
         .fetch_one(&mut *aborted)

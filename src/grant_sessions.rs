@@ -153,7 +153,7 @@ impl GrantSessionIssuer {
         sqlx::query(
             "INSERT INTO sessions (id,user_id,refresh_token_hash,user_agent,ip_address,
             expires_at,auth_time,amr,created_at,last_used_at)
-            VALUES ($1,$2,$3,$4,$5::text::inet,$6,$7,$8,$9,$9)",
+            VALUES ($1,$2,$3,$4,$5::text::inet,$6,$7,$8,transaction_timestamp(),transaction_timestamp())",
         )
         .bind(record.session)
         .bind(record.user)
@@ -163,7 +163,6 @@ impl GrantSessionIssuer {
         .bind(expires)
         .bind(record.auth_time)
         .bind(record.amr)
-        .bind(now)
         .execute(&mut **tx)
         .await?;
         sqlx::query(
@@ -174,7 +173,7 @@ impl GrantSessionIssuer {
         .bind(jti)
         .bind(record.session)
         .bind(record.user)
-        .bind(now)
+        .bind(Utc::now())
         .bind(expires)
         .bind(record.scopes)
         .bind(record.client)
