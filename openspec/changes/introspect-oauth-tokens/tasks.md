@@ -1,0 +1,4 @@
+- [x] Capture reference caller authentication, field validation, active and inactive responses and deployment switches.
+- [ ] Implement service caller authentication and live service-token introspection.
+- [ ] Implement user-token introspection and compare current membership, authorization, entitlement and session state with the reference.
+- [ ] Verify both backend directions, revocation enforcement and supported IAM configurations against the compatibility ledger.
