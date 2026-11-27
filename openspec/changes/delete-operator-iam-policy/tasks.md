@@ -1,0 +1,3 @@
+- [ ] Implement and verify PostgreSQL deletion and its attachment checks.
+- [ ] Implement deletion for chain IAM and verify provider failure behavior.
+- [ ] Compare the CLI, unchanged console, audits and simultaneous changes with the reference.
