@@ -1,0 +1,1 @@
+Check the submitted domain before parsing the transport mailbox. Use its IDNA ASCII spelling for DNS length checks and top-level domain eligibility. Retain the Unicode spelling for account lookup. Return sorted, distinct character diagnostics for malformed ASCII domains.

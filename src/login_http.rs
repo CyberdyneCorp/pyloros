@@ -2,6 +2,7 @@
 mod cli;
 mod config;
 pub(crate) use config::identity as signing_identity;
+mod email_domain;
 mod end_session;
 mod federated;
 mod input;

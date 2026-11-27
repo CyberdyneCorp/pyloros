@@ -55,52 +55,38 @@ fn check_dots_and_hyphens(local: &str, domain: &str) -> Result<(), &'static str>
     Ok(())
 }
 
-fn address(raw: &str) -> Result<String, &'static str> {
+fn address(raw: &str) -> Result<String, String> {
     let raw = raw.trim();
     let addr = raw
         .strip_suffix('>')
         .and_then(|display| display.rsplit_once('<'))
         .map_or(raw, |(_, email)| email.trim());
     let (local, domain) = addr
-        .rsplit_once('@')
-        .ok_or("An email address must have an @-sign.")?;
+        .split_once('@')
+        .ok_or_else(|| super::email_domain::missing_separator(addr))?;
     if domain.is_empty() {
-        return Err("There must be something after the @-sign.");
+        return Err("There must be something after the @-sign.".into());
     }
     if local.is_empty() {
-        return Err("There must be something before the @-sign.");
+        return Err("There must be something before the @-sign.".into());
     }
+    super::email_domain::characters(domain)?;
     if domain.ends_with('.') {
-        return Err("An email address cannot end with a period.");
+        return Err("An email address cannot end with a period.".into());
     }
     check_dots_and_hyphens(local, domain)?;
+    let domain = super::email_domain::validate(domain)?;
     let mailbox = raw
         .parse::<lettre::message::Mailbox>()
         .map_err(|_| "The email address is not valid.")?;
-    let (domain, validity) = idna::domain_to_unicode(mailbox.email.domain());
-    validity.map_err(|_| "The email address is not valid.")?;
-    let (_, suffix) = domain
-        .rsplit_once('.')
-        .ok_or("The part after the @-sign is not valid. It should have a period.")?;
-    if matches!(suffix, "test" | "invalid" | "localhost" | "local" | "onion") {
-        return Err(
-            "The part after the @-sign is a special-use or reserved name that cannot be used with email.",
-        );
-    }
-    if suffix.chars().all(|c| c.is_ascii_digit()) {
-        return Err(
-            "The part after the @-sign is not valid. It is not within a valid top-level domain.",
-        );
-    }
     let local: String = mailbox.email.user().nfc().collect();
     Ok(format!("{local}@{domain}"))
 }
 
 pub(crate) fn email_field(body: &Value) -> Result<String, Vec<Value>> {
     let mut errors = Vec::new();
-    let raw = string(body, "email", &mut errors);
-    let email = raw.map(address).transpose();
-    if let Err(reason) = email {
+    let raw = string(body, "email", &mut errors).ok_or(errors)?;
+    address(raw).map_err(|reason| {
         let mut error = issue(
             "email",
             "value_error",
@@ -108,9 +94,8 @@ pub(crate) fn email_field(body: &Value) -> Result<String, Vec<Value>> {
             &body["email"],
         );
         error["ctx"] = json!({"reason":reason});
-        errors.push(error);
-    }
-    email.ok().flatten().ok_or(errors)
+        vec![error]
+    })
 }
 
 pub(super) fn credentials(body: &Value) -> Result<(String, String), Vec<Value>> {
@@ -198,6 +183,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn domain_errors_precede_account_lookup() {
+        for (input, expected) in [
+            (
+                "user@a_+b.com",
+                "The part after the @-sign contains invalid characters: '+', '_'.",
+            ),
+            (
+                "user@site.arpa",
+                "The part after the @-sign is a special-use or reserved name that cannot be used with email.",
+            ),
+            (
+                "user@one.c1",
+                "The part after the @-sign is not valid. It is not within a valid top-level domain.",
+            ),
+            (
+                "user@[IPv6:::1]",
+                "A bracketed IP address after the @-sign is not allowed here.",
+            ),
+        ] {
+            assert_eq!(address(input).unwrap_err(), expected);
+        }
+        assert!(address("user@one.1c").is_ok());
+        assert_eq!(
+            address(&format!("user@{}.com", "x".repeat(64))).unwrap_err(),
+            "After the @-sign, periods cannot be separated by so many characters (1 character too many)."
+        );
+    }
+
+    #[test]
     fn account_addresses_share_a_unicode_spelling_before_lookup() {
         for submitted in [
             "Cafe\u{301}@xn--bcher-kva.de",
@@ -212,11 +226,11 @@ mod tests {
     fn malformed_email_diagnostics_apply_to_the_address_inside_a_display_name() {
         assert_eq!(
             address("A <a..b@example.com>"),
-            Err("An email address cannot have two periods in a row.")
+            Err("An email address cannot have two periods in a row.".into())
         );
         assert_eq!(
             address("a@-example.com"),
-            Err("An email address cannot have a hyphen immediately after the @-sign.")
+            Err("An email address cannot have a hyphen immediately after the @-sign.".into())
         );
         assert_eq!(address("A..B <a@example.com>").unwrap(), "a@example.com");
     }
