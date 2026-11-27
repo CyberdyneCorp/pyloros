@@ -311,6 +311,8 @@ mod tests {
             [
                 "files.read",
                 "roles:manage",
+                "rebac:manage",
+                "rebac:check",
                 "users:provision",
                 "directory:read",
                 "iam:read.tier",
@@ -319,7 +321,7 @@ mod tests {
             .map(String::from)
             .into(),
         );
-        let payload = json!({"redirect_uris":["http://[::1]:4333/cb"],"scope":"files.read openid roles:manage users:provision directory:read iam:read.tier admin:new"});
+        let payload = json!({"redirect_uris":["http://[::1]:4333/cb"],"scope":"files.read openid roles:manage rebac:manage rebac:check users:provision directory:read iam:read.tier admin:new"});
         let client = metadata(input::parse(payload).unwrap(), &registry).unwrap();
         assert_eq!(client.scope, "files.read openid");
     }

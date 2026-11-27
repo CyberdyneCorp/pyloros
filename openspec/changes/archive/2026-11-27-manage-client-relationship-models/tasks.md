@@ -1,0 +1,2 @@
+- [x] Implement authenticated model replacement and validate references and stored assignments.
+- [x] Exercise tenant isolation, idempotence, permission checks and audit rollback.

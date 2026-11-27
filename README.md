@@ -8,7 +8,22 @@ Role-based access control (RBAC) will let an application assign permissions to r
 
 Relationship-based access control (ReBAC) will let an application grant access through relationships between people and resources. A reviewer might be allowed to open a particular submission because it belongs to a collection shared with their team. Applications can require both the reviewer role and access to that submission.
 
-The first ReBAC migration adds client-owned graph storage to an existing PostgreSQL database. It supports relationships to accounts and between application objects. Deleting an account removes its direct relationships. Deleting a client removes its graph. Model management and online permission checks are planned. [PostgreSQL migration](migrations/005_relationship_graphs.sql)
+The first ReBAC migration adds client-owned graph storage to an existing PostgreSQL database. It supports relationships to accounts and between application objects. Deleting an account removes its direct relationships. Deleting a client removes its graph. [PostgreSQL migration](migrations/005_relationship_graphs.sql)
+
+An operator can register the custom OAuth scope `rebac:manage` and grant it to a confidential service client. Use the Pyloros client-credentials token endpoint to obtain a token for this scope. The token identifies the client registration by UUID so its authority expires if that registration is replaced. Call `PUT /api/v1/clients/me/rebac/model` with the bearer token and a JSON model. For example, this model lets an account read a collection through direct membership or a parent collection.
+
+```json
+{
+  "types": {
+    "collection": {
+      "relations": {"member": ["user"], "parent": ["collection"]},
+      "permissions": {"read": [{"relation": "member"}, {"via": "parent", "permission": "read"}]}
+    }
+  }
+}
+```
+
+Models accept up to 65,536 permission references in total, counting each direct proof once and each inherited proof once per declared destination type. An accepted model returns HTTP 204. A change that would invalidate an existing assignment returns HTTP 409. Relationship writes and online permission checks remain planned.
 
 ## Frontend
 

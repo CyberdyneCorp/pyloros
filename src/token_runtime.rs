@@ -78,7 +78,13 @@ fn permitted_scope(scope: &str) -> bool {
     !scope.starts_with("admin:")
         && !matches!(
             scope,
-            "users:provision" | "directory:read" | "roles:read" | "roles:manage" | "iam:read.tier"
+            "users:provision"
+                | "directory:read"
+                | "roles:read"
+                | "roles:manage"
+                | "iam:read.tier"
+                | "rebac:manage"
+                | "rebac:check"
         )
 }
 

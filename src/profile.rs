@@ -29,6 +29,7 @@ mod entitlement_reports;
 mod erasure;
 mod google_play;
 mod org_directory;
+mod rebac;
 mod registries;
 mod store_products;
 mod stripe_checkout;
@@ -500,6 +501,10 @@ fn build_routes(
         .route(
             "/api/v1/admin/settings/blockchain",
             any(blockchain::get).put(blockchain::update),
+        )
+        .route(
+            "/api/v1/clients/me/rebac/model",
+            axum::routing::put(rebac::put_model),
         )
         .route(
             "/api/v1/clients/me/permissions",

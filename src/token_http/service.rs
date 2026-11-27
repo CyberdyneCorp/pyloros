@@ -107,7 +107,7 @@ impl Issuer {
             ));
         };
         let registration = sqlx::query(
-            "SELECT active, secret_hash, CASE WHEN previous_secret_expires_at > $2 THEN previous_secret_hash END AS previous,
+            "SELECT id, active, secret_hash, CASE WHEN previous_secret_expires_at > $2 THEN previous_secret_hash END AS previous,
                     grant_types, allowed_scopes, allowed_audiences, max_token_ttl_s
                FROM oauth_clients WHERE client_id = $1",
         )
@@ -195,6 +195,12 @@ impl Issuer {
         };
         let ttl: i32 = row.try_get("max_token_ttl_s")?;
         let mut claims = json!({"iss":self.signing.issuer(),"sub":format!("client:{}",req.client),"client_id":req.client,"jti":Uuid::new_v4(),"type":"service","scope":scopes,"iat":now.timestamp(),"exp":now.timestamp()+i64::from(ttl)});
+        if scopes
+            .split_whitespace()
+            .any(|scope| matches!(scope, "rebac:manage" | "rebac:check"))
+        {
+            claims["rebac_client_id"] = json!(row.try_get::<Uuid, _>("id")?);
+        }
         if let Some(aud) = req.audience {
             claims["aud"] = json!(aud)
         }
@@ -226,7 +232,7 @@ mod tests {
             .connect(&std::env::var("DATABASE_URL").unwrap())
             .await
             .unwrap();
-        sqlx::raw_sql("CREATE TEMP TABLE oauth_clients(client_id text,active boolean,secret_hash text,previous_secret_expires_at timestamptz,
+        sqlx::raw_sql("CREATE TEMP TABLE oauth_clients(id uuid DEFAULT gen_random_uuid(),client_id text,active boolean,secret_hash text,previous_secret_expires_at timestamptz,
             previous_secret_hash text,grant_types text,allowed_scopes text,allowed_audiences jsonb,max_token_ttl_s int,last_used_at timestamptz,updated_at timestamptz);
             CREATE TEMP TABLE oauth_token_issuance_log(id uuid,client_id text,success boolean CHECK (NOT success),error_code text,scopes text,audience text,ip_address inet,user_agent text,issued_at timestamptz);").execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO oauth_clients(client_id,active,secret_hash,allowed_scopes,max_token_ttl_s)
