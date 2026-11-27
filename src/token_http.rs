@@ -1,4 +1,5 @@
-//! HTTP transport for the authorization-code grant.
+//! OAuth token endpoint for service and authorization-code grants.
+mod service;
 use crate::{
     browser_http::{self, method_not_allowed},
     code_decision::CodeDecision,
@@ -29,32 +30,51 @@ pub async fn routes(
     production: bool,
 ) -> Result<Router, Box<dyn Error>> {
     let configured = ResourceRegistry::from_env()?;
-    let Some(provider) = provider else {
-        return Ok(Router::new()
-            .merge(crate::consent_http::routes(None))
-            .route(
-                browser_http::PATH,
-                get(|| async {
-                    crate::login_http::problem(StatusCode::NOT_FOUND, "OIDC disabled")
-                })
-                .head(method_not_allowed)
-                .fallback(method_not_allowed),
-            ));
+    let code = match provider {
+        Some(provider) => Runtime::load(provider, pool.clone(), production, configured)
+            .await?
+            .map(Arc::new),
+        None => None,
     };
-    let Some(runtime) = Runtime::load(provider, pool, production, configured).await? else {
-        return Ok(Router::new());
+    let state = Endpoint {
+        service: service::Issuer::configured(pool, production)?,
+        code: code.clone(),
+        oidc: provider.is_some(),
+        proxies: crate::token_runtime::number("TRUSTED_PROXY_COUNT", 0)?.try_into()?,
     };
-    let runtime = Arc::new(runtime);
-    Ok(Router::new()
+    let token = Router::new()
         .route("/api/v1/auth/oauth2/token", post(exchange))
-        .route(
-            browser_http::PATH,
-            get(browser_http::authorize)
-                .head(method_not_allowed)
-                .fallback(method_not_allowed),
-        )
-        .with_state(runtime.clone())
-        .merge(crate::consent_http::routes(Some(runtime))))
+        .with_state(Arc::new(state));
+    if let Some(runtime) = code {
+        return Ok(token
+            .merge(
+                Router::new()
+                    .route(
+                        browser_http::PATH,
+                        get(browser_http::authorize)
+                            .head(method_not_allowed)
+                            .fallback(method_not_allowed),
+                    )
+                    .with_state(runtime.clone()),
+            )
+            .merge(crate::consent_http::routes(Some(runtime))));
+    }
+    if provider.is_some() {
+        return Ok(token);
+    }
+    Ok(token.merge(crate::consent_http::routes(None)).route(
+        browser_http::PATH,
+        get(|| async { crate::login_http::problem(StatusCode::NOT_FOUND, "OIDC disabled") })
+            .head(method_not_allowed)
+            .fallback(method_not_allowed),
+    ))
+}
+
+struct Endpoint {
+    service: Option<service::Issuer>,
+    code: Option<Arc<Runtime>>,
+    oidc: bool,
+    proxies: usize,
 }
 
 pub(crate) fn header<'a>(headers: &'a HeaderMap, key: &str) -> Option<&'a str> {
@@ -123,7 +143,7 @@ pub(crate) async fn fields(req: Request) -> Result<Fields, Box<Response>> {
 }
 
 async fn exchange(
-    State(rt): State<Arc<Runtime>>,
+    State(endpoint): State<Arc<Endpoint>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
@@ -143,26 +163,61 @@ async fn exchange(
     let Some(grant) = get("grant_type") else {
         return (StatusCode::UNPROCESSABLE_ENTITY,Json(json!({"detail":[{"type":"missing","loc":["body","grant_type"],"msg":"Field required","input":null}]}))).into_response();
     };
+    let (id, secret) = basic(&headers).unwrap_or_default();
+    let client = if id.is_empty() {
+        get("client_id").unwrap_or_default()
+    } else {
+        &id
+    };
+    let secret = if secret.is_empty() {
+        get("client_secret")
+    } else {
+        Some(secret.as_str())
+    };
+    let origin = SessionOrigin {
+        user_agent: header(&headers, "user-agent"),
+        ip: client_ip(&headers, peer.ip(), endpoint.proxies),
+    };
+    if !matches!(grant, "authorization_code" | "refresh_token") {
+        let Some(issuer) = &endpoint.service else {
+            return crate::login_http::problem(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Token signing unavailable",
+            );
+        };
+        let request = service::Request {
+            grant,
+            client,
+            secret,
+            scope: get("scope"),
+            audience: get("audience"),
+            origin,
+        };
+        return issuer
+            .exchange(request)
+            .await
+            .unwrap_or_else(|_| internal());
+    }
+    if !endpoint.oidc {
+        return (StatusCode::BAD_REQUEST,Json(json!({"error":"unsupported_grant_type","error_description":format!("grant_type '{grant}' is not enabled")}))).into_response();
+    }
     if grant != "authorization_code" {
         return (StatusCode::BAD_REQUEST,Json(json!({"error":"unsupported_grant_type","error_description":format!("grant_type {grant:?} is not supported")}))).into_response();
     }
-    let (id, secret) = basic(&headers).unwrap_or_default();
+    let Some(rt) = &endpoint.code else {
+        return crate::login_http::problem(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Token signing unavailable",
+        );
+    };
     let resources = fields
         .iter()
         .filter(|(k, _)| k == "resource")
         .map(|(_, v)| v.clone())
         .collect::<Vec<_>>();
     let req = ExchangeRequest {
-        client_id: if id.is_empty() {
-            get("client_id").unwrap_or_default()
-        } else {
-            &id
-        },
-        client_secret: if secret.is_empty() {
-            get("client_secret")
-        } else {
-            Some(&secret)
-        },
+        client_id: client,
+        client_secret: secret,
         code: get("code").unwrap_or_default(),
         verifier: get("code_verifier").unwrap_or_default(),
         redirect_uri: get("redirect_uri"),
@@ -175,10 +230,6 @@ async fn exchange(
         admin_emails: &rt.admins,
         require_verified_admin_email: rt.production,
         resources: &registry.audiences,
-    };
-    let origin = SessionOrigin {
-        user_agent: header(&headers, "user-agent"),
-        ip: client_ip(&headers, peer.ip(), rt.trusted_proxies),
     };
     match rt
         .signer
@@ -211,6 +262,14 @@ async fn exchange(
                 .into_response()
         }
     }
+}
+
+fn internal() -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
+    )
+        .into_response()
 }
 
 #[cfg(test)]

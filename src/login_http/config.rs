@@ -8,7 +8,7 @@ use rsa::{
     traits::PublicKeyParts,
 };
 
-fn identity(
+pub(crate) fn identity(
     production: bool,
 ) -> Result<Option<(SigningIdentity, ChallengeVerifier)>, Box<dyn Error>> {
     let public = crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?;

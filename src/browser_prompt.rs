@@ -145,21 +145,20 @@ fn seconds(name: &str, value: Option<&str>) -> Result<Option<i64>, String> {
         .map(Some)
 }
 
+pub(crate) fn quoted_string(s: &str) -> String {
+    let quote = if s.contains('\'') && !s.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace(quote, &format!("\\{quote}"));
+    format!("{quote}{escaped}{quote}")
+}
+
 pub(crate) fn quoted_list(items: &[&str]) -> String {
-    let quoted: Vec<_> = items
-        .iter()
-        .map(|s| {
-            let quote = if s.contains('\'') && !s.contains('"') {
-                '"'
-            } else {
-                '\''
-            };
-            let escaped = s
-                .replace('\\', "\\\\")
-                .replace(quote, &format!("\\{quote}"));
-            format!("{quote}{escaped}{quote}")
-        })
-        .collect();
+    let quoted: Vec<_> = items.iter().map(|s| quoted_string(s)).collect();
     format!("[{}]", quoted.join(", "))
 }
 

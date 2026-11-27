@@ -27,7 +27,6 @@ pub(crate) struct Runtime {
     pub id_ttl: TimeDelta,
     pub admins: Vec<String>,
     pub production: bool,
-    pub trusted_proxies: usize,
     pub resources: watch::Receiver<Arc<ResourceRegistry>>,
 }
 
@@ -197,7 +196,6 @@ impl Runtime {
             id_ttl: lifetime("OIDC_ID_TOKEN_TTL_MINUTES", 15, 60)?,
             admins,
             production,
-            trusted_proxies: number("TRUSTED_PROXY_COUNT", 0)?.try_into()?,
             resources: resource_registry(
                 pool.clone(),
                 configured,

@@ -96,3 +96,51 @@ The service SHALL accept GET and form POST logout requests and terminate the ses
 #### Scenario: Historical ID-token hint
 - **WHEN** the hint is a correctly signed ID token from the issuer with a valid user subject and single client audience
 - **THEN** permit the client lookup even after token expiry. A typed session or service credential cannot identify a client through this parameter.
+
+### Requirement: Issue OAuth service access tokens
+
+The token endpoint SHALL support the client_credentials grant for registered services using the shared signing configuration and PostgreSQL records.
+
+#### Scenario: Successful service authentication
+
+- **WHEN** an eligible client authenticates and requests permitted scopes and an allowed audience
+- **THEN** return a bearer access token with the registered lifetime, verified client identity and granted scopes. Record successful use before returning it.
+
+#### Scenario: Default scopes
+
+- **WHEN** an authenticated client omits scope
+- **THEN** grant the registered scope set and report it in the same form as the existing endpoint.
+
+#### Scenario: Refuse disallowed requests
+
+- **WHEN** authentication fails, the client is disabled, the grant is unavailable, a scope or audience is disallowed, or the per-client quota is exhausted
+- **THEN** return the applicable OAuth error and record the issuance decision according to the existing contract.
+
+#### Scenario: Revoke across implementations
+
+- **WHEN** either implementation issues a service token
+- **THEN** the other implementation can revoke it for the registered client and the reference introspection endpoint reports it inactive with enforcement enabled.
+
+### Requirement: Revoke client-owned credentials
+
+Pyloros SHALL support the existing form-based OAuth token revocation endpoint and enforce its effects across services sharing the same PostgreSQL deployment.
+
+#### Scenario: Revoke a refresh credential
+
+- **WHEN** the authenticated client presents its refresh token
+- **THEN** revoke the associated session and refresh family and return an empty HTTP 200 response with cache prevention headers.
+
+#### Scenario: Revoke a user or service access token
+
+- **WHEN** the authenticated client presents its access token
+- **THEN** record the token identifier as revoked through its expiration and preserve other credentials that remain valid.
+
+#### Scenario: Protect token ownership
+
+- **WHEN** a client submits an unknown, expired, first-party or foreign credential
+- **THEN** return the same empty success response without revoking another identity's credentials.
+
+#### Scenario: Reject unsupported tokens and unauthorized callers
+
+- **WHEN** the client credentials are invalid, a quota is exhausted, the token parameter is missing or a verified token has an unsupported purpose
+- **THEN** return the corresponding OAuth error and preserve the stored credentials.

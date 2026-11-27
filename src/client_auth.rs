@@ -5,7 +5,7 @@ use sqlx::{Postgres, Row, Transaction};
 
 use crate::code_exchange::Refusal;
 
-async fn verify_secret(
+pub(crate) async fn verify_secret(
     secret: &str,
     current: String,
     previous: Option<String>,

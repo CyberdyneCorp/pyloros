@@ -1,6 +1,7 @@
 //! Password login for the PostgreSQL identity backend.
 mod cli;
 mod config;
+pub(crate) use config::identity as signing_identity;
 mod end_session;
 mod federated;
 mod input;
