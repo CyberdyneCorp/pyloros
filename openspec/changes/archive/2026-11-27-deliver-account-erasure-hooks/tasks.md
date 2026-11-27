@@ -1,0 +1,2 @@
+- [x] Implement subject-only erasure delivery and order the history sweep after pending deliveries are cleared.
+- [x] Verify delivery, rollback and erasure of queued personal data.

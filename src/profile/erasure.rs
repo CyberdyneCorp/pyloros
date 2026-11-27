@@ -63,7 +63,16 @@ async fn erase(
     let Some((email, phone, wallet, org)) = row else {
         return Ok(problem(StatusCode::NOT_FOUND, "User not found"));
     };
-    if state.registration.hooks && registration::pending_hook(&mut tx, "user_deleted").await? {
+    if state.registration.hooks
+        && !wasm_hooks::delivery::enqueue(
+            &mut tx,
+            wasm_hooks::delivery::Producer::Erasure,
+            "user_deleted",
+            Some(user),
+            json!({}),
+        )
+        .await?
+    {
         return Ok(problem(
             StatusCode::SERVICE_UNAVAILABLE,
             "Deletion hook dispatcher unavailable",

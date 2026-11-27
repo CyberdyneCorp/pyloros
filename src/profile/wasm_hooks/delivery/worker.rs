@@ -13,7 +13,8 @@ impl ComponentHookWorker {
         let role = Producer::Role.enabled()?;
         let registration = Producer::Registration.enabled()?;
         let login = Producer::Login.enabled()?;
-        if !(store || administrator || role || registration || login)
+        let erasure = Producer::Erasure.enabled()?;
+        if !(store || administrator || role || registration || login || erasure)
             || !config::flag_with_default("HOOKS_ENABLED", true)?
         {
             return Ok(None);
@@ -44,7 +45,8 @@ async fn deliver(pool: &PgPool) -> sqlx::Result<bool> {
     };
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
-        "SELECT q.id,q.hook_id,q.hook_name,q.event_type,q.user_id,
+        "SELECT q.id,q.hook_id,q.hook_name,q.event_type,
+        CASE WHEN q.event_type='user_deleted' THEN (q.payload->>'user_id')::uuid ELSE q.user_id END AS user_id,
         (CASE WHEN q.event_type IN ('user_registered','user_logged_in') AND NOT h.receive_pii
           THEN jsonb_build_object('event_type',q.event_type,'user_id',q.user_id)
           ELSE q.payload END)::text AS payload,

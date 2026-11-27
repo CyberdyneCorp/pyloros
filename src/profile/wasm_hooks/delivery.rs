@@ -9,6 +9,7 @@ pub(in crate::profile) enum Producer {
     Administrator,
     Role,
     Registration,
+    Erasure,
     Login,
 }
 
@@ -17,6 +18,7 @@ impl Producer {
         let name = match self {
             Self::Store => "PYLOROS_STORE_HOOK_DISPATCH",
             Self::Login => "PYLOROS_LOGIN_HOOK_DISPATCH",
+            Self::Erasure => "PYLOROS_ERASURE_HOOK_DISPATCH",
             Self::Registration => "PYLOROS_REGISTRATION_HOOK_DISPATCH",
             Self::Role => "PYLOROS_ROLE_HOOK_DISPATCH",
             Self::Administrator => "PYLOROS_ADMIN_ENTITLEMENT_HOOK_DISPATCH",
@@ -128,6 +130,8 @@ async fn stage(
 ) -> sqlx::Result<bool> {
     payload["user_id"] = json!(user);
     payload["event_type"] = json!(event);
+    // Deletion events outlive their subject. All other personal deliveries cascade on erasure.
+    let account = user.filter(|_| event != "user_deleted");
     // A single snapshot checks the entire recipient set and pins every selected digest.
     sqlx::query_scalar(
         "WITH recipients AS MATERIALIZED (
@@ -139,7 +143,7 @@ async fn stage(
           SELECT gen_random_uuid(),id,sha256,name,$1,$2,CASE WHEN receive_pii THEN $3::jsonb || $4::jsonb ELSE $3::jsonb END,least(30,greatest(1,timeout_seconds))
           FROM recipients,ready WHERE ok
          ) SELECT ok FROM ready")
-        .bind(event).bind(user).bind(payload).bind(private).fetch_one(&mut **tx).await
+        .bind(event).bind(account).bind(payload).bind(private).fetch_one(&mut **tx).await
 }
 
 #[cfg(test)]
@@ -232,5 +236,41 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(recipients, ["v2"]);
+        let user = Uuid::new_v4();
+        sqlx::query("INSERT INTO users VALUES ($1)")
+            .bind(user)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            stage(&mut tx, evt, Some(user), json!({}), json!({}))
+                .await
+                .unwrap()
+        );
+        sqlx::query("UPDATE hooks SET event_type='user_deleted'")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(
+            stage(&mut tx, "user_deleted", Some(user), json!({}), json!({}))
+                .await
+                .unwrap()
+        );
+        sqlx::query("DELETE FROM users WHERE id=$1")
+            .bind(user)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let remaining: Vec<Value> = sqlx::query_scalar(
+            "SELECT payload FROM pyloros_hook_deliveries WHERE payload->>'user_id'=$1",
+        )
+        .bind(user.to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(
+            remaining,
+            vec![json!({"user_id":user,"event_type":"user_deleted"}); 2]
+        );
     }
 }

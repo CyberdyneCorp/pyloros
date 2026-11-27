@@ -58,12 +58,6 @@ pub(super) async fn erase(
         .await?
         .rows_affected();
     counts.deleted("phone_otps", n as i64);
-    let n = sqlx::query("DELETE FROM hook_executions WHERE user_id=$1")
-        .bind(user)
-        .execute(&mut **tx)
-        .await?
-        .rows_affected();
-    counts.deleted("hook_executions", n as i64);
     let n = sqlx::query(
         "UPDATE iam_identities SET email=NULL,owner_address=NULL,public_key=NULL
         WHERE user_id=$1 OR lower(email)=ANY($2) OR lower(owner_address)=ANY($3)",
@@ -91,5 +85,12 @@ pub(super) async fn erase(
         .bind(user)
         .execute(&mut **tx)
         .await?;
+    // The user cascade waits for any worker holding an older personal delivery.
+    let n = sqlx::query("DELETE FROM hook_executions WHERE user_id=$1")
+        .bind(user)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    counts.deleted("hook_executions", n as i64);
     Ok(counts)
 }
