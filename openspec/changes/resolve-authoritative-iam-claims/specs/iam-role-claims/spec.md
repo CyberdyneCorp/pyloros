@@ -52,3 +52,17 @@ The service SHALL allow a current administrator to inspect the process-local cha
 
 - **WHEN** an operator replaces the signing key with a nonempty unparseable key
 - **THEN** subsequent settings reads report key presence and a null signer address
+
+### Requirement: Administrator chain health read
+
+The service SHALL allow an authenticated administrator to check whether the selected chain provider can answer a block-number request. The response SHALL report enablement, availability, endpoint, identity contract address and any provider error. A configured runtime provider takes precedence over the deployment provider. The check SHALL complete within five seconds of starting the RPC operation.
+
+#### Scenario: No configured provider
+
+- **WHEN** no chain provider is configured
+- **THEN** the check reports disabled and unavailable with null endpoint and contract address
+
+#### Scenario: Recovery
+
+- **WHEN** the provider answers successfully after an earlier RPC error
+- **THEN** the next health read reports available and clears the error

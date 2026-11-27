@@ -1,5 +1,7 @@
 //! Mutable chain configuration and its credential-free operator view.
+mod health;
 use data_encoding::HEXLOWER_PERMISSIVE;
+pub(crate) use health::Monitor;
 use k256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
 use serde::Serialize;
 use tokio::sync::RwLock;

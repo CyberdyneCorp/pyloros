@@ -292,6 +292,7 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
+            chain_health: crate::chain_settings::Monitor::configured().unwrap(),
             blockchain: Default::default(),
             builtin_scopes: Default::default(),
             configured_resources: Default::default(),

@@ -231,6 +231,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    chain_health: crate::chain_settings::Monitor,
     blockchain: crate::chain_settings::ChainSettings,
     configured_origins: Vec<Value>,
     configured_resources: crate::token_runtime::ResourceRegistry,
@@ -324,6 +325,7 @@ fn build_routes(
     client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeRegistry>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        chain_health: crate::chain_settings::Monitor::configured()?,
         blockchain: Default::default(),
         configured_origins: registries::origins::configured()?,
         configured_resources: crate::token_runtime::ResourceRegistry::from_env()?,
@@ -360,6 +362,7 @@ fn build_routes(
     };
     Ok(Router::new()
         .route("/api/v1/admin/settings/blockchain", any(blockchain::get))
+        .route("/api/v1/admin/blockchain/health", any(blockchain::health))
         .route(
             "/api/v1/admin/settings/auth-policy",
             any(auth_policy::get).put(auth_policy::update),
