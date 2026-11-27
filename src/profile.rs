@@ -55,6 +55,7 @@ mod wasm_hooks;
 pub use wasm_hooks::ComponentHookWorker;
 pub use wasm_hooks::ComponentHookWorker as EntitlementHookWorker;
 pub use wasm_hooks::ComponentHookWorker as StoreHookWorker;
+pub(crate) use wasm_hooks::delivery::logged_in;
 mod webhook_history;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};

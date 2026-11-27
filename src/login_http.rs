@@ -300,21 +300,6 @@ impl Login {
         request_id: Option<&str>,
         method: LoginMethod,
     ) -> LoginResult {
-        if self.hooks {
-            // Keep hook activation ordered with the session commit during coexistence.
-            sqlx::query("LOCK TABLE hooks IN SHARE MODE")
-                .execute(&mut *tx)
-                .await?;
-            let subscribed = sqlx::query_scalar::<_,bool>(
-                "SELECT EXISTS(SELECT 1 FROM hooks WHERE is_active AND event_type='user_logged_in')"
-            ).fetch_one(&mut *tx).await?;
-            if subscribed {
-                return Ok(problem(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "Login hook dispatcher unavailable",
-                ));
-            }
-        }
         let now = Utc::now();
         let issued_at = method.issued_at(now);
         let account = AuthenticatedLogin {
@@ -349,6 +334,13 @@ impl Login {
         .bind(user)
         .fetch_one(&mut *tx)
         .await?;
+        if self.hooks && !crate::profile::logged_in(&mut tx, user, email.as_deref(), origin).await?
+        {
+            return Ok(problem(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Login hook dispatcher unavailable",
+            ));
+        }
         write_activity(
             &mut *tx,
             match method {

@@ -1,0 +1,2 @@
+- [x] Integrate completed interactive logins with component delivery.
+- [x] Compare successful and rejected sign-ins, payload privacy and transaction outcomes.

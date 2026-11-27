@@ -9,12 +9,14 @@ pub(in crate::profile) enum Producer {
     Administrator,
     Role,
     Registration,
+    Login,
 }
 
 impl Producer {
     fn enabled(self) -> Result<bool, Box<dyn Error>> {
         let name = match self {
             Self::Store => "PYLOROS_STORE_HOOK_DISPATCH",
+            Self::Login => "PYLOROS_LOGIN_HOOK_DISPATCH",
             Self::Registration => "PYLOROS_REGISTRATION_HOOK_DISPATCH",
             Self::Role => "PYLOROS_ROLE_HOOK_DISPATCH",
             Self::Administrator => "PYLOROS_ADMIN_ENTITLEMENT_HOOK_DISPATCH",
@@ -76,6 +78,23 @@ pub(in crate::profile) async fn registered(
         Some(user),
         json!({}),
         json!({"email":email, "address":address}),
+    )
+    .await
+}
+
+pub(crate) async fn logged_in(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    email: Option<&str>,
+    origin: crate::grant_response::SessionOrigin<'_>,
+) -> sqlx::Result<bool> {
+    enqueue_with_private_fields(
+        tx,
+        Producer::Login,
+        "user_logged_in",
+        Some(user),
+        json!({}),
+        json!({"email":email, "ip":origin.ip, "user_agent":origin.user_agent}),
     )
     .await
 }
