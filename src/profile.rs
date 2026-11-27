@@ -15,6 +15,7 @@ mod admin_wallet;
 mod administrator;
 mod auth_policy;
 mod blockchain;
+mod delegated;
 mod edit;
 mod email_verification;
 mod erasure;
@@ -403,9 +404,14 @@ fn build_routes(
             "/api/v1/admin/clients/{client_id}/permissions/{key}",
             any(admin_permissions::remove),
         )
+        .route("/api/v1/clients/me/roles", any(admin_client_roles::read))
+        .route(
+            "/api/v1/clients/me/roles/{role_key}/permissions",
+            any(admin_client_roles::read),
+        )
         .route(
             "/api/v1/admin/clients/{client_id}/roles",
-            any(admin_client_roles::list).post(admin_client_roles::create),
+            any(admin_client_roles::read).post(admin_client_roles::create),
         )
         .route(
             "/api/v1/admin/clients/{client_id}/roles/{role_key}",
@@ -413,7 +419,7 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/clients/{client_id}/roles/{role_key}/permissions",
-            any(admin_client_roles::mapping).put(admin_client_roles::put),
+            any(admin_client_roles::read).put(admin_client_roles::put),
         )
         .route("/api/v1/admin/blockchain/health", any(blockchain::health))
         .route(

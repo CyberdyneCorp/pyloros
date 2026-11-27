@@ -61,47 +61,48 @@ impl Assignment {
     }
 }
 
-pub(super) async fn list(
+#[derive(Deserialize)]
+pub(super) struct InventoryPath {
+    client_id: Option<String>,
+    role_key: Option<String>,
+}
+
+pub(super) async fn read(
     State(state): State<Arc<Profile>>,
     method: Method,
     headers: HeaderMap,
-    Path(client): Path<String>,
-) -> Response {
-    read(&state, method, &headers, &client, None).await
-}
-
-pub(super) async fn mapping(
-    State(state): State<Arc<Profile>>,
-    method: Method,
-    headers: HeaderMap,
-    Path((client, role)): Path<(String, String)>,
-) -> Response {
-    read(&state, method, &headers, &client, Some(&role)).await
-}
-
-async fn read(
-    state: &Profile,
-    method: Method,
-    headers: &HeaderMap,
-    client: &str,
-    role: Option<&str>,
+    Path(path): Path<InventoryPath>,
 ) -> Response {
     if method != Method::GET {
         return crate::browser_http::method_not_allowed().await;
     }
-    let (tx, _, _) = match administrator::operator(state, headers).await {
-        Ok(operator) => operator,
-        Err(error) => return *error,
+    let (tx, client) = match path.client_id {
+        Some(client) => match administrator::operator(&state, &headers).await {
+            Ok((tx, _, _)) => (tx, client),
+            Err(error) => return *error,
+        },
+        None => {
+            let client = match delegated::client(&state, &headers).await {
+                Ok(client) => client,
+                Err(error) => return *error,
+            };
+            let Ok(tx) = state.pool.begin().await else {
+                return internal();
+            };
+            (tx, client)
+        }
     };
-    let Ok(chain) = authority(state).await else {
+    let Ok(chain) = authority(&state).await else {
         return internal();
     };
     catalog(
-        state,
+        &state,
         chain,
         tx,
-        client,
-        role.map(|key| Target { key, change: None }),
+        &client,
+        path.role_key
+            .as_deref()
+            .map(|key| Target { key, change: None }),
     )
     .await
     .unwrap_or_else(|_| internal())
@@ -115,11 +116,7 @@ struct Target<'a> {
 pub(super) async fn authority(
     state: &Profile,
 ) -> Result<Option<crate::chain_settings::Chain>, sqlx::Error> {
-    let chain = state.blockchain.membership_source().await;
-    if let Some(source) = &chain {
-        source.validate_signer()?;
-    }
-    Ok(chain)
+    state.blockchain.iam_source().await
 }
 
 async fn catalog(

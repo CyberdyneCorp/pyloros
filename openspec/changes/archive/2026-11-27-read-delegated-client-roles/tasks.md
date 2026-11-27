@@ -1,0 +1,2 @@
+- [x] Implement both service reads and verify client isolation.
+- [x] Compare provider selection, failure responses, the original CLI and browser.

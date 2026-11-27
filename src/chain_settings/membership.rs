@@ -49,6 +49,14 @@ impl ChainSettings {
             .or_else(|| self.deployment.clone())
     }
 
+    pub(crate) async fn iam_source(&self) -> Result<Option<Chain>, sqlx::Error> {
+        let runtime = self.membership_source().await;
+        if let Some(provider) = runtime.as_ref().or(self.deployment.as_ref()) {
+            provider.validate_signer()?;
+        }
+        Ok(runtime)
+    }
+
     pub(crate) async fn membership_source(&self) -> Option<Chain> {
         let state = self.state.read().await;
         self.runtime_chain(&state)
@@ -523,6 +531,16 @@ impl Chain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn deployment_signer_is_validated_before_using_postgres_roles() {
+        let mut chain = Chain::for_health_test("http://localhost".into());
+        let settings = ChainSettings::with_deployment(chain.clone());
+        assert!(settings.iam_source().await.unwrap().is_none());
+        chain.signer = None;
+        let settings = ChainSettings::with_deployment(chain);
+        assert!(settings.iam_source().await.is_err());
+    }
 
     #[test]
     fn role_groups_require_an_identity_in_the_same_inventory() {

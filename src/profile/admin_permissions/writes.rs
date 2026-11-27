@@ -80,7 +80,7 @@ async fn edit(
             Ok((tx, id, email)) => (tx, client, Some((id, email))),
             Err(r) => return Ok(*r),
         },
-        None => match delegated_client(state, headers).await {
+        None => match delegated::client(state, headers).await {
             Ok(client) => (state.pool.begin().await?, client, None),
             Err(r) => return Ok(*r),
         },
