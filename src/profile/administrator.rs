@@ -81,7 +81,7 @@ pub(super) async fn user_update<T>(
     key: &str,
     parse: impl FnOnce(Value) -> Result<T, Value>,
 ) -> Result<UserUpdate<T>, Box<Response>> {
-    let body = update_input::document(headers, bytes)?;
+    let body = crate::request_json::fields::document(headers, bytes)?;
     let (tx, actor, email) = operator(state, headers).await?;
     let body = body.ok_or_else(|| Box::new(internal()))?;
     let (user, input) = update_input::validate(raw, &body, key, parse)?;

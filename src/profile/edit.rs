@@ -16,7 +16,7 @@ pub(super) async fn handle(state: &Profile, peer: IpAddr, req: Request) -> Respo
     let Ok(bytes) = to_bytes(stream, usize::MAX).await else {
         return internal();
     };
-    let body = match update_input::document(&parts.headers, &bytes) {
+    let body = match crate::request_json::fields::document(&parts.headers, &bytes) {
         Ok(value) => value,
         Err(response) => return *response,
     };

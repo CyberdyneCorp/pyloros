@@ -133,7 +133,7 @@ pub(crate) fn problem(status: StatusCode, title: &str) -> Response {
         .into_response()
 }
 
-fn internal_error() -> Response {
+pub(crate) fn internal_error() -> Response {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),

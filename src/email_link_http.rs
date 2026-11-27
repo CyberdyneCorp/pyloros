@@ -4,19 +4,18 @@ use crate::{
     grant_response::SessionOrigin,
     login_http::problem,
     login_throttle::{LoginThrottle, RateLimited},
-    request_json::parse_body,
+    request_json::fields::read_string,
     token_http::{client_ip, header},
 };
 use axum::{
     Extension, Json, Router,
-    body::to_bytes,
     extract::{ConnectInfo, Request, State},
     http::{Method, StatusCode, header as h},
     response::{IntoResponse, Response},
     routing::any,
 };
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde_json::{Value, json};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::{error::Error, net::SocketAddr, sync::Arc};
@@ -55,10 +54,6 @@ pub fn routes(pool: PgPool) -> Result<Router, Box<dyn Error>> {
     Ok(router.with_state(state))
 }
 
-fn link_token(body: Value) -> Result<String, Value> {
-    crate::request_json::token_field(body, "token", 16, 128)
-}
-
 async fn handle(
     State(state): State<Arc<Links>>,
     Extension(action): Extension<Action>,
@@ -71,18 +66,9 @@ async fn handle(
         return res;
     }
     let (parts, stream) = req.into_parts();
-    let Ok(bytes) = to_bytes(stream, 2 * 1024 * 1024).await else {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
-    };
-    let token = match parse_body(&parts.headers, &bytes).and_then(link_token) {
-        Ok(t) => t,
-        Err(issue) => {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(json!({"detail":[issue]})),
-            )
-                .into_response();
-        }
+    let token = match read_string(&parts.headers, stream, "token", 16, 128).await {
+        Ok(token) => token,
+        Err(response) => return *response,
     };
     let ip = client_ip(&parts.headers, peer.ip(), state.proxies);
     if !state.quota.allow(ip) {
@@ -236,11 +222,14 @@ async fn decide(
 mod tests {
     use super::*;
 
-    #[test]
-    fn token_length_counts_unicode_characters_at_both_limits() {
+    #[tokio::test]
+    async fn token_length_counts_unicode_characters_at_both_limits() {
         for length in [15, 16, 128, 129] {
             let value = "λ".repeat(length);
-            let result = link_token(json!({"token": value}));
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert(h::CONTENT_TYPE, "application/json".parse().unwrap());
+            let body = axum::body::Body::from(json!({"token":value}).to_string());
+            let result = read_string(&headers, body, "token", 16, 128).await;
             assert_eq!(result.is_ok(), (16..=128).contains(&length));
         }
     }

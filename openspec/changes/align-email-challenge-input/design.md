@@ -1,0 +1,1 @@
+Decode JSON before reading a challenge or spending its source quota. Keep the submitted JSON of invalid fields available for the validation response. Share the existing Unicode decoder and schema checks with profile edits.

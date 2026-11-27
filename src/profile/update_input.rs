@@ -1,42 +1,9 @@
 //! Validate single-field updates while retaining the submitted JSON
 //! in validation errors, including integers outside the native JSON number range.
 use super::*;
-use crate::login_http::problem;
-use crate::request_json;
+use crate::request_json::fields::{FieldIssue, field_issue, validation_input};
 use serde::Serialize;
 use serde_json::value::RawValue;
-use std::collections::HashMap;
-
-pub(super) fn document(
-    headers: &HeaderMap,
-    bytes: &[u8],
-) -> Result<Option<Box<RawValue>>, Box<Response>> {
-    if bytes.is_empty() {
-        return Ok(Some(RawValue::NULL.to_owned()));
-    }
-    if !request_json::is_json(headers) {
-        return Ok(None);
-    }
-    let text = request_json::encoding::text(bytes).map_err(|_| {
-        Box::new(problem(
-            StatusCode::BAD_REQUEST,
-            "There was an error parsing the body",
-        ))
-    })?;
-    serde_json::from_str(&text).map(Some).map_err(|error| {
-        Box::new(password_change::invalid(vec![request_json::json_issue(
-            text.as_bytes(),
-            error,
-        )]))
-    })
-}
-
-#[derive(Serialize)]
-struct FieldIssue<'a> {
-    #[serde(flatten)]
-    attributes: Value,
-    input: &'a RawValue,
-}
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -66,21 +33,13 @@ pub(super) fn validate<T>(
                 detail.push(Issue::Path(issue));
             }
             if let Err(issue) = input {
-                detail.push(field_issue(issue, original));
+                detail.push(Issue::Field(field_issue(issue, original)));
             }
             Err(Box::new(
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { detail })).into_response(),
             ))
         }
     }
-}
-
-fn field_issue(mut attributes: Value, input: &RawValue) -> Issue<'_> {
-    attributes
-        .as_object_mut()
-        .expect("validation error object")
-        .remove("input");
-    Issue::Field(FieldIssue { attributes, input })
 }
 
 pub(super) fn nullable_string(raw: &RawValue, key: &str) -> Result<Option<String>, Box<Response>> {
@@ -93,45 +52,10 @@ pub(super) fn nullable_string(raw: &RawValue, key: &str) -> Result<Option<String
             json!({"loc":["body",key],"type":"string_type","msg":"Input should be a valid string"})
         }
     };
-    let detail = vec![field_issue(issue, input)];
+    let detail = vec![Issue::Field(field_issue(issue, input))];
     Err(Box::new(
         (StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { detail })).into_response(),
     ))
-}
-
-// Validators need only the submitted field. Large integers may be rejected as
-// the wrong type, but their exact digits must survive in the error response.
-fn validation_input<'a>(
-    raw: &'a RawValue,
-    key: &str,
-) -> Result<(Value, &'a RawValue), Box<Response>> {
-    let text = raw.get();
-    if !text.starts_with('{') {
-        return Ok((
-            if text == "null" {
-                Value::Null
-            } else {
-                json!([])
-            },
-            raw,
-        ));
-    }
-    let fields: HashMap<String, &RawValue> =
-        serde_json::from_str(text).map_err(|_| Box::new(internal()))?;
-    Ok(match fields.get(key) {
-        Some(value) => (json!({(key):field_value(value.get())}), *value),
-        None => (json!({}), raw),
-    })
-}
-
-fn field_value(text: &str) -> Value {
-    match text.as_bytes().first() {
-        Some(b'[') => json!([]),
-        Some(b'{') => json!({}),
-        // For a numeric literal outside the Value range, both scalar validators
-        // report a type error. Its original representation is retained separately.
-        _ => serde_json::from_str(text).unwrap_or(Value::Null),
-    }
 }
 
 #[cfg(test)]

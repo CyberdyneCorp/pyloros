@@ -1,11 +1,8 @@
 //! Complete a held password login from the initiating browser.
 use super::*;
 use crate::{
-    login_throttle::RateLimited,
-    mfa_challenges::Binding,
-    request_json::{parse_body, token_field},
+    login_throttle::RateLimited, mfa_challenges::Binding, request_json::fields::read_string,
 };
-use axum::body::to_bytes;
 use chrono::DateTime;
 
 pub(super) async fn handle(
@@ -22,20 +19,9 @@ pub(super) async fn handle(
         return problem(StatusCode::SERVICE_UNAVAILABLE, "Login signing unavailable");
     };
     let (parts, body) = request.into_parts();
-    let Ok(bytes) = to_bytes(body, 2 * 1024 * 1024).await else {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
-    };
-    let token = match parse_body(&parts.headers, &bytes)
-        .and_then(|body| token_field(body, "mfa_token", 1, 4096))
-    {
+    let token = match read_string(&parts.headers, body, "mfa_token", 1, 4096).await {
         Ok(token) => token,
-        Err(issue) => {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(json!({"detail":[issue]})),
-            )
-                .into_response();
-        }
+        Err(response) => return *response,
     };
     let origin = SessionOrigin {
         ip: client_ip(&parts.headers, peer.ip(), login.proxies),
