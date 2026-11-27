@@ -29,6 +29,7 @@ mod org_directory;
 mod registries;
 mod store_products;
 mod stripe_checkout;
+mod stripe_events;
 mod subject_export;
 mod subject_identifiers;
 pub(crate) use email_verification::verify_account;
@@ -272,6 +273,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 
 struct Profile {
     stripe_checkout: Option<stripe_checkout::Provider>,
+    stripe_events: Option<stripe_events::Verifier>,
     blockchain: Arc<crate::chain_settings::ChainSettings>,
     configured_origins: Vec<Value>,
     configured_resources: crate::token_runtime::ResourceRegistry,
@@ -378,6 +380,7 @@ fn build_routes(
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
         stripe_checkout: stripe_checkout::Provider::configured()?,
+        stripe_events: stripe_events::Verifier::configured()?,
         blockchain,
         configured_origins: registries::origins::configured()?,
         configured_resources: crate::token_runtime::ResourceRegistry::from_env()?,
@@ -423,6 +426,10 @@ fn build_routes(
         .merge(subject_export::routes())
         .merge(webhook_history::routes())
         .merge(store_products::routes())
+        .route(
+            "/api/v1/webhooks/stripe",
+            any(stripe_events::handle).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route(
             "/api/v1/billing/stripe/checkout",
             any(stripe_checkout::handle).layer(axum::extract::DefaultBodyLimit::disable()),

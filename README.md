@@ -30,7 +30,9 @@ The proposed hook runtime is WebAssembly, hosted by Rust. Existing scripts would
 
 Set `BILLING_ENABLED=true` and configure `STRIPE_API_KEY` on the server to enable `POST /api/v1/billing/stripe/checkout`. The caller supplies `price_id`, `product_key`, `success_url`, and `cancel_url`. The optional `mode` accepts `subscription` (default) or `payment`, and `plan` identifies the product tier.
 
-The response contains the hosted session's `id` and `url`. The service identifies the signed-in user to Stripe, reuses a mapped customer when available, and sends one line item. Each new checkout request gets a new provider idempotency key. Retries of that provider request reuse its key. Payment fulfillment is tracked separately.
+The response contains the hosted session's `id` and `url`. The service identifies the signed-in user to Stripe, reuses a mapped customer when available, and sends one line item. Each new checkout request gets a new provider idempotency key. Retries of that provider request reuse its key. Fulfillment begins when Stripe sends a signed event to `POST /api/v1/webhooks/stripe`. Set `STRIPE_WEBHOOK_SECRET` to the endpoint signing secret. The handler verifies the original bytes, updates entitlements and records the outcome in one PostgreSQL transaction. Redelivery of a processed event is acknowledged. An event deferred for missing business data can be reapplied after that data becomes available.
+
+Pyloros intentionally fulfills correctly signed events that the previous provider adapter could reject with HTTP 500 during decoding. During migration, an active entitlement hook requiring a dispatcher returns HTTP 503 and leaves the billing event available for retry.
 
 ## Outbound webhooks
 

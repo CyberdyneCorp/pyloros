@@ -225,6 +225,7 @@ mod tests {
             .unwrap();
         let state = Profile {
             stripe_checkout: None,
+            stripe_events: None,
             blockchain: Default::default(),
             builtin_scopes: Default::default(),
             configured_resources: Default::default(),
