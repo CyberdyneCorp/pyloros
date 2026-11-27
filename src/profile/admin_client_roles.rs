@@ -1,6 +1,8 @@
 //! Operator inventory of global roles for an active client.
 use super::*;
 mod creation;
+mod grant;
+pub(super) use grant::grant;
 mod user_inventory;
 pub(super) use user_inventory::list_user;
 mod removal;

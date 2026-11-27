@@ -415,7 +415,7 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/users/{user_id}/roles",
-            any(admin_client_roles::list_user),
+            any(admin_client_roles::list_user).post(admin_client_roles::grant),
         )
         .route(
             "/api/v1/admin/users/{user_id}/passkeys",

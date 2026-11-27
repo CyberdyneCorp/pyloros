@@ -1,0 +1,2 @@
+- [x] 1. Implement PostgreSQL role grants and event persistence.
+- [x] 2. Compare requests, state and repeated grants across services.

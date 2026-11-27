@@ -246,8 +246,19 @@ pub(super) async fn enqueue_account_event(
     now: DateTime<Utc>,
     kind: &str,
 ) -> Result<(), sqlx::Error> {
+    enqueue_event(tx, kind, json!({"user_id":user}), now).await
+}
+
+pub(in crate::profile) async fn enqueue_event(
+    tx: &mut Transaction<'_, Postgres>,
+    kind: &str,
+    data: Value,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
     let event = Uuid::new_v4();
-    let body=json!({"type":kind,"timestamp":now.to_rfc3339_opts(SecondsFormat::Secs,true),"data":{"user_id":user}}).to_string();
+    let body = crate::admin_audit::ascii_json(
+        &json!({"type":kind,"timestamp":now.to_rfc3339_opts(SecondsFormat::Secs,true),"data":data}),
+    );
     sqlx::query(
         "WITH subscriptions AS (
         SELECT id FROM webhook_subscriptions WHERE is_active AND event_types::jsonb ? $4

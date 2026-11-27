@@ -66,7 +66,7 @@ pub(crate) fn validation_input<'a>(
     Ok((project(raw, &fields, &[key]), original))
 }
 
-fn object_fields(raw: &RawValue) -> Result<HashMap<String, &RawValue>, Box<Response>> {
+pub(crate) fn object_fields(raw: &RawValue) -> Result<HashMap<String, &RawValue>, Box<Response>> {
     if raw.get().starts_with('{') {
         serde_json::from_str(raw.get()).map_err(|_| Box::new(internal_error()))
     } else {
@@ -74,7 +74,7 @@ fn object_fields(raw: &RawValue) -> Result<HashMap<String, &RawValue>, Box<Respo
     }
 }
 
-fn project(raw: &RawValue, fields: &HashMap<String, &RawValue>, keys: &[&str]) -> Value {
+pub(crate) fn project(raw: &RawValue, fields: &HashMap<String, &RawValue>, keys: &[&str]) -> Value {
     match raw.get().as_bytes().first() {
         Some(b'{') => Value::Object(
             keys.iter()
