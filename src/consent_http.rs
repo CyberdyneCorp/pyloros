@@ -130,7 +130,7 @@ async fn resolve(mut tx: Transaction<'_, Postgres>, ticket: Ticket, decision: &s
         "approve" => format!("{}?{}", browser_http::PATH, ticket.authz),
         _ => return bad("decision must be approve or deny"),
     };
-    let Ok(location) = HeaderValue::try_from(target) else {
+    let Ok(location) = browser_http::location_header(&target) else {
         return bad("Invalid redirect URL");
     };
     if decision == "approve"

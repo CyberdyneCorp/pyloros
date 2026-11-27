@@ -7,4 +7,4 @@
 - [x] Verify signed consent submissions, merge approved scopes and redirect on approval or denial.
 - [x] Issue consent tickets and serve the shared consent page.
 - [x] Redeem authorization codes through the HTTP endpoints in both migration directions and reject replay.
-- [ ] Verify interactive consent and hosted login journeys with the shared frontend.
+- [x] Verify interactive consent and hosted login journeys with the shared frontend.

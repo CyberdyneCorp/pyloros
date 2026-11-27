@@ -33,8 +33,27 @@ fn unavailable() -> Response {
     )
 }
 
+pub(crate) fn location_header(
+    target: &str,
+) -> Result<HeaderValue, axum::http::header::InvalidHeaderValue> {
+    use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+    // Preserve URI delimiters and existing percent escapes when serializing Location.
+    const ESCAPE: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'"')
+        .add(b'<')
+        .add(b'>')
+        .add(b'\\')
+        .add(b'^')
+        .add(b'`')
+        .add(b'{')
+        .add(b'|')
+        .add(b'}');
+    HeaderValue::try_from(utf8_percent_encode(target, ESCAPE).to_string())
+}
+
 fn redirect(location: String) -> Response {
-    match HeaderValue::try_from(location) {
+    match location_header(&location) {
         Ok(value) => (StatusCode::FOUND, [(LOCATION, value)]).into_response(),
         Err(_) => problem(StatusCode::BAD_REQUEST, "Invalid redirect URL"),
     }
@@ -192,6 +211,16 @@ mod tests {
     use super::*;
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
+
+    #[test]
+    fn redirect_header_encodes_unicode_and_preserves_existing_uri_escapes() {
+        let target = "https://client.example/Καλημέρα hello/%2F?q=a+b&state=%C3%A9#section";
+        assert_eq!(
+            location_header(target).unwrap(),
+            "https://client.example/%CE%9A%CE%B1%CE%BB%CE%B7%CE%BC%CE%AD%CF%81%CE%B1%20hello/%2F?q=a+b&state=%C3%A9#section"
+        );
+        assert_eq!(location_header("/a\r\nb").unwrap(), "/a%0D%0Ab");
+    }
 
     #[tokio::test]
     async fn disabled_provider_reports_local_errors_and_only_accepts_get() {

@@ -38,3 +38,7 @@ The service SHALL validate the registered client and callback, browser authentic
 #### Scenario: Present interactive consent
 - **WHEN** a first-party session needs to approve access and a shared consent bundle is configured
 - **THEN** render the deployment’s consent page with escaped client and scope details and an issuer-signed ten-minute ticket bound to the account, client, resource, scopes and original authorization query.
+
+#### Scenario: Encode the validated callback for HTTP transport
+- **WHEN** the registered callback contains Unicode, spaces or existing percent escapes
+- **THEN** encode unsafe characters as UTF-8 percent escapes in the Location header and preserve URI delimiters and existing escapes.
