@@ -1,0 +1,2 @@
+- [x] Implement and test shared proof decoding and authorization order.
+- [x] Compare HTTP responses, persisted factor settings and ordinary operator flows.

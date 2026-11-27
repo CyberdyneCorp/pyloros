@@ -219,3 +219,25 @@ async fn hook_authoring_authenticates_large_json_envelopes() {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
     }
 }
+
+#[tokio::test]
+async fn authenticator_changes_challenge_anonymous_well_formed_utf16_requests() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    let body = [0xff, 0xfe]
+        .into_iter()
+        .chain(r#"{"password":[],"code":1}"#.encode_utf16().flat_map(u16::to_le_bytes))
+        .collect::<Vec<_>>();
+    for operation in ["enable", "disable", "recovery-codes"] {
+        let request = Request::post(format!("/api/v1/auth/mfa/totp/{operation}"))
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.clone()))
+            .unwrap();
+        let response = routes.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{operation}");
+        assert!(response.headers().contains_key(header::WWW_AUTHENTICATE));
+    }
+}

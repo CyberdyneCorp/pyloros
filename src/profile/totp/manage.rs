@@ -62,25 +62,16 @@ async fn verify_password(
 
 pub(super) async fn apply(
     state: &Profile,
+    tx: Tx<'_>,
     id: Identity,
-    body: Value,
+    body: &RawValue,
     operation: Operation,
     origin: SessionOrigin<'_>,
     request: Option<&str>,
 ) -> ResultResponse {
-    let mut tx = state.pool.begin().await?;
-    if state.enforce && revoked(&mut tx, &id).await? {
-        return Ok(unauthorized());
-    }
-    let proof = match parse(body) {
+    let proof = match fields::validate_scalar_document(body, &["password", "code"], parse) {
         Ok(proof) => proof,
-        Err(issues) => {
-            return Ok((
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(json!({"detail":issues})),
-            )
-                .into_response());
-        }
+        Err(response) => return Ok(*response),
     };
     let (hash, verified) = verify_password(tx, state.scheme, id.user, proof.password).await?;
     let mut tx = state.pool.begin().await?;

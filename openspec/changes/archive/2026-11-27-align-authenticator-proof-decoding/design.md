@@ -1,0 +1,1 @@
+Share document decoding and raw scalar error serialization with first-party session endpoints. Authenticate once before projecting proof fields. Retain the session and credential recheck after password verification and preserve setup as a body-independent operation.

@@ -7,12 +7,13 @@ use crate::{
     grant_audit::{AuditActivity, AuditSubject, write_activity},
     grant_response::SessionOrigin,
     login_http::problem,
-    request_json::{parse_body, token_field},
+    request_json::{fields, iam_document, token_field},
     token_http::{client_ip, header as value},
 };
 use axum::body::to_bytes;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use rand::{RngCore, rngs::OsRng};
+use serde_json::value::RawValue;
 use sha2::{Digest, Sha256};
 
 const QUERY: &AsciiSet = &NON_ALPHANUMERIC
@@ -76,12 +77,12 @@ async fn handle(state: &Profile, peer: SocketAddr, req: Request, action: Action)
     }
     let (parts, body) = req.into_parts();
     let input = if !matches!(action, Action::Setup) {
-        let Ok(bytes) = to_bytes(body, 2 * 1024 * 1024).await else {
-            return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        let Ok(bytes) = to_bytes(body, usize::MAX).await else {
+            return internal();
         };
-        match parse_body(&parts.headers, &bytes) {
-            Ok(body) => Some(body),
-            Err(issue) => return invalid_field(issue),
+        match iam_document::document(&parts.headers, &bytes) {
+            Ok(document) => document,
+            Err(response) => return *response,
         }
     } else {
         None
@@ -96,22 +97,11 @@ async fn handle(state: &Profile, peer: SocketAddr, req: Request, action: Action)
         ip: client_ip(&parts.headers, peer.ip(), state.proxies),
         user_agent: value(&parts.headers, "user-agent"),
     };
-    if let Action::Manage(operation) = action {
-        return manage::apply(
-            state,
-            id,
-            input.unwrap_or(Value::Null),
-            operation,
-            origin,
-            value(&parts.headers, "x-request-id"),
-        )
-        .await
-        .unwrap_or_else(|_| internal());
-    }
     apply(
         state,
         id,
-        input,
+        action,
+        input.as_deref(),
         origin,
         value(&parts.headers, "x-request-id"),
     )
@@ -119,18 +109,11 @@ async fn handle(state: &Profile, peer: SocketAddr, req: Request, action: Action)
     .unwrap_or_else(|_| internal())
 }
 
-fn invalid_field(issue: Value) -> Response {
-    (
-        StatusCode::UNPROCESSABLE_ENTITY,
-        Json(json!({"detail":[issue]})),
-    )
-        .into_response()
-}
-
 async fn apply(
     state: &Profile,
     id: Identity,
-    input: Option<Value>,
+    action: Action,
+    input: Option<&RawValue>,
     origin: SessionOrigin<'_>,
     request: Option<&str>,
 ) -> ResultResponse {
@@ -138,10 +121,37 @@ async fn apply(
     if state.enforce && revoked(&mut tx, &id).await? {
         return Ok(unauthorized());
     }
-    let code = match input.map(|b| token_field(b, "code", 1, 16)).transpose() {
-        Ok(code) => code,
-        Err(issue) => return Ok(invalid_field(issue)),
+    let code = match action {
+        Action::Setup => None,
+        Action::Enable => {
+            let Some(raw) = input else {
+                return Ok(internal());
+            };
+            match fields::validate_scalar_document(raw, &["code"], |body| {
+                token_field(body, "code", 1, 16).map_err(|issue| vec![issue])
+            }) {
+                Ok(code) => Some(code),
+                Err(response) => return Ok(*response),
+            }
+        }
+        Action::Manage(operation) => {
+            let Some(raw) = input else {
+                return Ok(internal());
+            };
+            return manage::apply(state, tx, id, raw, operation, origin, request).await;
+        }
     };
+    enroll(state, tx, id, code, origin, request).await
+}
+
+async fn enroll(
+    state: &Profile,
+    mut tx: Tx<'_>,
+    id: Identity,
+    code: Option<String>,
+    origin: SessionOrigin<'_>,
+    request: Option<&str>,
+) -> ResultResponse {
     let Some(factor) = &state.factor else {
         return Ok(problem(
             StatusCode::SERVICE_UNAVAILABLE,
