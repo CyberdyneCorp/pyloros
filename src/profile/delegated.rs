@@ -2,15 +2,23 @@
 use super::*;
 
 pub(super) async fn client(state: &Profile, headers: &HeaderMap) -> Result<String, Box<Response>> {
-    use crate::{csrf::bearer, login_http::service_identity, token_revocation::VerifiedToken};
+    use crate::{csrf::bearer, login_http::service_identity};
     let required = || service_identity::unauthorized("Service token required");
     let claims = bearer(headers)
         .and_then(|raw| state.verify.as_ref()?.service_claims(raw))
         .ok_or_else(required)?;
-    let Ok(VerifiedToken::Service { client, id, .. }) =
-        VerifiedToken::from_verified_claims(&claims)
+    scoped_client(state, &claims, "roles:manage").await
+}
+
+pub(super) async fn scoped_client(
+    state: &Profile,
+    claims: &Value,
+    scope: &str,
+) -> Result<String, Box<Response>> {
+    use crate::{login_http::service_identity, token_revocation::VerifiedToken};
+    let Ok(VerifiedToken::Service { client, id, .. }) = VerifiedToken::from_verified_claims(claims)
     else {
-        return Err(required());
+        return Err(service_identity::unauthorized("Service token required"));
     };
     service_identity::registration(&state.pool, &client, id, state.enforce)
         .await
@@ -20,11 +28,11 @@ pub(super) async fn client(state: &Profile, headers: &HeaderMap) -> Result<Strin
         .as_str()
         .unwrap_or_default()
         .split_whitespace()
-        .any(|scope| scope == "roles:manage")
+        .any(|item| item == scope)
     {
         return Err(Box::new(crate::login_http::problem(
             StatusCode::FORBIDDEN,
-            "Insufficient scope: roles:manage required",
+            &format!("Insufficient scope: {scope} required"),
         )));
     }
     Ok(client)

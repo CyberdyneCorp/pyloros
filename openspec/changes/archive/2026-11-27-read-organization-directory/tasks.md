@@ -1,0 +1,2 @@
+- [x] Implement authenticated member selection and pagination.
+- [x] Compare live directory responses and authentication failures across deployments.

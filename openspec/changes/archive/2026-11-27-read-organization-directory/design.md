@@ -1,0 +1,1 @@
+Read current administrator privileges or validate a service bearer and its current registration before parsing the request. Filter users by primary organization or an explicit membership, then apply the email and activity filters. Order by creation time descending and ID ascending.

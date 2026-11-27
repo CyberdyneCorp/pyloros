@@ -19,6 +19,7 @@ mod delegated;
 mod edit;
 mod email_verification;
 mod erasure;
+mod org_directory;
 mod registries;
 pub(crate) use email_verification::verify_account;
 mod enrollment;
@@ -384,6 +385,7 @@ fn build_routes(
         production,
     };
     Ok(Router::new()
+        .route("/api/v1/orgs/{org_id}/members", any(org_directory::read))
         .route(
             "/api/v1/admin/settings/blockchain",
             any(blockchain::get).put(blockchain::update),

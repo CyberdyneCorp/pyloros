@@ -129,16 +129,7 @@ async fn ensure_membership(
     user: Uuid,
     org: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let record: Option<(bool, String)> =
-        sqlx::query_as("SELECT is_active,extra_metadata::text FROM organizations WHERE id=$1")
-            .bind(org)
-            .fetch_optional(&mut **tx)
-            .await?;
-    let Some((active, metadata)) = record else {
-        return Ok(false);
-    };
-    metadata::normalized_storage(&metadata)?;
-    if !active {
+    if !super::active_organization(tx, org).await? {
         return Ok(false);
     }
     sqlx::query("INSERT INTO user_organizations(user_id,organization_id)

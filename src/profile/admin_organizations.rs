@@ -15,6 +15,22 @@ pub(super) use creation::create;
 pub(super) use edit::{deactivate, edit};
 pub(super) use removal::remove;
 
+pub(super) async fn active_organization(
+    tx: &mut Transaction<'_, Postgres>,
+    org: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let row: Option<(bool, String)> =
+        sqlx::query_as("SELECT is_active,extra_metadata::text FROM organizations WHERE id=$1")
+            .bind(org)
+            .fetch_optional(&mut **tx)
+            .await?;
+    let Some((active, metadata)) = row else {
+        return Ok(false);
+    };
+    metadata::normalized_storage(&metadata)?;
+    Ok(active)
+}
+
 pub(super) async fn memberships(
     State(state): State<Arc<Profile>>,
     method: Method,
