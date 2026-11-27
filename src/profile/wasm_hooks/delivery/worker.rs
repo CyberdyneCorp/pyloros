@@ -14,8 +14,9 @@ impl ComponentHookWorker {
         let registration = Producer::Registration.enabled()?;
         let login = Producer::Login.enabled()?;
         let erasure = Producer::Erasure.enabled()?;
-        if !(store || administrator || role || registration || login || erasure)
-            || !config::flag_with_default("HOOKS_ENABLED", true)?
+        let any_producer = store || administrator || role || registration || login || erasure;
+        if !config::flag_with_default("HOOKS_ENABLED", true)?
+            || !config::flag_with_default("PYLOROS_COMPONENT_WORKER_ENABLED", any_producer)?
         {
             return Ok(None);
         }

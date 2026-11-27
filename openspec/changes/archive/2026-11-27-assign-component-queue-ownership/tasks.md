@@ -1,0 +1,2 @@
+- [x] Implement and test automatic, dedicated and publisher-only modes.
+- [x] Verify producer and worker handoff with real components on shared PostgreSQL.

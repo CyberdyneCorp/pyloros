@@ -1,0 +1,1 @@
+Use a per-process override for the existing worker startup decision. Producer settings retain their event-specific meanings. A dedicated worker consumes the existing shared queue and uses the stored artifact selection and current privacy policy.

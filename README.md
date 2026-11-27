@@ -405,6 +405,10 @@ organization ID and a null user ID. Renewing a grant or repeating a withdrawal
 delivers an event for each committed administrator action. The audit record,
 entitlement change and queued deliveries commit together.
 
+### Assign a component delivery worker
+
+By default, a process with hooks enabled consumes queued component deliveries when any producer is enabled. Set `PYLOROS_COMPONENT_WORKER_ENABLED=false` on a publisher to leave execution to another replica. A dedicated worker can set `HOOKS_ENABLED=true` and `PYLOROS_COMPONENT_WORKER_ENABLED=true` to drain queued deliveries with all producers disabled. Keep a compatible Rust worker available until pending component deliveries have finished during rollback.
+
 ### Deliver PostgreSQL role hooks
 
 Enable `HOOKS_ENABLED=true` and `PYLOROS_ROLE_HOOK_DISPATCH=true` on the
