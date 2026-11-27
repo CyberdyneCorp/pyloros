@@ -5,7 +5,7 @@ use data_encoding::HEXLOWER_PERMISSIVE;
 pub(crate) use health::Monitor;
 use k256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
 pub(crate) use membership::{
-    Chain, SnapshotError,
+    Chain, Inventory, SnapshotError,
     policy_transaction::{IamMutation, PrepareError},
 };
 use serde::Serialize;
@@ -14,6 +14,7 @@ use zeroize::Zeroizing;
 
 #[derive(Default)]
 pub struct ChainSettings {
+    deployment: Option<Chain>,
     rpc_timeout: Option<std::time::Duration>,
     state: RwLock<Configuration>,
     pub(crate) admin_updates: tokio::sync::Mutex<()>,
@@ -49,8 +50,10 @@ pub struct View {
 
 impl ChainSettings {
     pub(crate) fn configured() -> Result<Self, Box<dyn std::error::Error>> {
+        let timeout = rpc_timeout()?;
         Ok(Self {
-            rpc_timeout: Some(rpc_timeout()?),
+            deployment: Chain::deployment(crate::config::flag("BLOCKCHAIN_ENABLED")?, timeout),
+            rpc_timeout: Some(timeout),
             ..Default::default()
         })
     }

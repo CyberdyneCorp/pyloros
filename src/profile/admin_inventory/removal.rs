@@ -113,7 +113,7 @@ mod tests {
             .connect(&std::env::var("DATABASE_URL").unwrap())
             .await?;
         sqlx::raw_sql("CREATE TEMP TABLE iam_policies(id uuid primary key,name text,description text,version int,is_active bool,chain_policy_id int,created_at timestamptz default now());
-            CREATE TEMP TABLE iam_policy_statements(policy_id uuid, sid text,effect text,actions jsonb,resources jsonb,conditions jsonb,sort_order int);
+            CREATE TEMP TABLE iam_policy_statements(id uuid primary key,policy_id uuid, sid text,effect text,actions jsonb,resources jsonb,conditions jsonb,sort_order int);
             CREATE TEMP TABLE iam_identity_policies(policy_id uuid);
             CREATE TEMP TABLE iam_role_policies(policy_id uuid);
             CREATE TEMP TABLE iam_group_policies(policy_id uuid);

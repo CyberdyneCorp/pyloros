@@ -1,0 +1,4 @@
+- [x] Implement snapshot import and its report.
+- [x] Compare initial import, repeated and overlapping imports, partial reads and rollback.
+- [x] Verify provider failures and the existing CLI and frontend.
+- [ ] Close compatibility signoff for overlapping imports of the same policy.

@@ -1,0 +1,1 @@
+Read one bounded provider snapshot. Match policies and groups by remote identifier and keep their local IDs. Apply available group-policy relationships and retain locally defined policy rules when the contract cannot enumerate rules. Commit all imported state and its operator audit in one transaction.

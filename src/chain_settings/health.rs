@@ -1,19 +1,10 @@
-use super::{ChainSettings, address};
+use super::ChainSettings;
 use reqwest::Client;
 use serde_json::{Value, json};
-use std::{env, error::Error, time::Duration};
-use zeroize::Zeroizing;
-
-#[derive(Clone)]
-struct Target {
-    rpc: String,
-    identity: String,
-    valid_signer: bool,
-}
+use std::{error::Error, time::Duration};
 
 pub(crate) struct Monitor {
     client: Client,
-    fallback: Option<Target>,
     timeout: Duration,
 }
 
@@ -21,37 +12,24 @@ impl Monitor {
     pub(crate) fn configured() -> Result<Self, Box<dyn Error>> {
         Ok(Self {
             client: Client::builder().build()?,
-            fallback: deployment_target(crate::config::flag("BLOCKCHAIN_ENABLED")?),
             timeout: super::rpc_timeout()?.min(Duration::from_secs(5)),
         })
     }
 
     pub(crate) async fn read(&self, settings: &ChainSettings) -> Result<Value, ()> {
-        let runtime = settings.state.read().await;
-        let view = runtime.view();
-        let target = if view.is_configured {
-            Some(Target {
-                rpc: view.rpc_url.unwrap_or_default(),
-                identity: view.identity_contract_address.unwrap_or_default(),
-                valid_signer: view.signer_address.is_some(),
-            })
-        } else {
-            self.fallback.clone()
-        };
-        drop(runtime);
-        let Some(target) = target else {
+        let Some(target) = settings.provider().await else {
             return Ok(
                 json!({"enabled":false,"available":false,"identity_contract_address":null,
                 "rpc_endpoint":null,"error":"null provider (no RPC configured)"}),
             );
         };
-        if !target.valid_signer {
+        if target.validate_signer().is_err() {
             return Err(());
         }
-        let error = self.block_number(&target.rpc).await.err();
+        let error = self.block_number(&target.endpoint).await.err();
         Ok(
             json!({"enabled":true,"available":error.is_none(),"identity_contract_address":target.identity,
-                "rpc_endpoint":target.rpc,"error":error}),
+                "rpc_endpoint":target.endpoint,"error":error}),
         )
     }
 
@@ -85,24 +63,6 @@ impl Monitor {
         let doc = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
         block_result(&doc)
     }
-}
-
-fn deployment_target(enabled: bool) -> Option<Target> {
-    if !enabled {
-        return None;
-    }
-    let rpc = env::var("BLOCKCHAIN_RPC_ENDPOINT")
-        .ok()
-        .filter(|s| !s.is_empty())?;
-    let identity = env::var("IDENTITY_CONTRACT_ADDRESS")
-        .ok()
-        .filter(|s| !s.is_empty())?;
-    let key = Zeroizing::new(env::var("BLOCKCHAIN_PRIVATE_KEY").ok()?);
-    Some(Target {
-        rpc,
-        identity,
-        valid_signer: address(&key).is_some(),
-    })
 }
 
 fn transport(e: reqwest::Error) -> String {
@@ -193,14 +153,12 @@ mod tests {
         let server = tokio::spawn(async move { axum::serve(socket, app).await.unwrap() });
         let monitor = Monitor {
             client: Client::new(),
-            fallback: Some(Target {
-                rpc: endpoint.clone(),
-                identity: "deployment".into(),
-                valid_signer: true,
-            }),
             timeout: Duration::from_secs(1),
         };
-        let settings = ChainSettings::default();
+        let settings = ChainSettings {
+            deployment: Some(super::super::Chain::for_health_test(endpoint.clone())),
+            ..Default::default()
+        };
         let report = monitor.read(&settings).await.unwrap();
         assert_eq!(report["identity_contract_address"], "deployment");
         assert_eq!(report["available"], true);
@@ -209,7 +167,7 @@ mod tests {
                 enabled: Some(true),
                 rpc_url: Some(format!("{endpoint}/offline")),
                 identity_contract_address: Some("runtime".into()),
-                private_key: Some(Zeroizing::new(format!("{:064x}", 1))),
+                private_key: Some(zeroize::Zeroizing::new(format!("{:064x}", 1))),
                 ..Default::default()
             })
             .await;

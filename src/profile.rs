@@ -267,7 +267,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         production,
         registries::configured_scopes()?,
         Default::default(),
-        Default::default(),
+        Arc::new(crate::chain_settings::ChainSettings::configured()?),
     )
 }
 
@@ -291,7 +291,7 @@ pub async fn routes_with_scope_registry(
         interval,
         provider,
         None,
-        Default::default(),
+        Arc::new(crate::chain_settings::ChainSettings::configured()?),
     )
     .await?
     .0)
@@ -500,6 +500,10 @@ fn build_routes(
                 .post(admin_inventory::boundary::set)
                 .delete(admin_inventory::boundary::clear)
                 .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/api/v1/admin/iam/import",
+            any(crate::token_http::post_only).post(admin_inventory::import::run),
         )
         .route(
             "/api/v1/admin/iam/export",

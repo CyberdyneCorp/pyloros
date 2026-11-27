@@ -16,6 +16,7 @@ pub(super) mod boundary;
 pub(super) mod evaluation;
 pub(super) mod export;
 mod group_members;
+pub(super) mod import;
 mod user_detail;
 mod user_identity;
 mod user_policies;

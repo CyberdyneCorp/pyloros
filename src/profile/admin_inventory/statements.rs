@@ -129,7 +129,7 @@ pub(super) struct ExportPolicy {
     statements: Box<RawValue>,
 }
 
-fn export_statements(raw: &str) -> Result<Box<RawValue>, sqlx::Error> {
+fn transfer_statements(raw: &str, for_database: bool) -> Result<Box<RawValue>, sqlx::Error> {
     use crate::request_json::iam_document::unquoted_tokens;
     // PostgreSQL renders JSONB numbers in decimal notation. The reference store
     // decodes integers up to 4300 digits and fractional values as binary64.
@@ -148,6 +148,9 @@ fn export_statements(raw: &str) -> Result<Box<RawValue>, sqlx::Error> {
             && token.starts_with(|c: char| c.is_ascii_digit() || c == '-')
         {
             let value = token.parse::<f64>().map_err(|_| invalid())?;
+            if for_database && !value.is_finite() {
+                return Err(invalid());
+            }
             normalized.push_str(&json[cursor..start]);
             normalized.push_str(&serde_json::to_string(&value).map_err(|_| invalid())?);
             cursor = start + token.len();
@@ -175,10 +178,48 @@ pub(super) async fn export(
         });
         policies.push(ExportPolicy {
             header,
-            statements: export_statements(&raw)?,
+            statements: transfer_statements(&raw, false)?,
         });
     }
     Ok(policies)
+}
+
+pub(super) async fn refresh_imported_rules(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+) -> Result<(), sqlx::Error> {
+    #[derive(Deserialize)]
+    struct StoredId {
+        id: Uuid,
+    }
+    let (_, _, raw) = records(tx, Some(&[id]))
+        .await?
+        .pop()
+        .ok_or(sqlx::Error::RowNotFound)?;
+    let stored: Vec<StoredId> = serde_json::from_str(&raw).map_err(|_| invalid())?;
+    let ids: Vec<Uuid> = stored.into_iter().map(|s| s.id).collect();
+    let normalized = transfer_statements(&raw, true)?;
+    refresh_observed(tx, &ids, &normalized).await
+}
+
+async fn refresh_observed(
+    tx: &mut Transaction<'_, Postgres>,
+    ids: &[Uuid],
+    normalized: &RawValue,
+) -> Result<(), sqlx::Error> {
+    // Refresh the rows this import actually observed. A concurrent import or
+    // policy edit may already have replaced them by the time we get the lock.
+    sqlx::query(
+        "UPDATE iam_policy_statements s SET id=gen_random_uuid(),sort_order=e.position-1,
+        actions=e.item->'actions',resources=e.item->'resources',conditions=e.item->'conditions'
+        FROM jsonb_array_elements($2) WITH ORDINALITY AS e(item,position)
+        WHERE s.id=($1::uuid[])[e.position::int]",
+    )
+    .bind(ids)
+    .bind(sqlx::types::Json(normalized))
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 async fn records(
@@ -187,7 +228,7 @@ async fn records(
 ) -> Result<Vec<(Value, DateTime<Utc>, String)>, sqlx::Error> {
     let mut query=sqlx::QueryBuilder::<Postgres>::new("SELECT jsonb_build_object('id',p.id,'name',p.name,'description',p.description,'version',p.version,
             'is_active',p.is_active,'chain_policy_id',p.chain_policy_id),p.created_at,
-            COALESCE((SELECT jsonb_agg(jsonb_build_object('sid',s.sid,'effect',s.effect,'actions',s.actions,
+            COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'sid',s.sid,'effect',s.effect,'actions',s.actions,
             'resources',s.resources,'conditions',s.conditions) ORDER BY s.sort_order)
             FROM iam_policy_statements s WHERE s.policy_id=p.id),'[]'::jsonb)::text
             FROM iam_policies p");
@@ -202,6 +243,37 @@ async fn records(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn a_stale_import_cannot_reapply_a_replaced_rule() -> Result<(), sqlx::Error> {
+        let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = pool.begin().await?;
+        sqlx::raw_sql("CREATE TEMP TABLE iam_policy_statements(id uuid primary key,sort_order integer,actions jsonb,resources jsonb,conditions jsonb) ON COMMIT DROP")
+            .execute(&mut *tx).await?;
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO iam_policy_statements(id) VALUES($1)")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        let current =
+            serde_json::from_str(r#"[{"actions":["read"],"resources":[],"conditions":[]}]"#)
+                .unwrap();
+        let stale =
+            serde_json::from_str(r#"[{"actions":["different"],"resources":[],"conditions":[]}]"#)
+                .unwrap();
+        refresh_observed(&mut tx, &[id], current).await?;
+        refresh_observed(&mut tx, &[id], stale).await?;
+        let rows =
+            sqlx::query_as::<_, (Uuid, Value)>("SELECT id,actions FROM iam_policy_statements")
+                .fetch_all(&mut *tx)
+                .await?;
+        assert_eq!(rows.len(), 1);
+        assert_ne!(rows[0].0, id);
+        assert_eq!(rows[0].1, json!(["read"]));
+        tx.rollback().await?;
+        Ok(())
+    }
+
     #[test]
     fn export_uses_database_numeric_decoding_before_releasing_the_document() {
         let statement = |n: &str| {
@@ -209,10 +281,11 @@ mod tests {
                 r#"[{{"effect":"allow","sid":null,"actions":[{n}],"resources":[],"conditions":[]}}]"#
             )
         };
-        assert!(export_statements(&statement(&"9".repeat(4301))).is_err());
-        let doc = export_statements(&statement("1.2345678901234567890123")).unwrap();
+        assert!(transfer_statements(&statement(&"9".repeat(4301)), false).is_err());
+        let doc = transfer_statements(&statement("1.2345678901234567890123"), false).unwrap();
         assert!(doc.get().contains("[1.2345678901234567]"));
-        let doc = export_statements(&statement(&format!("{}.0", "9".repeat(310)))).unwrap();
+        let doc =
+            transfer_statements(&statement(&format!("{}.0", "9".repeat(310))), false).unwrap();
         assert!(doc.get().contains("[null]"));
     }
     #[test]

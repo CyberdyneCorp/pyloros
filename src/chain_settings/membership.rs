@@ -28,9 +28,10 @@ sol! {
 
 static CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
 
+#[derive(Clone)]
 pub(crate) struct Chain {
-    endpoint: String,
-    identity: Option<String>,
+    pub(super) endpoint: String,
+    pub(super) identity: Option<String>,
     policy: Option<String>,
     group: Option<String>,
     signer: Option<String>,
@@ -38,6 +39,12 @@ pub(crate) struct Chain {
 }
 
 impl ChainSettings {
+    pub(crate) async fn provider(&self) -> Option<Chain> {
+        self.membership_source()
+            .await
+            .or_else(|| self.deployment.clone())
+    }
+
     pub(crate) async fn membership_source(&self) -> Option<Chain> {
         let state = self.state.read().await;
         let view = state.view();
@@ -55,11 +62,11 @@ impl ChainSettings {
 type TokenId = alloy_primitives::U256;
 
 #[derive(Debug, Clone)]
-struct Group {
-    id: TokenId,
-    policy_ids: Vec<TokenId>,
-    name: String,
-    description: String,
+pub(crate) struct Group {
+    pub(crate) id: TokenId,
+    pub(crate) policy_ids: Vec<TokenId>,
+    pub(crate) name: String,
+    pub(crate) description: String,
     members: Vec<TokenId>,
 }
 
@@ -131,10 +138,10 @@ impl From<Group> for OperatorGroup {
 }
 
 #[derive(Default)]
-struct Inventory {
-    policies: Vec<CatalogEntry>,
+pub(crate) struct Inventory {
+    pub(crate) policies: Vec<CatalogEntry>,
     identities: Vec<TokenId>,
-    groups: Vec<Group>,
+    pub(crate) groups: Vec<Group>,
 }
 
 impl Inventory {
@@ -177,6 +184,40 @@ fn validate_address(address: &str) -> Result<(), ReadError> {
 }
 
 impl Chain {
+    #[cfg(test)]
+    pub(super) fn for_health_test(endpoint: String) -> Self {
+        Self {
+            endpoint,
+            identity: Some("deployment".into()),
+            policy: None,
+            group: None,
+            signer: Some("configured".into()),
+            timeout: Duration::from_secs(1),
+        }
+    }
+
+    pub(super) fn deployment(enabled: bool, timeout: Duration) -> Option<Self> {
+        use std::env;
+        if !enabled {
+            return None;
+        }
+        let endpoint = env::var("BLOCKCHAIN_RPC_ENDPOINT")
+            .ok()
+            .filter(|v| !v.is_empty())?;
+        let identity = env::var("IDENTITY_CONTRACT_ADDRESS")
+            .ok()
+            .filter(|v| !v.is_empty())?;
+        let key = zeroize::Zeroizing::new(env::var("BLOCKCHAIN_PRIVATE_KEY").ok()?);
+        Some(Self {
+            endpoint,
+            identity: Some(identity),
+            signer: super::address(&key),
+            policy: env::var("POLICY_CONTRACT_ADDRESS").ok(),
+            group: env::var("GROUP_CONTRACT_ADDRESS").ok(),
+            timeout,
+        })
+    }
+
     pub(crate) fn validate_signer(&self) -> Result<(), sqlx::Error> {
         if self.signer.is_some() {
             Ok(())
@@ -245,7 +286,7 @@ impl Chain {
         }
     }
 
-    async fn snapshot(&self) -> Result<Inventory, SnapshotError> {
+    pub(crate) async fn snapshot(&self) -> Result<Inventory, SnapshotError> {
         tokio::time::timeout(Duration::from_secs(60), self.inventory())
             .await
             .map_err(|_| SnapshotError::Deadline)?
