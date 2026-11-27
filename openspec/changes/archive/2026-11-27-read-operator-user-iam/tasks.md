@@ -1,0 +1,3 @@
+- [x] Deliver the identity token information read, including stored metadata and chain status.
+- [x] Deliver user IAM detail with identity, direct policies, groups, roles derived from active sessions and permission boundary.
+- [x] Verify both providers, legacy state and the unchanged user administration page after a membership update.

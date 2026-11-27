@@ -452,6 +452,14 @@ fn build_routes(
             "/api/v1/admin/users/{user_id}/groups/{group_id}",
             any(admin_inventory::delete_only).delete(admin_inventory::remove_member),
         )
+        .route(
+            "/api/v1/admin/users/{user_id}/nft",
+            any(admin_inventory::user_token),
+        )
+        .route(
+            "/api/v1/admin/users/{user_id}/iam",
+            any(admin_inventory::user_iam),
+        )
         .route("/api/v1/admin/roles", any(admin_inventory::roles))
         .route(
             "/api/v1/admin/groups",

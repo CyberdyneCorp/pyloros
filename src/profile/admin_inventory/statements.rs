@@ -92,16 +92,21 @@ pub(super) async fn policies(
     tx: &mut Transaction<'_, Postgres>,
     id: Option<Uuid>,
 ) -> Result<Vec<Value>, sqlx::Error> {
-    let mut query=sqlx::QueryBuilder::<Postgres>::new(
-        "SELECT jsonb_build_object('id',p.id,'name',p.name,'description',p.description,'version',p.version,
+    load(tx, id.as_ref().map(std::slice::from_ref)).await
+}
+
+pub(super) async fn load(
+    tx: &mut Transaction<'_, Postgres>,
+    ids: Option<&[Uuid]>,
+) -> Result<Vec<Value>, sqlx::Error> {
+    let mut query=sqlx::QueryBuilder::<Postgres>::new("SELECT jsonb_build_object('id',p.id,'name',p.name,'description',p.description,'version',p.version,
             'is_active',p.is_active,'chain_policy_id',p.chain_policy_id),p.created_at,
             COALESCE((SELECT jsonb_agg(jsonb_build_object('sid',s.sid,'effect',s.effect,'actions',s.actions,
             'resources',s.resources,'conditions',s.conditions) ORDER BY s.sort_order)
             FROM iam_policy_statements s WHERE s.policy_id=p.id),'[]'::jsonb)::text
-            FROM iam_policies p"
-    );
-    if let Some(id) = id {
-        query.push(" WHERE p.id=").push_bind(id);
+            FROM iam_policies p");
+    if let Some(ids) = ids {
+        query.push(" JOIN unnest(").push_bind(ids).push("::uuid[]) WITH ORDINALITY requested(id,position) ON requested.id=p.id ORDER BY requested.position");
     } else {
         query.push(" ORDER BY p.name");
     }

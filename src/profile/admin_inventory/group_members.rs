@@ -29,7 +29,7 @@ async fn identity(
     Ok(Some(Identity { id, chain_token_id }))
 }
 
-fn validate_identity(status: &str, mode: &str) -> Result<(), sqlx::Error> {
+pub(super) fn validate_identity(status: &str, mode: &str) -> Result<(), sqlx::Error> {
     if matches!(status, "active" | "suspended" | "revoked")
         && matches!(mode, "soulbound" | "transferable" | "restricted")
     {

@@ -9,6 +9,8 @@ mod delete_group;
 mod group_policies;
 pub(super) use delete_group::delete_group;
 mod group_members;
+mod user_detail;
+pub(super) use user_detail::{user_iam, user_token};
 mod group_relations;
 pub(super) use group_relations::{
     add_member, attach_group_policy, delete_only, detach_group_policy, remove_member,

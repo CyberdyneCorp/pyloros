@@ -403,6 +403,7 @@ mod tests {
         }
         let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let chain = Chain {
+            identity: None,
             endpoint: format!("http://{}", socket.local_addr().unwrap()),
             signer: Some(SIGNER.into()),
             policy: Some(CONTRACT.into()),

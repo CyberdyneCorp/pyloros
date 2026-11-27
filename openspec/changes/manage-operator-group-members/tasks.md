@@ -4,4 +4,4 @@
 - [x] Verify unsigned chain preparation, identity resolution, provider failures and switching back to PostgreSQL.
 - [ ] Verify confirmed chain writes and decide how to report failed provider operations during migration.
 - [ ] Resolve the outcome of overlapping membership changes during mixed-writer operation.
-- [ ] Verify the user administration panel with all detail reads served by Pyloros.
+- [x] Verify the user administration panel with all detail reads served by Pyloros.

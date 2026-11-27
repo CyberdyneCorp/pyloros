@@ -19,6 +19,7 @@ sol! {
         bool active;
         uint256 createdAt;
     }
+    function identityOf(uint256 tokenId) external view returns (address owner,uint8 status,string publicKey,string email);
     function listPolicies() external view returns (CatalogEntry[]);
     function listGroups() external view returns (CatalogEntry[]);
     function getMembers(uint256 groupId) external view returns (uint256[]);
@@ -29,6 +30,7 @@ static CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
 
 pub(crate) struct Chain {
     endpoint: String,
+    identity: Option<String>,
     policy: Option<String>,
     group: Option<String>,
     signer: Option<String>,
@@ -40,6 +42,7 @@ impl ChainSettings {
         let state = self.state.read().await;
         let view = state.view();
         view.is_configured.then(|| Chain {
+            identity: view.identity_contract_address,
             endpoint: view.rpc_url.unwrap_or_default(),
             policy: view.policy_contract_address,
             group: view.group_contract_address,
@@ -218,6 +221,28 @@ impl Chain {
         let inventory = self.snapshot().await?;
         Ok(u32::try_from(id)
             .map_or_else(|_| Vec::new(), |n| inventory.memberships(TokenId::from(n))))
+    }
+
+    pub(crate) async fn check_user_catalog(&self) -> Result<(), SnapshotError> {
+        // The configured Web3 snapshot enumerates groups and policies, without an identity index.
+        self.snapshot().await.map(|_| ())
+    }
+
+    pub(crate) async fn identity_status(&self, token: &str) -> Result<Option<u8>, SnapshotError> {
+        let id = TokenId::from_str_radix(token, 10).map_err(|_| SnapshotError::Unavailable)?;
+        let address = self.identity.as_deref().ok_or(SnapshotError::Unavailable)?;
+        match self.call(address, identityOfCall { tokenId: id }).await {
+            Ok(record) => Ok(Some(record.status)),
+            Err(ReadError::Rpc(error, _))
+                if error["code"] == 3
+                    || error["message"]
+                        .as_str()
+                        .is_some_and(|m| m.starts_with("execution reverted")) =>
+            {
+                Ok(None)
+            }
+            Err(_) => Err(SnapshotError::Unavailable),
+        }
     }
 
     async fn snapshot(&self) -> Result<Inventory, SnapshotError> {
@@ -507,6 +532,7 @@ mod tests {
         }
         let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let chain = Chain {
+            identity: None,
             endpoint: format!("http://{}", socket.local_addr().unwrap()),
             policy: Some(format!("0x{}", "11".repeat(20))),
             group: Some(format!("0x{}", "22".repeat(20))),
@@ -554,6 +580,7 @@ mod tests {
         );
         let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let chain = Chain {
+            identity: None,
             endpoint: format!("http://{}", socket.local_addr().unwrap()),
             policy: None,
             group: None,
