@@ -77,6 +77,7 @@ impl Policy {
             || matches!(
                 req.uri().path(),
                 "/api/v1/auth/login"
+                    | "/api/v1/auth/refresh"
                     | "/api/v1/auth/oauth2/token"
                     | "/api/v1/auth/magic-link/inspect"
                     | "/api/v1/auth/magic-link/confirm"
@@ -150,6 +151,15 @@ mod tests {
     fn credential_endpoints_match_only_the_exact_paths() {
         let policy = Policy::new(watch::channel(BTreeSet::new()).1, "csrf".into());
         let origin = "http://api.example.test";
+        assert_eq!(
+            policy.refusal(&request("/api/v1/auth/refresh", origin, "")),
+            None
+        );
+        assert!(
+            policy
+                .refusal(&request("/api/v1/auth/refresh/other", origin, ""))
+                .is_some()
+        );
         assert_eq!(
             policy.refusal(&request("/api/v1/auth/login", origin, "")),
             None

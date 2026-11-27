@@ -1,0 +1,1 @@
+- [x] Implement and compare rotation, cookie handling, duplicate requests, replay and cross-version sessions on PostgreSQL.

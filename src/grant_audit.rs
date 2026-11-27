@@ -130,6 +130,10 @@ pub(crate) enum AuditActivity<'a> {
         reason: Option<&'static str>,
     },
     PasswordLogin(Uuid),
+    Refresh {
+        session: Option<Uuid>,
+        reason: Option<&'static str>,
+    },
     FactorLogin(Uuid, &'static str),
     FactorRefused(&'static str),
     EmailLogin(Uuid),
@@ -213,6 +217,15 @@ pub(crate) async fn write_activity<'e>(
             } else {
                 json!({})
             },
+        ),
+        AuditActivity::Refresh { session, reason } => (
+            "session",
+            "token_refresh",
+            Some("refresh_token"),
+            "",
+            outcome(reason.is_some()),
+            reason,
+            session.map_or_else(|| json!({}), |id| json!({"session_id":id})),
         ),
         AuditActivity::PasswordLogin(session) => (
             "authentication",

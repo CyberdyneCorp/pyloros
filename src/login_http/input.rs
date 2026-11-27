@@ -102,9 +102,22 @@ pub(super) fn factor(body: &Value) -> Result<(String, String), Vec<Value>> {
     }
 }
 
-type Inputs = Result<(String, String), Vec<Value>>;
+pub(super) fn refresh(body: &Value) -> Result<Option<String>, Vec<Value>> {
+    match body.get("refresh_token") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(token)) => Ok(Some(token.clone())),
+        Some(other) => Err(vec![issue(
+            "refresh_token",
+            "string_type",
+            "Input should be a valid string",
+            other,
+        )]),
+    }
+}
 
-fn fields(body: &Value, parse: fn(&Value) -> Inputs) -> Inputs {
+type Inputs<T> = Result<T, Vec<Value>>;
+
+fn fields<T>(body: &Value, parse: fn(&Value) -> Inputs<T>) -> Inputs<T> {
     if body.is_null() {
         return Err(vec![
             json!({"loc":["body"],"type":"missing","msg":"Field required","input":null}),
@@ -118,11 +131,11 @@ fn fields(body: &Value, parse: fn(&Value) -> Inputs) -> Inputs {
     parse(body)
 }
 
-pub(super) async fn read(
+pub(super) async fn read<T>(
     headers: &HeaderMap,
     body: Body,
-    parse: fn(&Value) -> Inputs,
-) -> Result<(String, String), Response> {
+    parse: fn(&Value) -> Inputs<T>,
+) -> Result<T, Response> {
     let bytes = to_bytes(body, 2 * 1024 * 1024)
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE.into_response())?;

@@ -75,7 +75,12 @@ impl Login {
             return Ok(None);
         };
         let refresh = lifetime("JWT_REFRESH_TOKEN_TTL_DAYS", 30, 86400)?;
+        let grace = number("REFRESH_REUSE_GRACE_SECONDS", 10)?;
+        if !(0..=60).contains(&grace) {
+            return Err("refresh reuse grace must be between 0 and 60 seconds".into());
+        }
         Ok(Some(Self {
+            reuse_grace: TimeDelta::seconds(grace),
             pool,
             issuer: GrantSessionIssuer::with_identity(signing.clone(), refresh)?,
             signing,

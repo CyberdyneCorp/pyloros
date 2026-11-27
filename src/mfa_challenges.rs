@@ -80,6 +80,13 @@ impl SigningIdentity {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct RefreshIdentity {
+    pub user: Uuid,
+    pub session: Uuid,
+    pub jti: Uuid,
+}
+
 pub struct ChallengeVerifier {
     key: DecodingKey,
     validation: Validation,
@@ -114,6 +121,28 @@ impl ChallengeVerifier {
         Self { key, validation }
     }
 
+    pub(crate) fn refresh(&self, token: &str) -> Result<RefreshIdentity, ChallengeError> {
+        #[derive(Deserialize)]
+        struct Claims {
+            #[serde(rename = "iss")]
+            _issuer: String,
+            sub: Uuid,
+            sid: Uuid,
+            jti: Uuid,
+            #[serde(rename = "type")]
+            kind: String,
+        }
+        let claims = decode::<Claims>(token, &self.key, &self.validation)?.claims;
+        if claims.kind != "refresh" {
+            return Err(ChallengeError::Invalid);
+        }
+        Ok(RefreshIdentity {
+            user: claims.sub,
+            session: claims.sid,
+            jti: claims.jti,
+        })
+    }
+
     pub fn verify(&self, token: &str) -> Result<Challenge, ChallengeError> {
         let claims = decode::<Claims>(token, &self.key, &self.validation)?.claims;
         if claims.kind != "mfa" || claims.exp <= claims.iat {
@@ -138,6 +167,29 @@ impl ChallengeVerifier {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn refresh_requires_the_configured_issuer_and_a_session_credential() {
+        let signer = SigningIdentity::hmac("issuer".into(), b"test-secret").unwrap();
+        let verifier = ChallengeVerifier::hmac("issuer", b"test-secret").unwrap();
+        let valid = json!({"iss":"issuer","sub":Uuid::new_v4(),"sid":Uuid::new_v4(),
+            "jti":Uuid::new_v4(),"exp":Utc::now().timestamp()+300,"type":"refresh"});
+        assert!(verifier.refresh(&signer.sign(&valid).unwrap()).is_ok());
+        for field in ["iss", "sub", "sid", "jti", "exp", "type"] {
+            let mut missing = valid.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(verifier.refresh(&signer.sign(&missing).unwrap()).is_err());
+        }
+        for (field, value) in [
+            ("iss", "another-issuer"),
+            ("type", "access"),
+            ("type", "mfa"),
+        ] {
+            let mut invalid = valid.clone();
+            invalid[field] = json!(value);
+            assert!(verifier.refresh(&signer.sign(&invalid).unwrap()).is_err());
+        }
+    }
 
     #[test]
     fn refuses_unsigned_context_changes_and_non_challenge_credentials() {

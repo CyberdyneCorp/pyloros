@@ -98,6 +98,24 @@ impl GrantSessionIssuer {
         Ok(scopes.contains("offline_access").then_some(token))
     }
 
+    pub(crate) fn refresh_credential(
+        &self,
+        user: Uuid,
+        session: Uuid,
+        jti: Uuid,
+        now: DateTime<Utc>,
+    ) -> Result<(String, DateTime<Utc>), SessionError> {
+        let expires = now
+            .checked_add_signed(self.refresh_lifetime)
+            .ok_or(SessionError::InvalidLifetime)?;
+
+        let token = self.sign(&json!({
+            "iss":self.issuer(),"sub":user.to_string(),"sid":session.to_string(),
+            "jti":jti.to_string(),"type":"refresh","iat":now.timestamp(),"exp":expires.timestamp()
+        }))?;
+        Ok((token, expires))
+    }
+
     pub(crate) async fn store_session(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -105,14 +123,8 @@ impl GrantSessionIssuer {
         origin: SessionOrigin<'_>,
         now: DateTime<Utc>,
     ) -> Result<String, SessionError> {
-        let expires = now
-            .checked_add_signed(self.refresh_lifetime)
-            .ok_or(SessionError::InvalidLifetime)?;
         let jti = Uuid::new_v4();
-        let token = self.sign(&json!({
-            "iss":self.issuer(),"sub":record.user.to_string(),"sid":record.session.to_string(),
-            "jti":jti.to_string(),"type":"refresh","iat":now.timestamp(),"exp":expires.timestamp()
-        }))?;
+        let (token, expires) = self.refresh_credential(record.user, record.session, jti, now)?;
         let digest = format!("{:x}", Sha256::digest(token.as_bytes()));
         sqlx::query(
             "INSERT INTO sessions (id,user_id,refresh_token_hash,user_agent,ip_address,

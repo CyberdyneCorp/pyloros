@@ -40,21 +40,6 @@ impl GrantSessionIssuer {
         now: DateTime<Utc>,
     ) -> Result<SessionPair, SessionError> {
         let session = Uuid::new_v4();
-        let subject = Subject {
-            user: login.user,
-            session,
-            client: None,
-        };
-        let (mut claims, _) = self
-            .account_claims(
-                tx,
-                subject,
-                policy.admin_emails,
-                policy.require_verified_admin_email,
-                now,
-                policy.access_lifetime,
-            )
-            .await?;
         let methods: Vec<_> = login
             .methods
             .iter()
@@ -62,13 +47,16 @@ impl GrantSessionIssuer {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        claims["auth_time"] = json!(login.authenticated_at.timestamp());
-        claims["amr"] = json!(methods);
-        if let Some(roles) = profile_roles(tx, login.user).await? {
-            claims["roles"] = json!(roles.global);
-            claims["org_roles"] = json!(roles.organizations);
-        }
-        let access_token = self.sign(&claims)?;
+        let access_token = self
+            .first_party_access(
+                tx,
+                (login.user, session),
+                Some(login.authenticated_at),
+                &methods,
+                policy,
+                now,
+            )
+            .await?;
         let amr = methods.join(" ");
         let record = SessionRecord {
             user: login.user,
@@ -85,5 +73,38 @@ impl GrantSessionIssuer {
             access_token,
             refresh_token,
         })
+    }
+    pub(crate) async fn first_party_access(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        (user, session): (Uuid, Uuid),
+        authenticated_at: Option<DateTime<Utc>>,
+        methods: &[&str],
+        policy: &LoginPolicy<'_>,
+        now: DateTime<Utc>,
+    ) -> Result<String, SessionError> {
+        let (mut claims, _) = self
+            .account_claims(
+                tx,
+                Subject {
+                    user,
+                    session,
+                    client: None,
+                },
+                policy.admin_emails,
+                policy.require_verified_admin_email,
+                now,
+                policy.access_lifetime,
+            )
+            .await?;
+        if let Some(at) = authenticated_at {
+            claims["auth_time"] = json!(at.timestamp());
+            claims["amr"] = json!(methods);
+        }
+        if let Some(roles) = profile_roles(tx, user).await? {
+            claims["roles"] = json!(roles.global);
+            claims["org_roles"] = json!(roles.organizations);
+        }
+        self.sign(&claims)
     }
 }

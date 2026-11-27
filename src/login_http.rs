@@ -4,6 +4,7 @@ mod input;
 mod mfa;
 use crate::enrolled_factor::FactorVerifier;
 mod poll;
+mod refresh;
 use crate::mfa_challenges::ChallengeVerifier;
 use crate::{
     email_challenge::{self, ConfirmationDecision, ConfirmationError, ConfirmationPolicy},
@@ -40,6 +41,7 @@ struct Login {
     cookies: SessionCookies,
     access: TimeDelta,
     refresh: TimeDelta,
+    reuse_grace: TimeDelta,
     challenge: TimeDelta,
     scheme: PasswordScheme,
     admins: Vec<String>,
@@ -57,6 +59,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     let login = Login::configured(pool, production)?.map(Arc::new);
     Ok(Router::new()
         .route("/api/v1/auth/login", any(handle))
+        .route("/api/v1/auth/refresh", any(refresh::handle))
         .route("/api/v1/auth/mfa/verify", any(mfa::handle))
         .route("/api/v1/auth/magic-link/status", any(poll::handle))
         .with_state(login))
@@ -244,15 +247,22 @@ impl Login {
             now,
         )
         .await?;
-        let mut res=Json(json!({"access_token":pair.access_token,"refresh_token":pair.refresh_token,"token_type":"Bearer"})).into_response();
+        let res = self.token_response(&pair.access_token, &pair.refresh_token)?;
+        tx.commit().await?;
+        Ok(res)
+    }
+
+    fn token_response(&self, access: &str, refresh: &str) -> LoginResult {
+        let mut res =
+            Json(json!({"access_token":access,"refresh_token":refresh,"token_type":"Bearer"}))
+                .into_response();
         self.cookies.set(
             res.headers_mut(),
-            &pair.access_token,
-            &pair.refresh_token,
+            access,
+            refresh,
             self.access.num_seconds() as u64,
             self.refresh.num_seconds() as u64,
         )?;
-        tx.commit().await?;
         Ok(res)
     }
 }
