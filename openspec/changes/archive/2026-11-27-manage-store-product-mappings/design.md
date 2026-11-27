@@ -1,0 +1,1 @@
+Use a shared handler with fixed table and identifier choices for each storefront. Authorize the current administrator before resolving a product. Read the client registry first and consult virtual products when the client is absent. Persist writes and their administrative audit records together.

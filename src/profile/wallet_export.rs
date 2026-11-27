@@ -44,7 +44,7 @@ async fn read(state: &Profile, id: &Identity) -> Result<Response, sqlx::Error> {
                 .fetch_optional(&mut *tx)
                 .await?;
         if let Some(metadata) = metadata {
-            validate_metadata(&metadata)?;
+            administrator::validate_metadata(&metadata)?;
         }
         if revoked(&mut tx, id).await? {
             return Ok(unauthorized());
@@ -66,7 +66,7 @@ async fn read(state: &Profile, id: &Identity) -> Result<Response, sqlx::Error> {
     let Some((envelope, address, metadata)) = wallet else {
         return Ok(problem(StatusCode::NOT_FOUND, "User not found"));
     };
-    validate_metadata(&metadata)?;
+    administrator::validate_metadata(&metadata)?;
     let (Some(envelope), Some(address)) = (envelope, address) else {
         return Ok(problem(StatusCode::NOT_FOUND, "Private key not available"));
     };
@@ -77,12 +77,6 @@ async fn read(state: &Profile, id: &Identity) -> Result<Response, sqlx::Error> {
         ));
     };
     Ok(response(key, id.user, &address, &envelope))
-}
-
-fn validate_metadata(metadata: &str) -> Result<(), sqlx::Error> {
-    crate::stored_json::check_integers(metadata)?;
-    admin_organizations::normalized_storage(metadata)?;
-    Ok(())
 }
 
 fn response(key: &KeyEncryptionKey, user: Uuid, address: &str, envelope: &[u8]) -> Response {

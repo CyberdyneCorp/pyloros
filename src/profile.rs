@@ -22,6 +22,7 @@ mod email_verification;
 mod erasure;
 mod org_directory;
 mod registries;
+mod store_products;
 pub(crate) use email_verification::verify_account;
 mod enrollment;
 mod logout_all;
@@ -390,6 +391,7 @@ fn build_routes(
     };
     Ok(Router::new()
         .merge(analytics::routes())
+        .merge(store_products::routes())
         .route("/api/v1/orgs/{org_id}/members", any(org_directory::read))
         .route(
             "/api/v1/admin/settings/blockchain",

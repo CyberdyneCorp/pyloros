@@ -1,0 +1,2 @@
+- [x] Implement both inventories and their audited mutations.
+- [x] Verify access, pagination, validation, persistence and rollback with PostgreSQL.
