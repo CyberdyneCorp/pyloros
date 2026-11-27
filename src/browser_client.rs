@@ -1,9 +1,12 @@
 //! Resolve the destination before redirecting an OAuth authorization request.
+pub mod grant;
 use axum::http::uri::Authority;
 use sqlx::{Postgres, Transaction};
 
 #[derive(Debug, PartialEq)]
 pub struct BrowserClient {
+    id: String,
+    callback: String,
     pub name: String,
     pub trusted: bool,
     pub dynamic: bool,
@@ -45,6 +48,8 @@ pub async fn resolve(
         return Err(ClientError::Callback);
     }
     Ok(BrowserClient {
+        id: id.into(),
+        callback: callback.into(),
         name,
         trusted,
         dynamic,
@@ -170,6 +175,8 @@ mod database_tests {
         assert_eq!(
             client,
             BrowserClient {
+                id: "app".into(),
+                callback: "http://[::1]:9876/cb".into(),
                 name: "Native".into(),
                 trusted: false,
                 dynamic: true,

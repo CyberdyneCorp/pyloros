@@ -145,7 +145,7 @@ fn seconds(name: &str, value: Option<&str>) -> Result<Option<i64>, String> {
         .map(Some)
 }
 
-fn quoted_list(items: &[&str]) -> String {
+pub(crate) fn quoted_list(items: &[&str]) -> String {
     let quoted: Vec<_> = items
         .iter()
         .map(|s| {
