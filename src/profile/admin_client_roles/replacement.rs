@@ -202,7 +202,7 @@ mod tests {
             CREATE TEMP TABLE client_role_permissions(client_id text,role_key text,permission_key text);
             CREATE TEMP TABLE audit_chain_head(id int PRIMARY KEY,head_hash text);
             CREATE TEMP TABLE admin_action_logs(id uuid,action text CONSTRAINT refuse_audit CHECK(false),target_type text,target_id text,
-                extra_metadata jsonb,ip_address inet,user_agent text,created_at timestamptz,prev_hash text,row_hash text,actor_user_id uuid,actor_email text);
+                extra_metadata jsonb,ip_address inet,user_agent text,created_at timestamptz,prev_hash text,row_hash text,actor_user_id uuid,actor_type text,actor_client_id text,actor_email text);
             INSERT INTO client_permissions VALUES('app','read'),('app','write');
             INSERT INTO client_role_permissions VALUES('app','operator','read');").execute(&mut db).await.unwrap();
         let actor = Uuid::new_v4();

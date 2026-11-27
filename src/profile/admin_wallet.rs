@@ -111,7 +111,7 @@ mod tests {
             CREATE TEMP TABLE audit_chain_head(id int PRIMARY KEY,head_hash text);
             CREATE TEMP TABLE admin_action_logs(id uuid,action text CHECK(action <> 'user.provision_wallet'),
             target_type text,target_id text,extra_metadata jsonb,ip_address inet,user_agent text,
-            created_at timestamptz,prev_hash text,row_hash text,actor_user_id uuid,actor_email text);")
+            created_at timestamptz,prev_hash text,row_hash text,actor_user_id uuid,actor_type text,actor_client_id text,actor_email text);")
             .execute(&pool).await?;
         let id = Uuid::new_v4();
         sqlx::query(r#"INSERT INTO users(id,extra_metadata) VALUES($1,'[["old",3]]')"#)

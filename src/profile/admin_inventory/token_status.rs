@@ -148,7 +148,7 @@ async fn store(
     crate::admin_audit::append_sorted_record(
         &mut tx,
         "blockchain.nft_status_update",
-        Some(actor),
+        crate::admin_audit::Actor::User(Some(actor)),
         Some(("user", Some(&id.to_string()))),
         &audit,
         origin,
@@ -219,7 +219,7 @@ mod tests {
         sqlx::raw_sql("CREATE TEMP TABLE users(id uuid PRIMARY KEY,extra_metadata jsonb,updated_at timestamptz);
             CREATE TEMP TABLE audit_chain_head(id int PRIMARY KEY,head_hash text);
             CREATE TEMP TABLE admin_action_logs(id uuid,action text,target_type text,target_id text,extra_metadata jsonb,
-              ip_address inet,user_agent text,created_at timestamptz,prev_hash text,row_hash text,actor_user_id uuid,actor_email text);")
+              ip_address inet,user_agent text,created_at timestamptz,prev_hash text,row_hash text,actor_user_id uuid,actor_type text,actor_client_id text,actor_email text);")
             .execute(&pool).await?;
         let id = Uuid::new_v4();
         let settings = ChainSettings::default();

@@ -72,14 +72,19 @@ pub(crate) async fn append_record(
 ) -> Result<(), sqlx::Error> {
     let mut meta = meta;
     meta.sort_all_objects();
-    append_sorted_record(tx, action, actor, target, &meta, origin).await
+    append_sorted_record(tx, action, Actor::User(actor), target, &meta, origin).await
+}
+
+pub(crate) enum Actor<'a> {
+    User(Option<(Uuid, Option<&'a str>)>),
+    Client(&'a str),
 }
 
 // The metadata must serialize in sorted key order for the shared audit hash.
 pub(crate) async fn append_sorted_record<T: serde::Serialize + Sync>(
     tx: &mut Transaction<'_, Postgres>,
     action: &str,
-    actor: Option<(Uuid, Option<&str>)>,
+    actor: Actor<'_>,
     target: Option<(&str, Option<&str>)>,
     meta: &T,
     origin: SessionOrigin<'_>,
@@ -96,11 +101,20 @@ pub(crate) async fn append_sorted_record<T: serde::Serialize + Sync>(
     .await?;
     let id = Uuid::new_v4();
     let ip = origin.ip.map(|v| v.to_string());
-    let actor_id = actor.map(|(id, _)| id);
-    let actor_email = actor.and_then(|(_, email)| email);
+    let (actor_type, actor_id, actor_email, actor_client_id) = match actor {
+        Actor::User(user) => (
+            "user",
+            user.map(|(id, _)| id),
+            user.and_then(|(_, email)| email),
+            None,
+        ),
+        Actor::Client(client) => ("client", None, None, Some(client)),
+    };
     #[derive(serde::Serialize)]
     struct Record<'a, T> {
         action: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        actor_client_id: Option<&'a str>,
         actor_email: Option<&'a str>,
         actor_user_id: Option<Uuid>,
         created_at: String,
@@ -114,6 +128,7 @@ pub(crate) async fn append_sorted_record<T: serde::Serialize + Sync>(
     }
     let record = Record {
         action,
+        actor_client_id,
         actor_email,
         actor_user_id: actor_id,
         created_at: now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string(),
@@ -127,8 +142,8 @@ pub(crate) async fn append_sorted_record<T: serde::Serialize + Sync>(
     };
     let digest = sorted_digest(&record).map_err(|err| sqlx::Error::Encode(err.into()))?;
     sqlx::query(
-        "INSERT INTO admin_action_logs (id,action,target_type,target_id,extra_metadata,ip_address,user_agent,created_at,prev_hash,row_hash,actor_user_id,actor_email)
-         VALUES ($1,$2,$12,$3,$4,$5::text::inet,$6,$7,$8,$9,$10,$11)",
+        "INSERT INTO admin_action_logs (id,action,target_type,target_id,extra_metadata,ip_address,user_agent,created_at,prev_hash,row_hash,actor_user_id,actor_email,actor_type,actor_client_id)
+         VALUES ($1,$2,$12,$3,$4,$5::text::inet,$6,$7,$8,$9,$10,$11,$13,$14)",
     )
     .bind(id)
     .bind(action)
@@ -142,6 +157,8 @@ pub(crate) async fn append_sorted_record<T: serde::Serialize + Sync>(
     .bind(actor_id)
     .bind(actor_email)
     .bind(target_type)
+    .bind(actor_type)
+    .bind(actor_client_id)
     .execute(&mut **tx)
     .await?;
     sqlx::query("UPDATE audit_chain_head SET head_hash=$1 WHERE id=1")
@@ -169,7 +186,7 @@ mod tests {
             "CREATE TEMP TABLE audit_chain_head(id int primary key, head_hash text);
              CREATE TEMP TABLE admin_action_logs(id uuid,action text,target_type text,target_id text,
                extra_metadata jsonb,ip_address inet,user_agent text,created_at timestamptz,
-               prev_hash text,row_hash text,actor_user_id uuid,actor_email text);
+               prev_hash text,row_hash text,actor_user_id uuid,actor_type text,actor_client_id text,actor_email text);
              CREATE FUNCTION pg_temp.wait_on_head() RETURNS trigger LANGUAGE plpgsql AS
                $$ BEGIN PERFORM pg_advisory_xact_lock({key}::bigint); RETURN NEW; END $$;
              CREATE TRIGGER wait_on_head BEFORE INSERT ON audit_chain_head
@@ -222,6 +239,54 @@ mod tests {
         .expect("audit insert reached lock")?;
         assert!(created <= observed);
         Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn delegated_audit_hash_covers_the_service_client() {
+        use sqlx::Row;
+        let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql("CREATE TEMP TABLE audit_chain_head(id int primary key,head_hash text);
+            CREATE TEMP TABLE admin_action_logs(id uuid,action text,target_type text,target_id text,
+            extra_metadata jsonb,ip_address inet,user_agent text,created_at timestamptz,prev_hash text,
+            row_hash text,actor_user_id uuid,actor_email text,actor_type text,actor_client_id text);")
+            .execute(&mut *tx).await.unwrap();
+        append_sorted_record(
+            &mut tx,
+            "client_permission.create",
+            Actor::Client("books"),
+            Some(("client_permission", Some("books:read"))),
+            &json!({}),
+            SessionOrigin {
+                ip: None,
+                user_agent: None,
+            },
+        )
+        .await
+        .unwrap();
+        let row = sqlx::query("SELECT * FROM admin_action_logs")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(row.get::<String, _>("actor_type"), "client");
+        assert_eq!(row.get::<String, _>("actor_client_id"), "books");
+        assert!(row.get::<Option<Uuid>, _>("actor_user_id").is_none());
+        let time = row.get::<chrono::DateTime<Utc>, _>("created_at");
+        let mut signed = json!({
+            "action":"client_permission.create","actor_email":null,"actor_user_id":null,
+            "created_at":time.format("%Y-%m-%dT%H:%M:%S%.6f").to_string(),
+            "id":row.get::<Uuid,_>("id"),"ip_address":null,"metadata":{},
+            "prev_hash":"0".repeat(64),"target_id":"books:read",
+            "target_type":"client_permission","user_agent":null,"actor_client_id":"books"
+        });
+        signed.sort_all_objects();
+        assert_eq!(
+            row.get::<String, _>("row_hash"),
+            sorted_digest(&signed).unwrap()
+        );
     }
 
     #[test]

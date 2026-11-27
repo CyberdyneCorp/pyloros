@@ -1,10 +1,21 @@
-//! Mutate a client catalog and append its operator audit in one transaction.
+//! Mutate a client catalog and append its actor audit in one transaction.
 use super::*;
 use crate::{
     browser_prompt::quoted_string, grant_response::SessionOrigin, login_http::problem,
     request_json::fields,
 };
 use serde_json::value::RawValue;
+
+#[derive(Deserialize)]
+pub(in crate::profile) struct CatalogPath {
+    client_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(in crate::profile) struct PermissionPath {
+    client_id: Option<String>,
+    key: String,
+}
 
 enum Edit<'a> {
     Create(Option<&'a RawValue>),
@@ -15,7 +26,7 @@ pub(in crate::profile) async fn create(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    Path(client): Path<String>,
+    Path(path): Path<CatalogPath>,
     bytes: axum::body::Bytes,
 ) -> Response {
     let raw = match fields::document(&headers, &bytes) {
@@ -26,7 +37,7 @@ pub(in crate::profile) async fn create(
         &state,
         peer,
         &headers,
-        &client,
+        path.client_id,
         Edit::Create(raw.as_deref()),
     )
     .await
@@ -38,7 +49,7 @@ pub(in crate::profile) async fn remove(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     method: Method,
     headers: HeaderMap,
-    Path((client, key)): Path<(String, String)>,
+    Path(path): Path<PermissionPath>,
 ) -> Response {
     if method != Method::DELETE {
         let mut r = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
@@ -46,45 +57,41 @@ pub(in crate::profile) async fn remove(
             .insert(header::ALLOW, header::HeaderValue::from_static("DELETE"));
         return r;
     }
-    edit(&state, peer, &headers, &client, Edit::Delete(&key))
-        .await
-        .unwrap_or_else(|_| internal())
+    edit(
+        &state,
+        peer,
+        &headers,
+        path.client_id,
+        Edit::Delete(&path.key),
+    )
+    .await
+    .unwrap_or_else(|_| internal())
 }
 
 async fn edit(
     state: &Profile,
     peer: SocketAddr,
     headers: &HeaderMap,
-    client: &str,
+    requested_client: Option<String>,
     edit: Edit<'_>,
 ) -> Result<Response, sqlx::Error> {
-    let (mut tx, actor, email) = match administrator::operator(state, headers).await {
-        Ok(op) => op,
-        Err(r) => return Ok(*r),
+    let (mut tx, client, operator) = match requested_client {
+        Some(client) => match administrator::operator(state, headers).await {
+            Ok((tx, id, email)) => (tx, client, Some((id, email))),
+            Err(r) => return Ok(*r),
+        },
+        None => match delegated_client(state, headers).await {
+            Ok(client) => (state.pool.begin().await?, client, None),
+            Err(r) => return Ok(*r),
+        },
     };
-    if let Some(chain) = state.blockchain.membership_source().await {
+    let client = client.as_str();
+    if let Some(chain) = state.blockchain.provider().await {
         chain.validate_signer()?;
     }
-    let (key, description, action) = match edit {
-        Edit::Create(None) => return Ok(internal()),
-        Edit::Create(Some(raw)) => {
-            let (key, description) =
-                match fields::validate_document(raw, &["key", "description"], input) {
-                    Ok(v) => v,
-                    Err(r) => return Ok(*r),
-                };
-            if !valid_key(&key) {
-                return Ok(problem(
-                    StatusCode::BAD_REQUEST,
-                    &format!(
-                        "invalid permission key {}: must match [a-z0-9][a-z0-9_.:-]{{0,63}}",
-                        quoted_string(&key)
-                    ),
-                ));
-            }
-            (key, description, "client_permission.create")
-        }
-        Edit::Delete(key) => (key.to_owned(), None, "client_permission.delete"),
+    let (key, description, action) = match edit.definition() {
+        Ok(definition) => definition,
+        Err(response) => return Ok(*response),
     };
     let active = sqlx::query_scalar::<_, bool>(
         "SELECT active FROM oauth_clients WHERE client_id=$1 FOR NO KEY UPDATE",
@@ -104,18 +111,45 @@ async fn edit(
             ip: crate::token_http::client_ip(headers, peer.ip(), state.proxies),
             user_agent: crate::token_http::header(headers, "user-agent"),
         };
-        crate::admin_audit::append(
+        let actor = match &operator {
+            Some((id, email)) => crate::admin_audit::Actor::User(Some((*id, email.as_deref()))),
+            None => crate::admin_audit::Actor::Client(client),
+        };
+        crate::admin_audit::append_sorted_record(
             &mut tx,
             action,
-            Some((actor, email.as_deref())),
-            ("client_permission", &format!("{client}:{key}")),
-            json!({}),
+            actor,
+            Some(("client_permission", Some(&format!("{client}:{key}")))),
+            &json!({}),
             origin,
         )
         .await?;
         tx.commit().await?;
     }
     Ok(response)
+}
+
+impl Edit<'_> {
+    fn definition(&self) -> Result<(String, Option<String>, &'static str), Box<Response>> {
+        match self {
+            Self::Create(None) => Err(Box::new(internal())),
+            Self::Create(Some(raw)) => {
+                let (key, description) =
+                    fields::validate_document(raw, &["key", "description"], input)?;
+                if !valid_key(&key) {
+                    return Err(Box::new(problem(
+                        StatusCode::BAD_REQUEST,
+                        &format!(
+                            "invalid permission key {}: must match [a-z0-9][a-z0-9_.:-]{{0,63}}",
+                            quoted_string(&key)
+                        ),
+                    )));
+                }
+                Ok((key, description, "client_permission.create"))
+            }
+            Self::Delete(key) => Ok(((*key).to_owned(), None, "client_permission.delete")),
+        }
+    }
 }
 
 fn input(model: Value) -> Result<(String, Option<String>), Vec<Value>> {
@@ -205,7 +239,11 @@ async fn delete(
             ),
         ));
     }
-    Ok(StatusCode::NO_CONTENT.into_response())
+    Ok((
+        StatusCode::NO_CONTENT,
+        [(header::CONTENT_TYPE, "application/json")],
+    )
+        .into_response())
 }
 
 #[cfg(test)]
@@ -235,9 +273,14 @@ mod tests {
         sqlx::query("INSERT INTO client_role_permissions VALUES('one','a','read'),('one','b','read'),('two','a','read')")
             .execute(&mut *tx).await.unwrap();
         let mut write = tx.begin().await.unwrap();
-        assert_eq!(
-            delete(&mut write, "one", "read").await.unwrap().status(),
-            StatusCode::NO_CONTENT
+        let removed = delete(&mut write, "one", "read").await.unwrap();
+        assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+        assert_eq!(removed.headers()[header::CONTENT_TYPE], "application/json");
+        assert!(
+            axum::body::to_bytes(removed.into_body(), 256)
+                .await
+                .unwrap()
+                .is_empty()
         );
         let owners = "SELECT client_id FROM client_role_permissions ORDER BY client_id";
         assert_eq!(

@@ -150,3 +150,32 @@ async fn delegated_catalog_requires_service_bearer_credentials() {
         assert_eq!(error["detail"], "Service token required");
     }
 }
+
+#[tokio::test]
+async fn delegated_permission_writes_require_service_credentials() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    for (method, path) in [
+        (Method::POST, "/api/v1/clients/me/permissions"),
+        (Method::DELETE, "/api/v1/clients/me/permissions/read"),
+    ] {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .header(header::COOKIE, "access_token=user-session")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"client_id":"other","key":"read"}"#))
+            .unwrap();
+        let response = routes.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()[header::WWW_AUTHENTICATE], "Bearer");
+        let bytes = axum::body::to_bytes(response.into_body(), 256)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["detail"], "Service token required");
+    }
+}

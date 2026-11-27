@@ -389,7 +389,11 @@ fn build_routes(
         )
         .route(
             "/api/v1/clients/me/permissions",
-            any(admin_permissions::delegated_list),
+            any(admin_permissions::delegated_list).post(admin_permissions::create),
+        )
+        .route(
+            "/api/v1/clients/me/permissions/{key}",
+            any(admin_permissions::remove),
         )
         .route(
             "/api/v1/admin/clients/{client_id}/permissions",
