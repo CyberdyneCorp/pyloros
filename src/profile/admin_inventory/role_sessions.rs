@@ -97,6 +97,9 @@ pub(in crate::profile) async fn session_method(
     headers: HeaderMap,
     path: Path<String>,
 ) -> Response {
+    if path.0 == "policies" {
+        return crate::token_http::post_only().await;
+    }
     if path.0 == "sessions" {
         return list(state, method, headers, path).await;
     }

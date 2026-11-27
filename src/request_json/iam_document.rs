@@ -1,4 +1,4 @@
-//! Numeric tokens accepted by the operator role-session request decoder.
+//! Decode JSON documents for operator IAM role requests, including non-finite numeric tokens.
 use super::{encoding, is_json, json_issue};
 use crate::login_http::problem;
 use axum::{

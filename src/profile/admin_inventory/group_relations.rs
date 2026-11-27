@@ -8,6 +8,7 @@ enum Relation {
     Membership(String),
     UserPolicy(String),
     GroupPolicy(String),
+    RolePolicy(String),
 }
 enum Child {
     Body(Option<Box<RawValue>>),
@@ -18,6 +19,7 @@ impl Relation {
         let (raw, name, field) = match self {
             Self::UserPolicy(raw) => (raw, "user_id", "policy_id"),
             Self::Membership(raw) => (raw, "user_id", "group_id"),
+            Self::RolePolicy(raw) => (raw, "role_id", "policy_id"),
             Self::GroupPolicy(raw) => (raw, "group_id", "policy_id"),
         };
         let parent = crate::query::path_uuid(raw, name);
@@ -48,6 +50,28 @@ pub(in crate::profile) async fn attach_group_policy(
                 peer,
                 &headers,
                 Relation::GroupPolicy(parent),
+                Child::Body(raw),
+            )
+            .await
+        }
+        Err(error) => *error,
+    }
+}
+
+pub(in crate::profile) async fn attach_role_policy(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(parent): Path<String>,
+    bytes: axum::body::Bytes,
+) -> Response {
+    match crate::request_json::iam_document::document(&headers, &bytes) {
+        Ok(raw) => {
+            change(
+                &state,
+                peer,
+                &headers,
+                Relation::RolePolicy(parent),
                 Child::Body(raw),
             )
             .await
@@ -89,6 +113,22 @@ pub(in crate::profile) async fn detach_group_policy(
         peer,
         &headers,
         Relation::GroupPolicy(parent),
+        Child::Path(child),
+    )
+    .await
+}
+
+pub(in crate::profile) async fn detach_role_policy(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path((parent, child)): Path<(String, String)>,
+) -> Response {
+    change(
+        &state,
+        peer,
+        &headers,
+        Relation::RolePolicy(parent),
         Child::Path(child),
     )
     .await
@@ -184,6 +224,17 @@ async fn change(
             Relation::Membership(_) => {
                 return group_members::prepare_chain(&chain, tx, owner, target, add).await;
             }
+            Relation::RolePolicy(_) => {
+                if tx.commit().await.is_err() {
+                    return internal();
+                }
+                // A chain role must be resolved before the policy can be looked up.
+                return match chain.operator_roles().await {
+                    Ok(_) if add => assume_role::missing(owner),
+                    Err(error) => admin_client_roles::chain_error(error),
+                    Ok(_) => internal(),
+                };
+            }
             Relation::GroupPolicy(_) => IamMutation::GroupPolicy {
                 group: owner,
                 policy: target,
@@ -207,8 +258,27 @@ async fn change(
         Relation::Membership(_) => {
             group_members::store(tx, owner, target, add, actor, origin).await
         }
+        Relation::RolePolicy(_) => {
+            group_policies::store(
+                tx,
+                group_policies::Owner::Role(owner),
+                target,
+                add,
+                actor,
+                origin,
+            )
+            .await
+        }
         Relation::GroupPolicy(_) => {
-            group_policies::store(tx, owner, target, add, actor, origin).await
+            group_policies::store(
+                tx,
+                group_policies::Owner::Group(owner),
+                target,
+                add,
+                actor,
+                origin,
+            )
+            .await
         }
     }
     .unwrap_or_else(|_| internal())

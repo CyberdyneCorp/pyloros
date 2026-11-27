@@ -1,0 +1,3 @@
+- [x] Implement attachment and detachment through the configured provider.
+- [x] Verify request and error contracts, repeated operations, audit rollback and session evaluation.
+- [x] Exercise the original clients and check chain-backed role lookup.

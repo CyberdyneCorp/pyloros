@@ -18,8 +18,8 @@ mod user_policies;
 pub(super) use user_detail::{user_iam, user_token};
 mod group_relations;
 pub(super) use group_relations::{
-    add_member, attach_group_policy, attach_user_policy, delete_only, detach_group_policy,
-    detach_user_policy, remove_member,
+    add_member, attach_group_policy, attach_role_policy, attach_user_policy, delete_only,
+    detach_group_policy, detach_role_policy, detach_user_policy, remove_member,
 };
 mod input;
 pub(super) use create_group::create_group;

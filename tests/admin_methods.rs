@@ -77,6 +77,10 @@ async fn role_session_routes_preserve_method_priority_at_their_intersection() {
         .unwrap();
     let routes = pyloros::profile::routes(pool, false).unwrap();
     for (method, path, status, allowed) in [
+        (Method::GET, "sessions/policies", 405, Some("POST")),
+        (Method::POST, "sessions/policies", 401, None),
+        (Method::DELETE, "sessions/policies", 401, None),
+        (Method::GET, "unknown/policies/unknown", 405, Some("DELETE")),
         (Method::GET, "sessions/sessions", 401, None),
         (Method::DELETE, "sessions/sessions", 401, None),
         (Method::POST, "sessions/sessions", 401, None),
@@ -102,4 +106,21 @@ async fn role_session_routes_preserve_method_priority_at_their_intersection() {
             allowed
         );
     }
+}
+
+#[tokio::test]
+async fn role_policy_attachment_authenticates_after_decoding_nonfinite_numbers() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    let request = Request::post("/api/v1/admin/roles/invalid/policies")
+        .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"policy_id":NaN}"#))
+        .unwrap();
+    assert_eq!(
+        routes.oneshot(request).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
 }

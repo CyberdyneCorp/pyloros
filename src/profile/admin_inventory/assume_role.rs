@@ -1,8 +1,6 @@
 //! Issue a temporary role session and commit its operator audit.
 use super::*;
-use crate::{
-    grant_response::SessionOrigin, login_http::problem, request_json::role_session_numbers,
-};
+use crate::{grant_response::SessionOrigin, login_http::problem, request_json::iam_document};
 use axum::{body::Bytes, extract::Path};
 use chrono::Datelike;
 use std::collections::HashMap;
@@ -15,12 +13,22 @@ pub(in crate::profile) async fn create(
     body: Bytes,
 ) -> Response {
     // Both session route templates admit the literal /roles/sessions/sessions.
+    if path.get("session_id").is_some_and(|id| id == "policies") {
+        return group_relations::attach_role_policy(
+            State(state),
+            ConnectInfo(peer),
+            headers,
+            Path("sessions".into()),
+            body,
+        )
+        .await;
+    }
     let role = match path.get("role_id") {
         Some(raw) => raw.as_str(),
         None if path.get("session_id").is_some_and(|raw| raw == "sessions") => "sessions",
         None => return delete_only().await,
     };
-    let doc = match role_session_numbers::document(&headers, &body) {
+    let doc = match iam_document::document(&headers, &body) {
         Ok(doc) => doc,
         Err(error) => return *error,
     };
@@ -65,7 +73,7 @@ pub(in crate::profile) async fn create(
     .unwrap_or_else(|_| internal())
 }
 
-fn missing(role: Uuid) -> Response {
+pub(super) fn missing(role: Uuid) -> Response {
     problem(StatusCode::NOT_FOUND, &format!("role {role}"))
 }
 

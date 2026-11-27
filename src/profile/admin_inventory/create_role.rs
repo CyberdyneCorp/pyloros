@@ -1,8 +1,6 @@
 //! Create an IAM role and record its operator audit atomically.
 use super::*;
-use crate::{
-    grant_response::SessionOrigin, login_http::problem, request_json::role_session_numbers,
-};
+use crate::{grant_response::SessionOrigin, login_http::problem, request_json::iam_document};
 
 pub(in crate::profile) async fn create(
     State(state): State<Arc<Profile>>,
@@ -10,7 +8,7 @@ pub(in crate::profile) async fn create(
     headers: HeaderMap,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let raw = match role_session_numbers::document(&headers, &bytes) {
+    let raw = match iam_document::document(&headers, &bytes) {
         Ok(raw) => raw,
         Err(error) => return *error,
     };

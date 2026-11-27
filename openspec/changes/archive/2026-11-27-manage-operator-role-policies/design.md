@@ -1,0 +1,1 @@
+Reuse operator relationship validation and authority selection. Store each PostgreSQL relationship edit in the same transaction as the operator audit. Resolve roles using the active provider before changing permissions.
