@@ -3,28 +3,26 @@ use super::*;
 use crate::browser_prompt::quoted_string;
 
 pub(super) fn estimate_error(error: ReadError) -> PrepareError {
-    let ReadError::Rpc(doc, representation) = error else {
+    let ReadError::Rpc(doc) = error else {
         return PrepareError::Unavailable;
     };
     let Some(reason) = reason(&doc) else {
-        return rpc_failure(ReadError::Rpc(doc, representation));
+        return PrepareError::Rpc(doc.diagnostic);
     };
-    let data = match doc.get("data") {
+    let data = match doc.data.as_deref() {
         None => quoted_string("no data"),
-        Some(Value::Null) => "None".to_owned(),
-        Some(Value::String(s)) => quoted_string(s),
-        _ => match representation {
-            Some(s) => s,
-            None => return PrepareError::Unavailable,
+        Some(raw) => match crate::json_representation::representation(raw) {
+            Ok(text) => text,
+            Err(_) => return PrepareError::Unavailable,
         },
     };
     PrepareError::Reverted(format!("({}, {data})", quoted_string(&reason)))
 }
 
-fn reason(error: &Value) -> Option<String> {
-    let message = error["message"].as_str().unwrap_or_default();
-    match error.get("data") {
-        Some(Value::Null) => {
+fn reason(error: &rpc_response::RpcError) -> Option<String> {
+    let message = error.message.as_str();
+    match error.data.as_deref().map(|raw| raw.get()) {
+        Some("null") => {
             return Some(
                 if message.is_empty() {
                     "execution reverted"
@@ -34,23 +32,24 @@ fn reason(error: &Value) -> Option<String> {
                 .into(),
             );
         }
-        Some(Value::Object(_)) if !message.is_empty() => {
+        Some(raw) if raw.starts_with('{') && !message.is_empty() => {
             return Some(format!("execution reverted: {message}"));
         }
-        Some(Value::String(data)) => {
+        Some(raw) if raw.starts_with('"') => {
+            let data: String = serde_json::from_str(raw).ok()?;
             if data.starts_with("Reverted ") {
-                return legacy_reason(data);
+                return legacy_reason(&data);
             }
             if data.starts_with("0x4e487b71") {
-                return panic_reason(data);
+                return panic_reason(&data);
             }
             if data.starts_with("0x") && data.len() >= 10 && !data.starts_with("0x08c379a0") {
-                return Some(data.clone());
+                return Some(data);
             }
         }
         _ => {}
     }
-    if error["code"] == 3 && !message.is_empty() {
+    if error.code == Some(3) && !message.is_empty() {
         Some(message.into())
     } else {
         message
@@ -98,15 +97,15 @@ mod tests {
 
     #[test]
     fn a_node_error_stays_distinct_from_a_contract_failure() {
-        let transport = ReadError::Rpc(json!({"code":-32000,"message":"node busy"}), None);
+        let transport = rpc_response::decode(
+            br#"{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"node busy"}}"#,
+        )
+        .unwrap_err();
         assert!(matches!(
             estimate_error(transport),
             PrepareError::Rpc(text) if text == "{'code': -32000, 'message': 'node busy'}"
         ));
-        let returned = ReadError::Rpc(
-            json!({"code":3,"message":"execution reverted: denied","data":"0x"}),
-            None,
-        );
+        let returned = rpc_response::decode(br#"{"jsonrpc":"2.0","id":1,"error":{"code":3,"message":"execution reverted: denied","data":"0x"}}"#).unwrap_err();
         let PrepareError::Reverted(detail) = estimate_error(returned) else {
             panic!("expected contract rejection")
         };

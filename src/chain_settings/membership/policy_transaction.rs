@@ -267,9 +267,7 @@ pub(crate) struct UnsignedIamTransaction<'a> {
 
 fn rpc_failure(error: ReadError) -> PrepareError {
     match error {
-        ReadError::Rpc(doc, _) => {
-            PrepareError::Rpc(crate::chain_settings::health::diagnostic(&doc))
-        }
+        ReadError::Rpc(error) => PrepareError::Rpc(error.diagnostic),
         _ => PrepareError::Unavailable,
     }
 }

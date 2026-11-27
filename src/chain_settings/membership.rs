@@ -1,5 +1,6 @@
 //! Read the authority's IAM inventory without sending transactions.
 pub(super) mod policy_transaction;
+mod rpc_response;
 use super::ChainSettings;
 use alloy_sol_types::{SolCall, sol};
 use data_encoding::{HEXLOWER, HEXLOWER_PERMISSIVE};
@@ -161,11 +162,11 @@ impl Inventory {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 enum ReadError {
     Failure,
     Transport,
-    Rpc(Value, Option<String>),
+    Rpc(Box<rpc_response::RpcError>),
 }
 
 pub(crate) enum SnapshotError {
@@ -278,11 +279,8 @@ impl Chain {
         let address = self.identity.as_deref().ok_or(SnapshotError::Unavailable)?;
         match self.call(address, identityOfCall { tokenId: id }).await {
             Ok(record) => Ok(Some(record.status)),
-            Err(ReadError::Rpc(error, _))
-                if error["code"] == 3
-                    || error["message"]
-                        .as_str()
-                        .is_some_and(|m| m.starts_with("execution reverted")) =>
+            Err(ReadError::Rpc(error))
+                if error.code == Some(3) || error.message.starts_with("execution reverted") =>
             {
                 Ok(None)
             }
@@ -391,11 +389,7 @@ impl Chain {
         call: C,
     ) -> Result<Vec<CatalogEntry>, ReadError> {
         match self.call(address, call).await {
-            Err(ReadError::Rpc(err, _))
-                if err["message"]
-                    .as_str()
-                    .is_some_and(|s| s.starts_with("execution reverted")) =>
-            {
+            Err(ReadError::Rpc(err)) if err.message.starts_with("execution reverted") => {
                 Ok(Vec::new())
             }
             result => result,
@@ -450,36 +444,7 @@ impl Chain {
             }
             body.extend_from_slice(&piece);
         }
-        let mut doc: Value = serde_json::from_slice(&body).map_err(|_| ReadError::Failure)?;
-        if doc["jsonrpc"] != "2.0" || doc["id"] != 1 {
-            return Err(ReadError::Failure);
-        }
-        if let Some(error) = doc.get_mut("error") {
-            let representation = if error["data"].is_object() || error["data"].is_array() {
-                #[derive(serde::Deserialize)]
-                struct ErrorEnvelope<'a> {
-                    #[serde(borrow)]
-                    error: ErrorData<'a>,
-                }
-                #[derive(serde::Deserialize)]
-                struct ErrorData<'a> {
-                    #[serde(borrow)]
-                    data: &'a serde_json::value::RawValue,
-                }
-                let wire: ErrorEnvelope =
-                    serde_json::from_slice(&body).map_err(|_| ReadError::Failure)?;
-                Some(
-                    crate::json_representation::representation(wire.error.data)
-                        .map_err(|_| ReadError::Failure)?,
-                )
-            } else {
-                None
-            };
-            return Err(ReadError::Rpc(error.take(), representation));
-        }
-        doc.get_mut("result")
-            .map(Value::take)
-            .ok_or(ReadError::Failure)
+        rpc_response::decode(&body)
     }
 }
 

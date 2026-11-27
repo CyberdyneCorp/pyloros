@@ -58,3 +58,8 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 - **WHEN** a deployed mint retry encounters a malformed hexadecimal recipient before transaction preparation
 - **THEN** return the argument failure as the mint outcome and audit it
 - **AND** for a full-length address with an invalid checksum, a pending nonce lookup failure takes precedence over the checksum error
+
+#### Scenario: Provider returns a structured error
+
+- **WHEN** the identity provider reports an RPC error during transaction preparation
+- **THEN** preserve the provider's field order and integer precision in the operator-facing failure detail
