@@ -1,6 +1,7 @@
 //! External identity provider authorization and shared callback state.
 mod input;
 mod provider;
+pub mod state;
 
 use crate::{config::flag, login_http::problem};
 use axum::{
@@ -22,7 +23,6 @@ use std::{
     time::Duration,
 };
 use tokio::sync::watch;
-use uuid::Uuid;
 
 type Redirects = BTreeSet<String>;
 
@@ -132,29 +132,20 @@ async fn start(
     if let Err(message) = input.validate(&service.allowed.borrow()) {
         return problem(StatusCode::BAD_REQUEST, message);
     }
-    let state = Uuid::new_v4();
     let (port, challenge) = if input.mode == "cli" {
         (input.port, input.challenge)
     } else {
         (None, None)
     };
-    let stored = sqlx::query(
-        "INSERT INTO oauth_states
-         (id,provider,return_mode,frontend_redirect,expires_at,cli_port,code_challenge)
-         VALUES ($1,$2,$3,$4,clock_timestamp()+$5*interval '1 second',$6,$7)",
-    )
-    .bind(state)
-    .bind(name)
-    .bind(input.mode)
-    .bind(input.target)
-    .bind(service.ttl as f64)
-    .bind(port)
-    .bind(challenge)
-    .execute(&service.pool)
-    .await;
-    if stored.is_err() {
+    let instructions = state::ReturnInstructions {
+        return_mode: input.mode,
+        frontend_redirect: input.target,
+        cli_port: port,
+        code_challenge: challenge,
+    };
+    let Ok(state) = instructions.issue(&service.pool, &name, service.ttl).await else {
         return internal();
-    }
+    };
     let url = provider.authorization_url(state);
     if input.redirect {
         crate::browser_http::redirect(url)
