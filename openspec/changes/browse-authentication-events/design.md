@@ -1,0 +1,1 @@
+Authorize using the live administrator session, constrain the requested scope, and order by timestamp and identifier. Use the last returned event to continue a page. Include only applied filters and the number returned in the read audit. Keep administrative history and authentication event history distinct.

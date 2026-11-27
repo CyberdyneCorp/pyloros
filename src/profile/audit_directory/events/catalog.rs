@@ -1,0 +1,107 @@
+//! Wire values accepted by the operator event filters.
+pub(super) const CLASSES: &[(&str, &[&str])] = &[
+    (
+        "authentication",
+        &[
+            "logon",
+            "mfa_challenge",
+            "mfa_verify",
+            "magic_link_decision",
+        ],
+    ),
+    (
+        "session",
+        &[
+            "token_refresh",
+            "logoff",
+            "logoff_all",
+            "session_revoke",
+            "token_revoke",
+        ],
+    ),
+    (
+        "credential",
+        &[
+            "password_change",
+            "password_reset_request",
+            "password_reset_confirm",
+            "admin_password_reset",
+            "mfa_enroll",
+            "mfa_disable",
+            "recovery_codes_regenerate",
+            "admin_mfa_reset",
+            "passkey_enroll",
+            "passkey_revoke",
+        ],
+    ),
+    (
+        "account_lifecycle",
+        &[
+            "register",
+            "email_verify",
+            "user_create",
+            "user_delete",
+            "subject_export",
+            "subject_rectification",
+            "auth_events_pseudonymised",
+        ],
+    ),
+    (
+        "authorization",
+        &[
+            "token_grant",
+            "device_authorize",
+            "device_approve",
+            "device_deny",
+            "admin_grant",
+            "admin_revoke",
+        ],
+    ),
+];
+pub(super) const OUTCOMES: &[&str] = &["success", "failure"];
+pub(super) const REASONS: &[&str] = &[
+    "user_not_found",
+    "bad_password",
+    "password_not_set",
+    "inactive",
+    "email_unverified",
+    "already_registered",
+    "mfa_required",
+    "mfa_failed",
+    "mfa_not_enrolled",
+    "mfa_already_enabled",
+    "rate_limited",
+    "replay_detected",
+    "concurrent_refresh",
+    "invalid_token",
+    "expired",
+    "revoked",
+    "invalid_state",
+    "invalid_signature",
+    "invalid_passkey",
+    "provider_error",
+    "client_mismatch",
+    "invalid_client",
+    "invalid_grant",
+    "invalid_request",
+    "invalid_target",
+    "unauthorized_client",
+    "invalid_scope",
+    "unsupported_token_type",
+    "denied",
+    "self_modification",
+    "managed_by_config",
+];
+pub(super) const PROTOCOLS: &[&str] = &[
+    "password",
+    "totp",
+    "recovery_code",
+    "magic_link",
+    "passkey",
+    "oauth2",
+    "siwe",
+    "refresh_token",
+    "oidc",
+];
+pub(super) const FORMATS: &[&str] = &["email", "iss_sub", "opaque", "did"];
+pub(super) const ACTORS: &[&str] = &["user", "admin", "client", "system"];

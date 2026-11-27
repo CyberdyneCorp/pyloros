@@ -7,6 +7,7 @@ use strum::EnumMessage;
 pub(super) struct ParsedDateTime {
     pub(super) utc: DateTime<Utc>,
     pub(super) local: bool,
+    offset: i32,
 }
 
 fn issue(kind: &str, message: &str, error: speedate::ParseError) -> Value {
@@ -17,6 +18,14 @@ fn issue(kind: &str, message: &str, error: speedate::ParseError) -> Value {
 }
 
 pub(super) fn parse(value: &Value) -> Result<ParsedDateTime, Value> {
+    parse_with_zone(value, true)
+}
+
+pub(super) fn parse_utc(value: &Value) -> Result<ParsedDateTime, Value> {
+    parse_with_zone(value, false)
+}
+
+fn parse_with_zone(value: &Value, use_local: bool) -> Result<ParsedDateTime, Value> {
     let mut config = DateTimeConfig::default();
     config.time_config.microseconds_precision_overflow_behavior =
         MicrosecondsPrecisionOverflowBehavior::Truncate;
@@ -32,7 +41,7 @@ pub(super) fn parse(value: &Value) -> Result<ParsedDateTime, Value> {
                         e,
                     )
                 })?;
-                return expiry_value(date.timestamp(), 0, true, date.year);
+                return expiry_value(date.timestamp(), 0, use_local, date.year, 0);
             }
         },
         Value::Number(n) => {
@@ -60,8 +69,9 @@ pub(super) fn parse(value: &Value) -> Result<ParsedDateTime, Value> {
     expiry_value(
         dt.timestamp_tz(),
         dt.time.microsecond,
-        dt.time.tz_offset.is_none(),
+        dt.time.tz_offset.is_none() && use_local,
         dt.date.year,
+        dt.time.tz_offset.unwrap_or(0),
     )
 }
 
@@ -70,6 +80,7 @@ fn expiry_value(
     micros: u32,
     local: bool,
     year: u16,
+    offset: i32,
 ) -> Result<ParsedDateTime, Value> {
     let wall = DateTime::from_timestamp(seconds, micros * 1000).expect("parser date in range");
     if year == 0 {
@@ -93,13 +104,25 @@ fn expiry_value(
     } else {
         wall
     };
-    Ok(ParsedDateTime { utc, local })
+    Ok(ParsedDateTime { utc, local, offset })
 }
 
 pub(super) const FIRST_MICROSECOND: i64 = -62_135_596_800_000_000;
 pub(super) const LAST_MICROSECOND: i64 = 253_402_300_799_999_999;
 
 impl ParsedDateTime {
+    pub(super) fn audit_time(&self) -> String {
+        let zone = chrono::FixedOffset::east_opt(self.offset).expect("parsed timezone offset");
+        let precision = if self.utc.timestamp_subsec_micros() == 0 {
+            SecondsFormat::Secs
+        } else {
+            SecondsFormat::Micros
+        };
+        self.utc
+            .with_timezone(&zone)
+            .to_rfc3339_opts(precision, false)
+    }
+
     pub(super) fn database_bound(&self) -> sqlx::Result<String> {
         if self.local {
             match self

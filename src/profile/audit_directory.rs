@@ -6,12 +6,14 @@ use serde_json::value::RawValue;
 use sqlx::{QueryBuilder, Row, postgres::PgRow};
 
 mod event_time;
+mod events;
 mod export;
 use event_time::EventTime;
 mod verify;
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
+        .merge(events::routes())
         .route("/api/v1/admin/audit", any(list))
         .route("/api/v1/admin/audit/export", any(export::read))
         .route("/api/v1/admin/audit/verify", any(verify::read))
