@@ -1,0 +1,3 @@
+- [x] Implement and test subscription creation and partial editing.
+- [x] Verify client behavior, concurrency and rollback against the reference.
+- [ ] Resolve the response on deferred audit rejection before strict migration signoff.

@@ -110,7 +110,7 @@ async fn delete(tx: &mut Tx<'_>, id: Uuid) -> sqlx::Result<Option<Change>> {
     }))
 }
 
-fn generate(key: &KeyEncryptionKey, id: Uuid) -> sqlx::Result<(String, Vec<u8>)> {
+pub(super) fn generate(key: &KeyEncryptionKey, id: Uuid) -> sqlx::Result<(String, Vec<u8>)> {
     let mut random = Zeroizing::new([0_u8; 32]);
     SystemRandom::new()
         .fill(random.as_mut())

@@ -1,0 +1,3 @@
+Reuse the subscription projection, per-subscription signing key encryption and administrative audit transaction. Return the generated secret only on creation. Treat explicit null edits as preserving the stored value. Keep a deterministic list of supplied fields for the audit record.
+
+A duplicate name found during validation returns a conflict. A collision between concurrent inserts can fail at the database constraint. A patch that preserves all stored values keeps the modification timestamp. The current service reports HTTP 500 when a deferred constraint prevents commit. Migration signoff for that response remains open.

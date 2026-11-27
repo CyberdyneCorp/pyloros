@@ -28,7 +28,7 @@ pub(crate) fn validate_resource(uri: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_authority(authority: &str, host: &str) -> Result<(), String> {
+pub(crate) fn validate_authority(authority: &str, host: &str) -> Result<(), String> {
     use unicode_normalization::UnicodeNormalization;
     if authority.contains(['[', ']']) {
         validate_brackets(authority, host)?;
