@@ -29,7 +29,7 @@ fn invalid_metadata() -> serde_json::Error {
     serde::de::Error::custom("invalid organization metadata")
 }
 
-pub(super) fn normalized_storage(input: &str) -> Result<Option<String>, sqlx::Error> {
+pub(in crate::profile) fn normalized_storage(input: &str) -> Result<Option<String>, sqlx::Error> {
     if input.starts_with('{') {
         return Ok(None);
     }

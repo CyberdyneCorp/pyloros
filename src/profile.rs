@@ -440,7 +440,17 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/groups/{group_id}/policies/{policy_id}",
-            any(admin_inventory::detach_group_policy),
+            any(admin_inventory::delete_only).delete(admin_inventory::detach_group_policy),
+        )
+        .route(
+            "/api/v1/admin/users/{user_id}/groups",
+            any(crate::token_http::post_only)
+                .post(admin_inventory::add_member)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/api/v1/admin/users/{user_id}/groups/{group_id}",
+            any(admin_inventory::delete_only).delete(admin_inventory::remove_member),
         )
         .route("/api/v1/admin/roles", any(admin_inventory::roles))
         .route(

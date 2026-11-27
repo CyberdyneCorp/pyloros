@@ -1,3 +1,7 @@
-- [ ] Implement PostgreSQL membership changes with authorization, identity resolution, namespace protection and auditing.
-- [ ] Compare repeated, concurrent and failed operations and their effects on inherited access.
-- [ ] Exercise the existing clients and verify provider-specific behavior and confirmed chain writes.
+- [x] Implement PostgreSQL membership changes with authorization, identity resolution, namespace protection and auditing.
+- [x] Compare repeated, concurrent and failed operations and their effects on inherited access.
+- [x] Verify membership changes through the existing CLI and user administration controls.
+- [x] Verify unsigned chain preparation, identity resolution, provider failures and switching back to PostgreSQL.
+- [ ] Verify confirmed chain writes and decide how to report failed provider operations during migration.
+- [ ] Resolve the outcome of overlapping membership changes during mixed-writer operation.
+- [ ] Verify the user administration panel with all detail reads served by Pyloros.

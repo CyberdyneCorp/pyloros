@@ -96,7 +96,13 @@ impl<'a> Errors<'a> {
                         "UUID input should be a string, bytes or UUID object",
                     );
                 };
-                match crate::query::uuid_field(&text, "body", "policy_id") {
+                match crate::query::uuid_field(
+                    &text,
+                    "body",
+                    loc.last()
+                        .and_then(Value::as_str)
+                        .expect("named identifier field"),
+                ) {
                     Ok(id) => Ok(json!(id)),
                     Err(issue) => {
                         self.detail.push(field_issue(issue, raw));
@@ -155,15 +161,18 @@ impl<'a> Errors<'a> {
     }
 }
 
-pub(super) fn group_policy(
+pub(super) fn relation_ids(
     raw: &RawValue,
-    group: Result<Uuid, Value>,
+    parent: Result<Uuid, Value>,
+    child: &'static str,
 ) -> Result<(Uuid, Uuid), Box<Response>> {
-    const LINK: Shape = Object(&[Field("policy_id", &Shape::Identifier, Required)]);
-    let (group, body) = project(raw, &LINK, Some(group))?;
+    const GROUP: Shape = Object(&[Field("group_id", &Shape::Identifier, Required)]);
+    const POLICY: Shape = Object(&[Field("policy_id", &Shape::Identifier, Required)]);
+    let shape = if child == "group_id" { &GROUP } else { &POLICY };
+    let (parent, body) = project(raw, shape, Some(parent))?;
     Ok((
-        group.expect("group path supplied"),
-        serde_json::from_value(body["policy_id"].clone()).expect("validated UUID"),
+        parent.expect("parent path supplied"),
+        serde_json::from_value(body[child].clone()).expect("validated identifier"),
     ))
 }
 

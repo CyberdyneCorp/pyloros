@@ -8,7 +8,11 @@ mod create_group;
 mod delete_group;
 mod group_policies;
 pub(super) use delete_group::delete_group;
-pub(super) use group_policies::{attach_group_policy, detach_group_policy};
+mod group_members;
+mod group_relations;
+pub(super) use group_relations::{
+    add_member, attach_group_policy, delete_only, detach_group_policy, remove_member,
+};
 mod input;
 pub(super) use create_group::create_group;
 mod statements;
