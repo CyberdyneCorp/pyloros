@@ -27,6 +27,7 @@ pub mod login_methods;
 pub mod login_throttle;
 pub mod managed_wallet;
 pub mod mfa_challenges;
+pub mod passkey_ceremonies;
 pub mod password_login;
 pub mod passwords;
 pub mod profile;

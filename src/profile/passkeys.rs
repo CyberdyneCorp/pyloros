@@ -236,7 +236,7 @@ async fn inventory(
             .creation
             .as_ref()
             .expect("validated enrollment settings");
-        return creation::issue(tx, settings, id, rp, binding, mfa).await;
+        return creation::issue(tx, settings, id, session, rp, binding, mfa).await;
     }
     if let Operation::Revoke(Ok(key)) = operation {
         return revoke::apply(tx, id, rp, key, origin, request_id).await;

@@ -132,6 +132,7 @@ pub(super) async fn issue(
     mut tx: Transaction<'_, Postgres>,
     settings: &Settings,
     id: &Identity,
+    session: Uuid,
     rp: &str,
     binding: Transport,
     mfa: bool,
@@ -143,12 +144,15 @@ pub(super) async fn issue(
         ));
     }
     let challenge = random_bytes();
-    let ceremony = Uuid::new_v4();
-    sqlx::query("INSERT INTO passkey_ceremonies(id,purpose,challenge,rp_id,origin,binding_hash,policy,expires_at,user_id,session_id)
-        VALUES ($1,'register',$2,$3,$4,$5,$6,statement_timestamp()+$7 * interval '1 second',$8,$9)")
-        .bind(ceremony).bind(challenge.as_slice()).bind(rp).bind(&binding.origin)
-        .bind(format!("{:x}",Sha256::digest(&binding.secret))).bind(&settings.digest)
-        .bind(settings.ttl as f64).bind(id.user).bind(id.sid).execute(&mut *tx).await?;
+    let enrollment = crate::passkey_ceremonies::Enrollment {
+        user: id.user,
+        session,
+        relying_party: rp,
+        origin: &binding.origin,
+        binding: &binding.secret,
+        policy_digest: &settings.digest,
+    };
+    let ceremony = enrollment.issue(&mut tx, &challenge, settings.ttl).await?;
     sqlx::query(
         "INSERT INTO passkey_handles(user_id,handle) VALUES($1,$2) ON CONFLICT(user_id) DO NOTHING",
     )
