@@ -1,4 +1,4 @@
 - [x] Establish a reference enrollment fixture in the unchanged frontend.
-- [ ] Implement enrollment options, account handles and client binding.
+- [x] Implement enrollment options, account handles and client binding.
 - [ ] Verify attestation and persist the credential with its audit event.
 - [ ] Verify both directions of a backend switch, single-use claims, rejected proofs and frontend enrollment.

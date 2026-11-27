@@ -58,7 +58,7 @@ fn valid_native_origin(origin: &str, rp: &str, dev: bool) -> bool {
     }
 }
 
-fn configured_origins(key: &str) -> Vec<String> {
+pub(crate) fn configured_origins(key: &str) -> Vec<String> {
     env::var(key)
         .unwrap_or_default()
         .split(',')

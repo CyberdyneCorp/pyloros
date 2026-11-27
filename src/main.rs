@@ -38,6 +38,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .merge(profile);
     let app = app.merge(pyloros::discovery::routes(provider));
     let app = pyloros::cors::apply(app, pool, Duration::from_secs(seconds)).await?;
+    let app = app.layer(axum::middleware::from_fn(
+        pyloros::profile::limit_passkey_body,
+    ));
     axum::serve(
         listener,
         pyloros::headers::apply(app, secure_transport)

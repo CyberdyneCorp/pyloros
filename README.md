@@ -51,11 +51,13 @@ Configure `JWT_ALGORITHM` and the same issuer and verification key as the issuin
 
 ## Login method discovery
 
-The shared login page reads `GET /api/v1/auth/oauth/providers` and `GET /api/v1/auth/passkeys/capabilities`. The OAuth list reflects the configured Google and Microsoft client IDs and secrets. Passkey discovery reads `PASSKEYS_ENABLED`, `PASSKEYS_RP_ID` and `PASSKEYS_ORIGINS`. During coexistence, keep OAuth initiation, callbacks and passkey ceremonies on the existing backend.
+The shared login page reads `GET /api/v1/auth/oauth/providers` and `GET /api/v1/auth/passkeys/capabilities`. The OAuth list reflects the configured Google and Microsoft client IDs and secrets. Passkey discovery reads `PASSKEYS_ENABLED`, `PASSKEYS_RP_ID` and `PASSKEYS_ORIGINS`. During coexistence, keep OAuth initiation, callbacks, passkey verification, sign-in and reauthentication on the existing backend.
 
 ## Authorization code exchange
 
 Set `JWT_ALGORITHM=RS256` and supply `JWT_PRIVATE_KEY_PATH` or an inline `JWT_PRIVATE_KEY` alongside the discovery configuration to activate `POST /api/v1/auth/oauth2/token`. The private key must match the published RSA public key. A discovery-only instance can continue using just the public key.
+
+A recently authenticated user can start passkey enrollment with `POST /api/v1/auth/passkeys/register/options`. Rust stores the challenge in PostgreSQL so the existing backend can finish registration. Both services must use the same ordered browser and native origin lists and relying party ID. `PASSKEYS_CHALLENGE_TTL_SECONDS` accepts 30–300 seconds and defaults to 300. Outside development, native clients require HTTPS through a proxy trusted by `FORWARDED_ALLOW_IPS`. Restrict that setting to your TLS-terminating proxies and configure them to overwrite the forwarded scheme.
 
 With passkeys enabled, `GET /api/v1/auth/passkeys` lists the current account’s active credentials for `PASSKEYS_RP_ID` in creation order. A live first-party session is required. The response contains display metadata and uses `Cache-Control: no-store`. Set `PASSKEYS_RATE_LIMIT_PER_MIN` to a value from 1 to 100 (default 10) to limit requests per operation and source IP on each process. `PATCH /api/v1/auth/passkeys/{passkey_id}` accepts a JSON `name` of one to 64 characters, trims surrounding whitespace and returns the updated metadata. Cookie-authenticated writes require the CSRF header.
 

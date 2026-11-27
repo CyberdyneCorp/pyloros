@@ -18,3 +18,8 @@ The service SHALL let a recently authenticated account enroll a discoverable, us
 
 - **WHEN** matching requests submit proofs for the same challenge
 - **THEN** only one request can claim it, including when the claimed proof subsequently fails verification.
+
+#### Scenario: Oversized enrollment request
+
+- **WHEN** the body of a passkey request exceeds 65536 bytes
+- **THEN** return HTTP 413 before dispatching the request or creating enrollment state.

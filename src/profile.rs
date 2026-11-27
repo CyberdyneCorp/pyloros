@@ -4,6 +4,7 @@ mod email_verification;
 mod enrollment;
 mod logout_all;
 mod passkeys;
+pub use passkeys::limit_passkey_body;
 mod password_change;
 mod password_reset;
 mod registration;
@@ -272,6 +273,10 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     };
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/userinfo", any(userinfo::handle))
+        .route(
+            "/api/v1/auth/passkeys/register/options",
+            any(passkeys::start_enrollment),
+        )
         .route("/api/v1/auth/passkeys", any(passkeys::list))
         .route("/api/v1/auth/passkeys/{passkey_id}", any(passkeys::modify))
         .route("/api/v1/auth/register", any(registration::handle))

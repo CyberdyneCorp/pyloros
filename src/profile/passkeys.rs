@@ -1,3 +1,5 @@
+mod binding_cookie;
+mod creation;
 mod rename;
 mod revoke;
 use super::*;
@@ -10,8 +12,25 @@ use crate::{
 };
 use serde::Serialize;
 
+pub async fn limit_passkey_body(req: Request, next: axum::middleware::Next) -> Response {
+    if !req.uri().path().starts_with("/api/v1/auth/passkeys") {
+        return next.run(req).await;
+    }
+    let (parts, body) = req.into_parts();
+    match axum::body::to_bytes(body, 65536).await {
+        Ok(bytes) => next.run(Request::from_parts(parts, bytes.into())).await,
+        Err(_) => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({"detail":"Passkey request too large"})),
+        )
+            .into_response(),
+    }
+}
+
 pub(super) struct Inventory {
     rp: Option<String>,
+    creation: Option<creation::Settings>,
+    start_quota: LoginThrottle,
     quota: LoginThrottle,
     rename_quota: LoginThrottle,
     revoke_quota: LoginThrottle,
@@ -26,11 +45,19 @@ impl Inventory {
         if !(1..=100).contains(&limit) {
             return Err("invalid PASSKEYS_RATE_LIMIT_PER_MIN".into());
         }
-        Ok(Self::new(rp, limit))
+        let mut inventory = Self::new(rp, limit);
+        inventory.creation = inventory
+            .rp
+            .as_deref()
+            .map(creation::Settings::configured)
+            .transpose()?;
+        Ok(inventory)
     }
     pub(super) fn new(rp: Option<String>, limit: i64) -> Self {
         Self {
             rp,
+            creation: None,
+            start_quota: LoginThrottle::new(limit),
             quota: LoginThrottle::new(limit),
             rename_quota: LoginThrottle::new(limit),
             revoke_quota: LoginThrottle::new(limit),
@@ -77,7 +104,29 @@ pub(super) async fn modify(
     }
 }
 
+pub(super) async fn start_enrollment(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    method: Method,
+    headers: HeaderMap,
+) -> Response {
+    if method != Method::POST {
+        let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+        response
+            .headers_mut()
+            .insert(header::ALLOW, header::HeaderValue::from_static("POST"));
+        return response;
+    }
+    let binding = state
+        .passkeys
+        .creation
+        .as_ref()
+        .and_then(|settings| settings.transport(&headers, peer.ip()));
+    run(&state, &headers, peer.ip(), Operation::Enroll(binding)).await
+}
+
 enum Operation {
+    Enroll(Option<creation::Transport>),
     List,
     Revoke(Result<Uuid, Value>),
     Rename(Result<(Uuid, String), Vec<Value>>),
@@ -143,12 +192,19 @@ async fn inventory(
         return Ok(problem(StatusCode::NOT_FOUND, "Passkeys disabled"));
     };
     let quota = match &operation {
+        Operation::Enroll(_) => &state.passkeys.start_quota,
         Operation::List => &state.passkeys.quota,
         Operation::Revoke(_) => &state.passkeys.revoke_quota,
         Operation::Rename(_) => &state.passkeys.rename_quota,
     };
     if !quota.allow(origin.ip) {
         return Ok(RateLimited.into_response());
+    }
+    if matches!(operation, Operation::Enroll(None)) {
+        return Ok(problem(
+            StatusCode::UNAUTHORIZED,
+            "Invalid passkey ceremony or authentication proof",
+        ));
     }
     if let Operation::Rename(Err(issues)) = operation {
         return Ok(validation(issues));
@@ -163,16 +219,24 @@ async fn inventory(
             .execute(&mut *tx)
             .await?;
     }
-    let live=sqlx::query_scalar::<_,i32>(
-        "SELECT 1 FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=$1 AND s.id=$2
+    let live=sqlx::query_scalar::<_,bool>(
+        "SELECT u.totp_enabled FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=$1 AND s.id=$2
         AND u.is_active AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp()
         AND (u.tokens_valid_after IS NULL OR $3>floor(extract(epoch FROM u.tokens_valid_after))::bigint) FOR SHARE OF u,s"
     ).bind(id.user).bind(session).bind(id.iat).fetch_optional(&mut *tx).await?;
-    if live.is_none() {
+    let Some(mfa) = live else {
         return Ok(problem(
             StatusCode::UNAUTHORIZED,
             "Invalid passkey ceremony or authentication proof",
         ));
+    };
+    if let Operation::Enroll(Some(binding)) = operation {
+        let settings = state
+            .passkeys
+            .creation
+            .as_ref()
+            .expect("validated enrollment settings");
+        return creation::issue(tx, settings, id, rp, binding, mfa).await;
     }
     if let Operation::Revoke(Ok(key)) = operation {
         return revoke::apply(tx, id, rp, key, origin, request_id).await;
@@ -238,6 +302,26 @@ fn record(row: sqlx::postgres::PgRow) -> Result<Record, sqlx::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn oversized_passkey_requests_stop_before_dispatch() {
+        use tower::ServiceExt;
+        let route = "/api/v1/auth/passkeys/register/options";
+        let app = Router::new()
+            .route(route, any(|| async { StatusCode::NO_CONTENT }))
+            .layer(axum::middleware::from_fn(limit_passkey_body));
+        for (size, expected) in [
+            (65536, StatusCode::NO_CONTENT),
+            (65537, StatusCode::PAYLOAD_TOO_LARGE),
+        ] {
+            let req = Request::builder()
+                .method("POST")
+                .uri(route)
+                .body(axum::body::Body::from(vec![0; size]))
+                .unwrap();
+            assert_eq!(app.clone().oneshot(req).await.unwrap().status(), expected);
+        }
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]
