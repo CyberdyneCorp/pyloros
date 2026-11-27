@@ -9,12 +9,30 @@ pub(crate) struct Proof {
     pub(crate) ceremony: Uuid,
     pub(crate) credential: Value,
     name: String,
+    pub(super) code: Option<String>,
 }
 
 pub(in crate::profile) async fn handle(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
+) -> Response {
+    complete(state, peer, req, SessionProof::Register).await
+}
+
+pub(in crate::profile) async fn reauthenticate(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
+) -> Response {
+    complete(state, peer, req, SessionProof::Reauthenticate).await
+}
+
+async fn complete(
+    state: Arc<Profile>,
+    peer: SocketAddr,
+    req: Request,
+    purpose: SessionProof,
 ) -> Response {
     if req.method() != Method::POST {
         return post_required();
@@ -36,7 +54,7 @@ pub(in crate::profile) async fn handle(
         &state,
         &parts.headers,
         peer.ip(),
-        Operation::Finish(input, binding),
+        Operation::Finish(purpose, input, binding),
     )
     .await
 }
@@ -71,15 +89,18 @@ pub(crate) fn parse(body: Value) -> Result<Proof, Vec<Value>> {
     } else {
         None
     };
-    if body.get("code").is_some_and(|v| !v.is_null())
-        && let Err(e) = token_field(body.clone(), "code", 1, 16)
-    {
-        issues.push(e);
-    }
+    let code = if body.get("code").is_some_and(|v| !v.is_null()) {
+        token_field(body.clone(), "code", 1, 16)
+            .map_err(|e| issues.push(e))
+            .ok()
+    } else {
+        None
+    };
     if !issues.is_empty() {
         return Err(issues);
     }
     Ok(Proof {
+        code,
         ceremony: ceremony.unwrap(),
         credential: credential.unwrap().clone(),
         name: name

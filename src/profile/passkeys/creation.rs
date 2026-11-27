@@ -153,7 +153,7 @@ pub(super) async fn issue(
         ));
     }
     let challenge = random_bytes();
-    let enrollment = crate::passkey_ceremonies::Enrollment {
+    let enrollment = crate::passkey_ceremonies::SessionCeremony {
         user: id.user,
         session,
         relying_party: rp,
@@ -210,7 +210,7 @@ pub(super) async fn reauth_options(
     if keys.is_empty() {
         return Ok(problem(StatusCode::NOT_FOUND, "Passkey not found"));
     }
-    let account = crate::passkey_ceremonies::Enrollment {
+    let account = crate::passkey_ceremonies::SessionCeremony {
         user,
         session,
         relying_party: rp,

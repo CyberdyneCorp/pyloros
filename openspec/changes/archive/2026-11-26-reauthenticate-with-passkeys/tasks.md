@@ -1,0 +1,3 @@
+- [x] Implement session-bound reauthentication options and compare the allow list, errors and transport with the reference.
+- [x] Verify the assertion and any required second factor, and record recent authentication for the originating session.
+- [x] Exercise both backend handoff directions, replay, cross-session use and a subsequent operation requiring recent authentication.

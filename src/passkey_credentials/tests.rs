@@ -16,16 +16,14 @@ struct Fixture {
 async fn credential_usage_rolls_back_with_login_and_revocation_prevents_reuse() {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
-        .connect(&env::var("DATABASE_URL").unwrap())
+        .connect(&std::env::var("DATABASE_URL").unwrap())
         .await
         .unwrap();
     sqlx::raw_sql("CREATE TEMP TABLE users(id uuid, totp_enabled bool, primary_email text, organization_id uuid, is_active bool);
         CREATE TEMP TABLE passkeys(id uuid, user_id uuid, rp_id text, credential_id text, public_key bytea, sign_count bigint, backup_eligible bool, backed_up bool, last_used_at timestamptz, revoked_at timestamptz);
         CREATE TEMP TABLE passkey_handles(user_id uuid, handle bytea);").execute(&pool).await.unwrap();
-    let fixtures: Vec<Fixture> = serde_json::from_str(include_str!(
-        "../../../tests/fixtures/passkey-assertions.json"
-    ))
-    .unwrap();
+    let fixtures: Vec<Fixture> =
+        serde_json::from_str(include_str!("../../tests/fixtures/passkey-assertions.json")).unwrap();
     let f = &fixtures[0];
     let user = Uuid::new_v4();
     let key = Uuid::new_v4();
@@ -50,10 +48,28 @@ async fn credential_usage_rolls_back_with_login_and_revocation_prevents_reuse() 
         .bind(key).bind(user).bind(binding.relying_party).bind(&f.id).bind(URL_SAFE_NO_PAD.decode(&f.key).unwrap()).execute(&pool).await.unwrap();
     let challenge = URL_SAFE_NO_PAD.decode(&f.challenge).unwrap();
     let mut tx = pool.begin().await.unwrap();
-    let owner = authenticate(&mut tx, f.proof.clone(), &binding, challenge.clone())
+    assert!(matches!(
+        authenticate(
+            &mut tx,
+            f.proof.clone(),
+            &binding,
+            challenge.clone(),
+            Some(Uuid::new_v4())
+        )
         .await
-        .unwrap()
-        .unwrap();
+        .unwrap(),
+        Err(AssertionError::Invalid)
+    ));
+    let owner = authenticate(
+        &mut tx,
+        f.proof.clone(),
+        &binding,
+        challenge.clone(),
+        Some(user),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!((owner.user, owner.key), (user, key));
     let usage = "SELECT sign_count, last_used_at IS NOT NULL FROM passkeys";
     assert_eq!(
@@ -77,7 +93,7 @@ async fn credential_usage_rolls_back_with_login_and_revocation_prevents_reuse() 
         .unwrap();
     let mut tx = pool.begin().await.unwrap();
     assert!(matches!(
-        authenticate(&mut tx, f.proof.clone(), &binding, challenge)
+        authenticate(&mut tx, f.proof.clone(), &binding, challenge, None)
             .await
             .unwrap(),
         Err(AssertionError::Invalid)

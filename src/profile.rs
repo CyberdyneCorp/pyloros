@@ -278,6 +278,10 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
             any(passkeys::start_login),
         )
         .route(
+            "/api/v1/auth/passkeys/reauth/verify",
+            any(passkeys::reauthenticate),
+        )
+        .route(
             "/api/v1/auth/passkeys/reauth/options",
             any(passkeys::start_reauthentication),
         )

@@ -5,7 +5,9 @@ pub(crate) use creation::Settings as CeremonySettings;
 pub(crate) use finish::{Proof, invalid as invalid_proof, parse as parse_proof};
 mod finish;
 pub(super) use finish::handle as finish_enrollment;
+mod reauth;
 mod rename;
+pub(super) use finish::reauthenticate;
 mod revoke;
 use super::*;
 use crate::grant_response::SessionOrigin;
@@ -39,6 +41,7 @@ pub(super) struct Inventory {
     start_quota: LoginThrottle,
     reauth_start_quota: LoginThrottle,
     finish_quota: LoginThrottle,
+    reauth_finish_quota: LoginThrottle,
     quota: LoginThrottle,
     rename_quota: LoginThrottle,
     revoke_quota: LoginThrottle,
@@ -69,6 +72,7 @@ impl Inventory {
             start_quota: LoginThrottle::new(limit),
             reauth_start_quota: LoginThrottle::new(limit),
             finish_quota: LoginThrottle::new(limit),
+            reauth_finish_quota: LoginThrottle::new(limit),
             quota: LoginThrottle::new(limit),
             rename_quota: LoginThrottle::new(limit),
             revoke_quota: LoginThrottle::new(limit),
@@ -186,10 +190,16 @@ async fn start_options(
     run(&state, &headers, peer.ip(), operation(binding)).await
 }
 
+enum SessionProof {
+    Register,
+    Reauthenticate,
+}
+
 enum Operation {
     Reauthenticate(Option<creation::Transport>),
     Enroll(Option<creation::Transport>),
     Finish(
+        SessionProof,
         Result<finish::Proof, Vec<Value>>,
         Option<creation::Transport>,
     ),
@@ -258,7 +268,10 @@ async fn inventory(
         return Ok(problem(StatusCode::NOT_FOUND, "Passkeys disabled"));
     };
     let quota = match &operation {
-        Operation::Finish(_, _) => &state.passkeys.finish_quota,
+        Operation::Finish(SessionProof::Reauthenticate, _, _) => {
+            &state.passkeys.reauth_finish_quota
+        }
+        Operation::Finish(SessionProof::Register, _, _) => &state.passkeys.finish_quota,
         Operation::Reauthenticate(_) => &state.passkeys.reauth_start_quota,
         Operation::Enroll(_) => &state.passkeys.start_quota,
         Operation::List => &state.passkeys.quota,
@@ -268,7 +281,7 @@ async fn inventory(
     if !quota.allow(origin.ip) {
         return Ok(RateLimited.into_response());
     }
-    if let Operation::Finish(input, binding) = operation {
+    if let Operation::Finish(purpose, input, binding) = operation {
         let proof = match input {
             Ok(proof) => proof,
             Err(issues) => return Ok(validation(issues)),
@@ -276,7 +289,7 @@ async fn inventory(
         let Some(binding) = binding else {
             return Ok(finish::invalid());
         };
-        let enrollment = crate::passkey_ceremonies::Enrollment {
+        let enrollment = crate::passkey_ceremonies::SessionCeremony {
             user: id.user,
             session,
             relying_party: rp,
@@ -289,12 +302,33 @@ async fn inventory(
                 .expect("validated enrollment settings")
                 .digest,
         };
+        if matches!(purpose, SessionProof::Reauthenticate) {
+            let Some(challenge) = enrollment
+                .claim_reauthentication(tx, proof.ceremony)
+                .await?
+            else {
+                return Ok(finish::invalid());
+            };
+            return reauth::verify(state, id, &enrollment, proof, challenge).await;
+        }
         let Some(challenge) = enrollment.claim(tx, proof.ceremony).await? else {
             return Ok(finish::invalid());
         };
         return finish::register(state, id, &enrollment, proof, challenge, origin, request_id)
             .await;
     }
+    session_operation(state, tx, id, (session, rp), operation, origin, request_id).await
+}
+
+async fn session_operation(
+    state: &Profile,
+    mut tx: Transaction<'_, Postgres>,
+    id: &Identity,
+    (session, rp): (Uuid, &str),
+    operation: Operation,
+    origin: SessionOrigin<'_>,
+    request_id: Option<&str>,
+) -> Result<Response, sqlx::Error> {
     if matches!(
         operation,
         Operation::Enroll(None) | Operation::Reauthenticate(None)

@@ -47,10 +47,8 @@ async fn enrollment_claim_is_bound_expiring_and_committed_once() {
     let mut tx = begin(&pool, &schema).await;
     let id = enrollment.issue(&mut tx, &challenge, 300).await.unwrap();
     let expired = enrollment.issue(&mut tx, &challenge, -1).await.unwrap();
-    let other = enrollment.issue(&mut tx, &challenge, 300).await.unwrap();
-    sqlx::query("UPDATE passkey_ceremonies SET purpose='reauth' WHERE id=$1")
-        .bind(other)
-        .execute(&mut *tx)
+    let other = enrollment
+        .issue_reauthentication(&mut tx, &challenge, 300)
         .await
         .unwrap();
     tx.commit().await.unwrap();
@@ -83,6 +81,13 @@ async fn enrollment_claim_is_bound_expiring_and_committed_once() {
     ] {
         assert!(
             invalid
+                .claim_reauthentication(begin(&pool, &schema).await, other)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            invalid
                 .claim(begin(&pool, &schema).await, id)
                 .await
                 .unwrap()
@@ -98,6 +103,28 @@ async fn enrollment_claim_is_bound_expiring_and_committed_once() {
                 .is_none()
         );
     }
+
+    assert!(
+        enrollment
+            .claim_reauthentication(begin(&pool, &schema).await, id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        enrollment
+            .claim_reauthentication(begin(&pool, &schema).await, other)
+            .await
+            .unwrap(),
+        Some(challenge.to_vec())
+    );
+    assert!(
+        enrollment
+            .claim_reauthentication(begin(&pool, &schema).await, other)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     let binding = pyloros::passkey_ceremonies::CeremonyBinding {
         relying_party: enrollment.relying_party,

@@ -3,7 +3,9 @@ use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-pub struct Enrollment<'a> {
+pub type Enrollment<'a> = SessionCeremony<'a>;
+
+pub struct SessionCeremony<'a> {
     pub user: Uuid,
     pub session: Uuid,
     pub relying_party: &'a str,
@@ -19,8 +21,8 @@ pub struct CeremonyBinding<'a> {
     pub policy_digest: &'a str,
 }
 
-impl Enrollment<'_> {
-    fn transport(&self) -> CeremonyBinding<'_> {
+impl SessionCeremony<'_> {
+    pub(crate) fn transport(&self) -> CeremonyBinding<'_> {
         CeremonyBinding {
             relying_party: self.relying_party,
             origin: self.origin,
@@ -63,13 +65,22 @@ impl Enrollment<'_> {
             .await
     }
 
+    pub async fn claim_reauthentication(
+        &self,
+        tx: Transaction<'_, Postgres>,
+        id: Uuid,
+    ) -> Result<Option<Vec<u8>>, sqlx::Error> {
+        self.transport()
+            .consume(tx, "reauth", Some((self.user, self.session)), id)
+            .await
+    }
     pub async fn claim(
         &self,
         tx: Transaction<'_, Postgres>,
         id: Uuid,
     ) -> Result<Option<Vec<u8>>, sqlx::Error> {
         self.transport()
-            .consume(tx, Some((self.user, self.session)), id)
+            .consume(tx, "register", Some((self.user, self.session)), id)
             .await
     }
 }
@@ -89,7 +100,7 @@ impl CeremonyBinding<'_> {
         tx: Transaction<'_, Postgres>,
         id: Uuid,
     ) -> Result<Option<Vec<u8>>, sqlx::Error> {
-        self.consume(tx, None, id).await
+        self.consume(tx, "login", None, id).await
     }
 
     async fn insert(
@@ -128,14 +139,10 @@ impl CeremonyBinding<'_> {
     async fn consume(
         &self,
         mut tx: Transaction<'_, Postgres>,
+        purpose: &'static str,
         account: Option<(Uuid, Uuid)>,
         id: Uuid,
     ) -> Result<Option<Vec<u8>>, sqlx::Error> {
-        let purpose = if account.is_some() {
-            "register"
-        } else {
-            "login"
-        };
         let (user, session) = account.unzip();
         let challenge = sqlx::query_scalar(
             "UPDATE passkey_ceremonies SET consumed_at = clock_timestamp()
