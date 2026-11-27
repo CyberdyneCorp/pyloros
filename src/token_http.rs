@@ -30,16 +30,21 @@ pub async fn routes(
 ) -> Result<Router, Box<dyn Error>> {
     let configured = ResourceRegistry::from_env()?;
     let Some(provider) = provider else {
-        return Ok(Router::new().route(
-            browser_http::PATH,
-            get(|| async { crate::login_http::problem(StatusCode::NOT_FOUND, "OIDC disabled") })
+        return Ok(Router::new()
+            .merge(crate::consent_http::routes(None))
+            .route(
+                browser_http::PATH,
+                get(|| async {
+                    crate::login_http::problem(StatusCode::NOT_FOUND, "OIDC disabled")
+                })
                 .head(method_not_allowed)
                 .fallback(method_not_allowed),
-        ));
+            ));
     };
     let Some(runtime) = Runtime::load(provider, pool, production, configured).await? else {
         return Ok(Router::new());
     };
+    let runtime = Arc::new(runtime);
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/token", post(exchange))
         .route(
@@ -48,7 +53,8 @@ pub async fn routes(
                 .head(method_not_allowed)
                 .fallback(method_not_allowed),
         )
-        .with_state(Arc::new(runtime)))
+        .with_state(runtime.clone())
+        .merge(crate::consent_http::routes(Some(runtime))))
 }
 
 pub(crate) fn header<'a>(headers: &'a HeaderMap, key: &str) -> Option<&'a str> {
@@ -82,7 +88,7 @@ pub(crate) fn client_ip(headers: &HeaderMap, peer: IpAddr, proxies: usize) -> Op
 }
 
 type Fields = Vec<(String, String)>;
-async fn fields(req: Request) -> Result<Fields, Box<Response>> {
+pub(crate) async fn fields(req: Request) -> Result<Fields, Box<Response>> {
     let mime = header(req.headers(), "content-type")
         .unwrap_or_default()
         .split(';')

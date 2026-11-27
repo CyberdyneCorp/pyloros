@@ -7,6 +7,7 @@ mod client_auth;
 pub mod code_decision;
 pub mod code_exchange;
 pub mod config;
+mod consent_http;
 pub mod cors;
 mod csrf;
 pub mod discovery;

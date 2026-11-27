@@ -90,6 +90,13 @@ impl Verifier {
         )
     }
 
+    pub(crate) fn consent_ticket(&self, raw: &str) -> Option<crate::consent_http::Ticket> {
+        let ticket = decode::<crate::consent_http::Ticket>(raw, &self.key, &self.validation)
+            .ok()?
+            .claims;
+        (ticket.kind == "consent").then_some(ticket)
+    }
+
     pub(crate) async fn browser_session(
         &self,
         headers: &HeaderMap,

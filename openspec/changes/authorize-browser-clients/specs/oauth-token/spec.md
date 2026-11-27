@@ -30,3 +30,7 @@ The service SHALL validate the registered client and callback, browser authentic
 #### Scenario: Unknown configured resource scope
 - **WHEN** an environment-defined protected resource names a scope outside the deployment's recognized catalog
 - **THEN** reject the configuration at startup, including when OIDC is disabled.
+
+#### Scenario: Approval during a backend transition
+- **WHEN** the signed consent ticket belongs to the signed-in account and its untrusted client and callback are still valid
+- **THEN** approval merges the ticket scopes with prior approvals for that account, client and resource, preserving concurrent additions, and returns HTTP 303 to the original authorization request. Denial returns HTTP 303 to the validated callback with the state and leaves consent unchanged.
