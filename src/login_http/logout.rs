@@ -27,7 +27,13 @@ pub(super) async fn handle(
     };
     let request = header(&parts.headers, "x-request-id");
     login
-        .logout(access, refresh.as_deref(), origin, request)
+        .logout(
+            LogoutKind::FirstParty,
+            access,
+            refresh.as_deref(),
+            origin,
+            request,
+        )
         .await
         .unwrap_or_else(|_| {
             (
@@ -38,14 +44,23 @@ pub(super) async fn handle(
         })
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum LogoutKind {
+    FirstParty,
+    Oidc,
+}
+
 impl Login {
-    async fn logout(
+    pub(super) async fn logout(
         &self,
+        kind: LogoutKind,
         access: Option<&str>,
         refresh: Option<&str>,
         origin: SessionOrigin<'_>,
         request: Option<&str>,
     ) -> LoginResult {
+        let oidc = kind == LogoutKind::Oidc;
+        let protocol = oidc.then_some("oidc");
         let now = Utc::now();
         let access = access.and_then(|token| self.verifier.revocable_access(token));
         let identity = refresh.map(|token| self.verifier.refresh(token));
@@ -54,24 +69,29 @@ impl Login {
             if let Some(token) = &access {
                 sqlx::query(
                     "INSERT INTO revoked_tokens(jti,expires_at,revoked_at,client_id,reason)
-                         VALUES ($1,$2,$3,$4,'logout') ON CONFLICT(jti) DO NOTHING",
+                         VALUES ($1,$2,$3,$4,$5) ON CONFLICT(jti) DO NOTHING",
                 )
                 .bind(token.jti)
                 .bind(token.expires)
                 .bind(now)
                 .bind(&token.client)
+                .bind(if oidc { "end_session" } else { "logout" })
                 .execute(&mut *tx)
                 .await?;
             }
             if let Some(Ok(id)) = &identity {
                 refresh::revoke_family(&mut tx, *id).await?;
                 let mut details = json!({"session_id":id.session});
+                if oidc {
+                    details["via"] = json!("end_session");
+                }
                 if access.is_some() {
                     details["access_token_revoked"] = json!(true);
                 }
                 write_activity(
                     &mut *tx,
                     AuditActivity::Logoff {
+                        protocol,
                         reason: None,
                         details,
                     },
@@ -93,6 +113,7 @@ impl Login {
             if write_activity(
                 &self.pool,
                 AuditActivity::Logoff {
+                    protocol,
                     reason: Some(reason),
                     details: json!({}),
                 },

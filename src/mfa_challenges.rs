@@ -143,6 +143,22 @@ impl ChallengeVerifier {
         Self { key, validation }
     }
 
+    pub(crate) fn logout_client_hint(&self, token: &str) -> Option<String> {
+        #[derive(Deserialize)]
+        struct Hint {
+            #[serde(rename = "sub")]
+            _subject: Uuid,
+            aud: String,
+            #[serde(rename = "type")]
+            kind: Option<serde_json::Value>,
+        }
+        let mut validation = self.validation.clone();
+        validation.validate_exp = false;
+        validation.set_required_spec_claims(&["iss", "sub"]);
+        let hint = decode::<Hint>(token, &self.key, &validation).ok()?.claims;
+        (hint.kind.is_none() && !hint.aud.is_empty()).then_some(hint.aud)
+    }
+
     pub(crate) fn revocable_access(&self, token: &str) -> Option<AccessRevocation> {
         #[derive(Deserialize)]
         struct Claims {
@@ -217,6 +233,33 @@ impl ChallengeVerifier {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn logout_hint_accepts_historical_id_tokens_only_for_the_expected_issuer() {
+        let signer = SigningIdentity::hmac("issuer".into(), b"test-secret").unwrap();
+        let verifier = ChallengeVerifier::hmac("issuer", b"test-secret").unwrap();
+        let hint = json!({"iss":"issuer","sub":Uuid::new_v4(),"aud":"client","exp":1});
+        assert_eq!(
+            verifier
+                .logout_client_hint(&signer.sign(&hint).unwrap())
+                .as_deref(),
+            Some("client")
+        );
+        for (field, value) in [
+            ("iss", json!("another")),
+            ("type", json!("access")),
+            ("aud", json!(["client"])),
+            ("sub", json!("invalid")),
+        ] {
+            let mut invalid = hint.clone();
+            invalid[field] = value;
+            assert!(
+                verifier
+                    .logout_client_hint(&signer.sign(&invalid).unwrap())
+                    .is_none()
+            );
+        }
+    }
 
     #[test]
     fn logout_accepts_client_access_tokens_and_rejects_other_credential_types() {

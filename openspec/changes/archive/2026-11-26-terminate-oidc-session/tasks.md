@@ -1,0 +1,2 @@
+- [x] Implement termination and destination validation for both HTTP methods.
+- [x] Compare response, cookie and PostgreSQL effects against the reference.

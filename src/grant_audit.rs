@@ -138,6 +138,7 @@ pub(crate) enum AuditActivity<'a> {
     LogoffAll(u64),
     Authenticator(&'static str, Option<&'static str>),
     Logoff {
+        protocol: Option<&'static str>,
         reason: Option<&'static str>,
         details: Value,
     },
@@ -300,10 +301,14 @@ pub(crate) async fn write_activity<'e>(
             None,
             json!({"sessions_revoked":count}),
         ),
-        AuditActivity::Logoff { reason, details } => (
+        AuditActivity::Logoff {
+            protocol,
+            reason,
+            details,
+        } => (
             "session",
             "logoff",
-            None,
+            protocol,
             "",
             outcome(reason.is_some()),
             reason,

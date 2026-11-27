@@ -1,0 +1,1 @@
+Reuse the first-party revocation transaction with OIDC-specific audit attribution. Commit the revocation before deciding the return destination. Resolve a signed ID-token hint independently of its historical expiry and check the current client allowlist. Reuse the deployment’s signed-out HTML where configured.

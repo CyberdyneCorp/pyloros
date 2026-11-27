@@ -1,5 +1,6 @@
 //! Password login for the PostgreSQL identity backend.
 mod config;
+mod end_session;
 mod input;
 pub(crate) use input::email_field;
 mod logout;
@@ -36,6 +37,7 @@ use std::{env, error::Error, net::SocketAddr, sync::Arc};
 use uuid::Uuid;
 
 struct Login {
+    signed_out: String,
     pool: PgPool,
     signing: SigningIdentity,
     issuer: GrantSessionIssuer,
@@ -59,7 +61,13 @@ struct Login {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let login = Login::configured(pool, production)?.map(Arc::new);
+    let end_session = if crate::config::flag("OIDC_ENABLED")? {
+        any(end_session::handle)
+    } else {
+        any(end_session::disabled)
+    };
     Ok(Router::new()
+        .route("/api/v1/auth/oauth2/logout", end_session)
         .route("/api/v1/auth/login", any(handle))
         .route("/api/v1/auth/refresh", any(refresh::handle))
         .route("/api/v1/auth/logout", any(logout::handle))

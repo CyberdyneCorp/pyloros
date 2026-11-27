@@ -79,7 +79,15 @@ impl Login {
         if !(0..=60).contains(&grace) {
             return Err("refresh reuse grace must be between 0 and 60 seconds".into());
         }
+        let signed_out = match env::var_os("PYLOROS_SIGNED_OUT_HTML_PATH") {
+            Some(path) => std::fs::read_to_string(path)?,
+            None => {
+                "<!doctype html><html lang=en><title>Signed out</title><p>Signed out</p></html>"
+                    .into()
+            }
+        };
         Ok(Some(Self {
+            signed_out,
             reuse_grace: TimeDelta::seconds(grace),
             pool,
             issuer: GrantSessionIssuer::with_identity(signing.clone(), refresh)?,

@@ -85,6 +85,7 @@ impl Policy {
                     | "/api/v1/auth/logout"
                     | crate::consent_http::PATH
                     | "/api/v1/auth/oauth2/token"
+                    | "/api/v1/auth/oauth2/logout"
                     | "/api/v1/auth/magic-link/inspect"
                     | "/api/v1/auth/magic-link/confirm"
                     | "/api/v1/auth/magic-link/deny"
