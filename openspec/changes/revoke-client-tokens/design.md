@@ -1,0 +1,1 @@
+Authenticate the calling OAuth client using its registered client type and active credentials. Apply the client and address quotas before processing tokens. Verify the token and determine its owner, using the refresh record for refresh tokens. Commit the revocation and its successful audit event together. Public responses must preserve token privacy across clients.

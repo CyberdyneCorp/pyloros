@@ -1,0 +1,3 @@
+- [ ] Capture reference response, audit and storage behavior for form inputs, client credentials, quotas, token types and ownership.
+- [ ] Implement the HTTP endpoint, verified token classification, ownership checks and PostgreSQL revocation.
+- [ ] Compare both backend directions for access, service and refresh tokens, session-family revocation, repeated requests and rollback.
