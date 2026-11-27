@@ -27,7 +27,7 @@ struct Bucket {
 }
 
 struct Sources {
-    buckets: HashMap<Option<IpAddr>, Bucket>,
+    buckets: HashMap<(Option<String>, Option<IpAddr>), Bucket>,
     last_cleanup: Instant,
 }
 
@@ -101,10 +101,19 @@ impl LoginThrottle {
     }
 
     pub(crate) fn allow(&self, ip: Option<IpAddr>) -> bool {
-        self.consume(ip, Instant::now)
+        self.consume(None, ip, Instant::now)
     }
 
-    fn consume(&self, ip: Option<IpAddr>, clock: impl FnOnce() -> Instant) -> bool {
+    pub(crate) fn allow_client(&self, client: Option<&str>, ip: Option<IpAddr>) -> bool {
+        self.consume(client, ip, Instant::now)
+    }
+
+    fn consume(
+        &self,
+        client: Option<&str>,
+        ip: Option<IpAddr>,
+        clock: impl FnOnce() -> Instant,
+    ) -> bool {
         if self.limit == 0 {
             return true;
         }
@@ -118,10 +127,13 @@ impl LoginThrottle {
             sources.last_cleanup = now;
         }
         let capacity = self.limit as f64;
-        let bucket = sources.buckets.entry(ip).or_insert(Bucket {
-            tokens: capacity,
-            last: seconds,
-        });
+        let bucket = sources
+            .buckets
+            .entry((client.map(str::to_owned), ip))
+            .or_insert(Bucket {
+                tokens: capacity,
+                last: seconds,
+            });
         let elapsed = seconds - bucket.last;
         bucket.tokens =
             (bucket.tokens + elapsed * (capacity / self.window.as_secs_f64())).min(capacity);
@@ -142,7 +154,7 @@ mod tests {
     fn fractional_refill_preserves_independent_quotas() {
         let limiter = LoginThrottle::new(2);
         let start = limiter.origin;
-        let check = |ip, ms| limiter.consume(ip, || start + Duration::from_millis(ms));
+        let check = |ip, ms| limiter.consume(None, ip, || start + Duration::from_millis(ms));
         assert!(check(None, 0));
         assert!(check(None, 0));
         assert!(!check(None, 0));
@@ -156,7 +168,7 @@ mod tests {
         assert!(!check(None, 90001));
         assert_eq!(limiter.sources.lock().unwrap().buckets.len(), 1);
         let disabled = LoginThrottle::new(-1);
-        assert!((0..20).all(|_| disabled.consume(None, Instant::now)));
+        assert!((0..20).all(|_| disabled.consume(None, None, Instant::now)));
     }
 
     #[test]
@@ -165,7 +177,7 @@ mod tests {
         let start = limiter.origin;
         std::thread::scope(|s| {
             let handles: Vec<_> = (0..16)
-                .map(|_| s.spawn(|| limiter.consume(None, || start)))
+                .map(|_| s.spawn(|| limiter.consume(None, None, || start)))
                 .collect();
             assert_eq!(
                 handles

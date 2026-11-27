@@ -1,4 +1,5 @@
 - [x] Capture reference response, audit and storage behavior for form inputs, client credentials, quotas, token types and ownership.
 - [x] Classify signed credentials and implement client ownership checks, per-token denial and session-family revocation in PostgreSQL.
-- [ ] Connect the HTTP endpoint to client authentication, quotas, token classification, storage and audit.
-- [ ] Compare both backend directions for access, service and refresh tokens, session-family revocation, repeated requests and rollback.
+- [x] Connect the HTTP endpoint to client authentication, quotas, token classification, storage and audit.
+- [x] Compare both backend directions for access and refresh tokens, session-family revocation, repeated requests and rollback. Verify reference-issued service token revocation on Pyloros.
+- [ ] Verify that the reference revokes a service token issued by Pyloros once client-credentials issuance is available.

@@ -11,6 +11,7 @@ use crate::enrolled_factor::FactorVerifier;
 mod passkey;
 mod poll;
 mod refresh;
+mod revoke;
 use crate::mfa_challenges::ChallengeVerifier;
 use crate::{
     email_challenge::{self, ConfirmationDecision, ConfirmationError, ConfirmationPolicy},
@@ -57,6 +58,7 @@ pub(crate) struct Login {
     hooks: bool,
     proxies: usize,
     cli_quota: LoginThrottle,
+    revoke_quota: LoginThrottle,
     throttle: LoginThrottle,
     poll_quota: LoginThrottle,
     mfa_quota: LoginThrottle,
@@ -87,6 +89,7 @@ fn with_state(login: Option<Arc<Login>>) -> Result<Router, Box<dyn Error>> {
     };
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/logout", end_session)
+        .route("/api/v1/auth/oauth2/revoke", any(revoke::handle))
         .route("/api/v1/auth/passkeys/login/verify", any(passkey::handle))
         .route(
             "/api/v1/auth/cli/exchange",

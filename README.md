@@ -108,6 +108,8 @@ The email recipient can inspect, confirm or deny a pending sign-in on Pyloros th
 
 For password-bound TOTP challenges, the shared frontend can submit the authenticator or recovery code to `POST /api/v1/auth/mfa/verify`. Configure `MASTER_KEY` with the same value used to encrypt the existing enrollments. A successful check consumes the factor in the transaction that records the session and MFA audit event.
 
+OAuth clients can submit a token to `POST /api/v1/auth/oauth2/revoke` using HTTP Basic or form credentials. Revoking a client-owned access or service token records its identifier. Revoking a client-owned refresh token ends its session and refresh family. Both backends enforce the shared PostgreSQL records when access-token revocation enforcement is enabled.
+
 Browser sessions rotate at `POST /api/v1/auth/refresh` using a refresh cookie or JSON token. Rotation preserves the login’s authentication time and methods and reloads account claims. Set `REFRESH_REUSE_GRACE_SECONDS` (default 10, range 0–60) to tolerate another tab presenting a recently rotated token. Reuse outside that interval revokes the session and its remaining refresh tokens.
 
 The shared frontend signs out through `POST /api/v1/auth/logout`. A valid refresh token revokes its session family. A presented access token is denylisted until expiry. Configure `ENFORCE_TOKEN_REVOCATION=true` for immediate enforcement on protected reads.

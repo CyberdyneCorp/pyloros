@@ -61,7 +61,7 @@ pub(crate) fn header<'a>(headers: &'a HeaderMap, key: &str) -> Option<&'a str> {
     headers.get(key)?.to_str().ok()
 }
 
-fn basic(headers: &HeaderMap) -> Option<(String, String)> {
+pub(crate) fn basic(headers: &HeaderMap) -> Option<(String, String)> {
     let (scheme, value) = header(headers, "authorization")?.split_once(' ')?;
     if !scheme.eq_ignore_ascii_case("basic") {
         return None;

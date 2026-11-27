@@ -120,6 +120,11 @@ pub(crate) struct AuditSubject {
 }
 
 pub(crate) enum AuditActivity<'a> {
+    Revoke {
+        client: &'a str,
+        reason: Option<&'static str>,
+        details: Value,
+    },
     CliExchange {
         provider: Option<String>,
         reason: Option<&'static str>,
@@ -198,6 +203,19 @@ pub(crate) async fn write_activity<'e>(
         _ => None,
     };
     let (class, activity, protocol, client, outcome, reason, details) = match activity {
+        AuditActivity::Revoke {
+            client,
+            reason,
+            details,
+        } => (
+            "session",
+            "token_revoke",
+            Some("oidc"),
+            client,
+            outcome(reason.is_some()),
+            reason,
+            details,
+        ),
         AuditActivity::CliExchange { provider, reason } => {
             let mut details = json!({"grant_type":"cli_login_code"});
             if let Some(provider) = provider {
@@ -519,6 +537,11 @@ pub(crate) async fn write_activity<'e>(
         event["subject_format"] = json!("iss_sub");
         event["subject_issuer"] = json!(provider.chars().take(255).collect::<String>());
         event["subject_identifier"] = json!(identifier.chars().take(255).collect::<String>());
+    }
+    if activity == "token_revoke" && !client.is_empty() {
+        event["actor_type"] = json!("client");
+        event["actor_user_id"] = Value::Null;
+        event["actor_client_id"] = event["client_id"].clone();
     }
     event.sort_all_objects();
     let digest = Sha256::digest(event.to_string().as_bytes());

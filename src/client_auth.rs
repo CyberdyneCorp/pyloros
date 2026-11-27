@@ -1,4 +1,4 @@
-//! Client authentication for the authorization-code exchange.
+//! OAuth registration lookup and validation of public or confidential clients.
 use crate::passwords::{matches_argon2, password_worker};
 use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Row, Transaction};
@@ -19,6 +19,43 @@ async fn verify_secret(
     .map_err(|_| sqlx::Error::WorkerCrashed)
 }
 
+pub(crate) async fn registration(
+    tx: &mut Transaction<'_, Postgres>,
+    client_id: &str,
+    now: DateTime<Utc>,
+) -> Result<Option<sqlx::postgres::PgRow>, sqlx::Error> {
+    sqlx::query(
+        "SELECT client_type, grant_types, secret_hash,
+        CASE WHEN previous_secret_expires_at > $2 THEN previous_secret_hash END AS grace_hash
+        FROM oauth_clients WHERE client_id=$1 AND active",
+    )
+    .bind(client_id)
+    .bind(now)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+pub(crate) async fn authenticates(
+    client: &sqlx::postgres::PgRow,
+    secret: Option<&str>,
+) -> Result<bool, sqlx::Error> {
+    match client.try_get::<&str, _>("client_type")? {
+        "public" => Ok(true),
+        "confidential" => {
+            let Some(value) = secret.filter(|s| !s.is_empty()) else {
+                return Ok(false);
+            };
+            verify_secret(
+                value,
+                client.try_get("secret_hash")?,
+                client.try_get("grace_hash")?,
+            )
+            .await
+        }
+        _ => Ok(false),
+    }
+}
+
 pub(crate) async fn check_client(
     tx: &mut Transaction<'_, Postgres>,
     client_id: &str,
@@ -28,35 +65,18 @@ pub(crate) async fn check_client(
     if client_id.is_empty() {
         return Ok(Some(Refusal::MissingClient));
     }
-    let registration = sqlx::query(
-        "SELECT client_type, grant_types, secret_hash,
-        CASE WHEN previous_secret_expires_at > $2 THEN previous_secret_hash END AS grace_hash
-        FROM oauth_clients WHERE client_id=$1 AND active",
-    )
-    .bind(client_id)
-    .bind(now)
-    .fetch_optional(&mut **tx)
-    .await?;
+    let registration = registration(tx, client_id, now).await?;
     let Some(client) = registration else {
         return Ok(Some(Refusal::UnknownClient));
     };
-    match client.try_get::<&str, _>("client_type")? {
-        "public" => {}
-        "confidential" => {
-            let Some(value) = secret.filter(|s| !s.is_empty()) else {
-                return Ok(Some(Refusal::BadClientSecret));
-            };
-            if !verify_secret(
-                value,
-                client.try_get("secret_hash")?,
-                client.try_get("grace_hash")?,
-            )
-            .await?
-            {
-                return Ok(Some(Refusal::BadClientSecret));
-            }
-        }
-        _ => return Ok(Some(Refusal::UnknownClient)),
+    if !matches!(
+        client.try_get::<&str, _>("client_type")?,
+        "public" | "confidential"
+    ) {
+        return Ok(Some(Refusal::UnknownClient));
+    }
+    if !authenticates(&client, secret).await? {
+        return Ok(Some(Refusal::BadClientSecret));
     }
     let grants: &str = client.try_get("grant_types")?;
     Ok((!grants

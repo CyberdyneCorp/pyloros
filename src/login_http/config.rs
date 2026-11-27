@@ -111,6 +111,7 @@ impl Login {
             production,
             proxies: number("TRUSTED_PROXY_COUNT", 0)?.try_into()?,
             hooks: env::var_os("HOOKS_ENABLED").is_none() || crate::config::flag("HOOKS_ENABLED")?,
+            revoke_quota: LoginThrottle::new(60),
             cli_quota: LoginThrottle::configured()?,
             throttle: LoginThrottle::configured()?,
             mfa_quota: LoginThrottle::configured()?,
