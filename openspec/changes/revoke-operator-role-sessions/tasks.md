@@ -1,2 +1,0 @@
-- [ ] Implement revocation with atomic PostgreSQL auditing and provider-specific lookup behavior.
-- [ ] Verify committed access changes, repeats, concurrent requests, audit rollback and existing clients.

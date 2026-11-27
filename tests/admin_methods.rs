@@ -69,3 +69,35 @@ async fn operator_delete_routes_authenticate_before_validating_the_target() {
         );
     }
 }
+
+#[tokio::test]
+async fn role_session_routes_preserve_method_priority_at_their_intersection() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    for (method, path, status, allowed) in [
+        (Method::GET, "sessions/sessions", 401, None),
+        (Method::DELETE, "sessions/sessions", 401, None),
+        (Method::HEAD, "sessions/sessions", 405, Some("GET")),
+        (Method::PUT, "sessions/sessions", 405, Some("GET")),
+        (Method::GET, "sessions/unknown", 405, Some("DELETE")),
+        (Method::DELETE, "unknown/sessions", 405, Some("GET")),
+    ] {
+        let request = Request::builder()
+            .method(method)
+            .uri(format!("/api/v1/admin/roles/{path}"))
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .body(Body::empty())
+            .unwrap();
+        let response = routes.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status().as_u16(), status);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::ALLOW)
+                .map(|v| v.to_str().unwrap()),
+            allowed
+        );
+    }
+}

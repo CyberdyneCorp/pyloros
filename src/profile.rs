@@ -491,6 +491,11 @@ fn build_routes(
             "/api/v1/admin/roles/{role_id}/sessions",
             any(admin_inventory::role_sessions::list),
         )
+        .route(
+            "/api/v1/admin/roles/sessions/{session_id}",
+            any(admin_inventory::role_sessions::session_method)
+                .delete(admin_inventory::role_sessions::revoke),
+        )
         .route("/api/v1/admin/roles", any(admin_inventory::roles))
         .route(
             "/api/v1/admin/groups",
