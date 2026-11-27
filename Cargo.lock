@@ -2842,6 +2842,7 @@ dependencies = [
  "libc",
  "minijinja",
  "multer",
+ "openssl",
  "pem",
  "percent-encoding",
  "qrcode",

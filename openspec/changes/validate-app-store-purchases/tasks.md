@@ -1,0 +1,3 @@
+- [x] Implement signed purchase verification and online certificate checks.
+- [x] Implement account claims and compare grants and replays across backends.
+- [ ] Verify actual sandbox purchases and active entitlement hooks for signoff.

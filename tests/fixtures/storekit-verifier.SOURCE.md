@@ -1,0 +1,1 @@
+The StoreKit verification fixture was generated locally with ephemeral P-256 keys. Its certificate chain, JWS payloads and issuer-signed OCSP responses are synthetic. The suite trusts its root explicitly and serves the status responses through an isolated loopback proxy. The fixture exercises both SHA-1 and SHA-256 certificate identifiers. All signatures use SHA-256.

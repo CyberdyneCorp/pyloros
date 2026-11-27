@@ -17,6 +17,7 @@ mod admin_users;
 mod admin_wallet;
 mod administrator;
 mod analytics;
+mod apple;
 mod auth_policy;
 mod billing_grants;
 mod blockchain;
@@ -292,6 +293,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    apple: Option<apple::Store>,
     google_play: Option<google_play::Provider>,
     stripe_checkout: Option<stripe_checkout::Provider>,
     stripe_events: Option<stripe_events::Verifier>,
@@ -400,6 +402,7 @@ fn build_routes(
     blockchain: Arc<crate::chain_settings::ChainSettings>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        apple: apple::Store::configured()?,
         google_play: google_play::Provider::configured()?,
         stripe_checkout: stripe_checkout::Provider::configured()?,
         stripe_events: stripe_events::Verifier::configured()?,
@@ -448,6 +451,10 @@ fn build_routes(
         .merge(subject_export::routes())
         .merge(webhook_history::routes())
         .merge(store_products::routes())
+        .route(
+            "/api/v1/billing/apple/validate",
+            any(apple::handle).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route(
             "/api/v1/billing/google/validate",
             any(google_play::handle).layer(axum::extract::DefaultBodyLimit::disable()),

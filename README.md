@@ -34,6 +34,12 @@ The response contains the hosted session's `id` and `url`. The service identifie
 
 Pyloros intentionally fulfills correctly signed events that the previous provider adapter could reject with HTTP 500 during decoding. During migration, an active entitlement hook requiring a dispatcher returns HTTP 503 and leaves the billing event available for retry.
 
+## App Store purchases
+
+Set `BILLING_ENABLED=true`, `APPLE_BUNDLE_ID` and `APPLE_ROOT_CA_DIR` on the server. Install trusted Apple roots as DER certificate files in that directory. Set `APPLE_ENVIRONMENT` to `Sandbox` or `Production` (default), and supply `APPLE_APP_APPLE_ID` for production. The server needs network access to the OCSP responders listed in the trusted certificate chain.
+
+Signed-in customers submit the StoreKit JWS in `signed_transaction` to `POST /api/v1/billing/apple/validate`. Successful claims return the mapped entitlement token and expiry. An original transaction can belong to one account. Pyloros rejects receipts that show revocation or expiry and checks a replay against the stored entitlement. An unavailable certificate status service returns HTTP 503 so the app can retry.
+
 ## Google Play purchases
 
 Enable billing with `BILLING_ENABLED=true`, set `GOOGLE_PACKAGE_NAME` to the Android application ID, and supply `GOOGLE_SERVICE_ACCOUNT_JSON` as a server-side secret with Android Publisher access. Signed-in users submit `purchase_token` and `product_id` to `POST /api/v1/billing/google/validate`. Pyloros checks the purchased line item and expiry with Google before granting the mapped product. A purchase can belong to one account. An active entitlement hook requires the dispatcher before the grant can commit.
@@ -48,7 +54,7 @@ By default each replica claims up to 50 deliveries per batch, runs eight sends c
 
 ## Local development
 
-Install stable Rust with rustfmt and Clippy, just, and Docker Compose. Run `just` for available commands.
+Install stable Rust with rustfmt and Clippy, OpenSSL development headers and libraries, just, and Docker Compose. Run `just` for available commands.
 
 - `just setup` fetches locked dependencies.
 - `just dev` starts PostgreSQL 17 and serves the API on localhost:8000.

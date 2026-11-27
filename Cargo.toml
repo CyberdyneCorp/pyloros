@@ -57,6 +57,7 @@ alloy-primitives = { version = "1", default-features = false, features = ["serde
 alloy-sol-types = { version = "1", default-features = false }
 speedate = "0.18"
 strum = "0.28"
+openssl = "0.10.82"
 
 [target.'cfg(unix)'.dependencies]
 dns-lookup = "4"
