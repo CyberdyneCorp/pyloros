@@ -4,6 +4,7 @@ use crate::request_json::fields::{FieldIssue, field_issue, finite_error_input, o
 use serde_json::value::RawValue;
 
 enum Shape {
+    Identifier,
     String,
     Object(&'static [Field]),
     List(&'static Shape),
@@ -86,6 +87,23 @@ impl<'a> Errors<'a> {
         shape: &Shape,
     ) -> Result<Value, Box<Response>> {
         match shape {
+            Shape::Identifier => {
+                let Ok(text) = serde_json::from_str::<String>(raw.get()) else {
+                    return self.reject(
+                        raw,
+                        loc,
+                        "uuid_type",
+                        "UUID input should be a string, bytes or UUID object",
+                    );
+                };
+                match crate::query::uuid_field(&text, "body", "policy_id") {
+                    Ok(id) => Ok(json!(id)),
+                    Err(issue) => {
+                        self.detail.push(field_issue(issue, raw));
+                        Ok(Value::Null)
+                    }
+                }
+            }
             Text => match serde_json::from_str::<String>(raw.get()) {
                 Ok(s) => Ok(Value::String(s)),
                 Err(_) => self.reject(raw, loc, "string_type", "Input should be a valid string"),
@@ -135,6 +153,18 @@ impl<'a> Errors<'a> {
         }
         Ok(Value::Object(result))
     }
+}
+
+pub(super) fn group_policy(
+    raw: &RawValue,
+    group: Result<Uuid, Value>,
+) -> Result<(Uuid, Uuid), Box<Response>> {
+    const LINK: Shape = Object(&[Field("policy_id", &Shape::Identifier, Required)]);
+    let (group, body) = project(raw, &LINK, Some(group))?;
+    Ok((
+        group.expect("group path supplied"),
+        serde_json::from_value(body["policy_id"].clone()).expect("validated UUID"),
+    ))
 }
 
 pub(super) fn group(raw: &RawValue) -> Result<Value, Box<Response>> {

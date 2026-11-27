@@ -69,29 +69,29 @@ async fn write(
 
 pub(super) async fn prepare_chain_write(chain: &Chain, mutation: IamMutation<'_>) -> Response {
     match chain.prepare_mutation(&mutation).await {
-        Err(PrepareError::MissingGroup(id)) => delete_group::missing(id),
-        Err(PrepareError::MissingPolicy(id)) => missing(id),
-        Err(PrepareError::ProtectedGroup)=>delete_group::protected(),
-        Err(PrepareError::Catalog(error)) => admin_client_roles::chain_error(error),
-        Err(PrepareError::Invalid) => internal(),
-        Err(PrepareError::Unavailable | PrepareError::Reverted(_))
-            if matches!(mutation, IamMutation::CreatePolicy(_)) =>
-        {
-            internal()
-        }
-        Err(PrepareError::Reverted(detail)) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({
-                "status":502, "type":"about:blank", "title":"Chain transaction failed", "detail":detail
-            })),
-        ).into_response(),
-        Err(PrepareError::Unavailable) => {
-            admin_client_roles::chain_error(crate::chain_settings::SnapshotError::Unavailable)
-        }
         Ok(_) => crate::login_http::problem(
             StatusCode::SERVICE_UNAVAILABLE,
             "Blockchain transaction submission unavailable",
         ),
+        Err(error) => preparation_error(&mutation, error),
+    }
+}
+
+fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError) -> Response {
+    match error {
+        PrepareError::MissingGroup(_) | PrepareError::MissingPolicy(_)
+            if matches!(mutation, IamMutation::GroupPolicy { attach: false, .. }) => internal(),
+        PrepareError::MissingGroup(id) => delete_group::missing(id),
+        PrepareError::MissingPolicy(id) => missing(id),
+        PrepareError::ProtectedGroup => delete_group::protected(),
+        PrepareError::Catalog(error) => admin_client_roles::chain_error(error),
+        PrepareError::Invalid => internal(),
+        PrepareError::Unavailable | PrepareError::Reverted(_) if matches!(mutation, IamMutation::CreatePolicy(_)) => internal(),
+        PrepareError::Reverted(detail) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({"status":502, "type":"about:blank", "title":"Chain transaction failed", "detail":detail})),
+        ).into_response(),
+        PrepareError::Unavailable => admin_client_roles::chain_error(crate::chain_settings::SnapshotError::Unavailable),
     }
 }
 
@@ -164,4 +164,31 @@ async fn replace_metadata(
         .execute(&mut **tx)
         .await?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+
+    #[test]
+    fn missing_chain_targets_follow_the_selected_group_policy_operation() {
+        let group = Uuid::new_v4();
+        let policy = Uuid::new_v4();
+        for (attach, expected) in [
+            (true, StatusCode::NOT_FOUND),
+            (false, StatusCode::INTERNAL_SERVER_ERROR),
+        ] {
+            let mutation = IamMutation::GroupPolicy {
+                group,
+                policy,
+                attach,
+            };
+            for error in [
+                PrepareError::MissingGroup(group),
+                PrepareError::MissingPolicy(policy),
+            ] {
+                assert_eq!(preparation_error(&mutation, error).status(), expected);
+            }
+        }
+    }
 }

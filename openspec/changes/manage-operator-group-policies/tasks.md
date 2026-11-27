@@ -1,4 +1,6 @@
-- [ ] Implement PostgreSQL attachment and detachment with operator authorization and atomic auditing.
-- [ ] Compare API outcomes, inherited decisions and inventory through the existing clients.
-- [ ] Compare concurrent changes against both writers.
-- [ ] Implement and verify selected chain-provider behavior, including confirmed mutations.
+- [x] Implement PostgreSQL attachment and detachment with operator authorization and atomic auditing.
+- [x] Compare API outcomes, inherited decisions and inventory through the existing clients.
+- [x] Compare concurrent changes against both writers.
+- [x] Verify unsigned preparation for both group policy contract calls and provider failure responses.
+- [ ] Verify confirmed chain mutations and post-confirmation auditing.
+- [ ] Resolve overlapping attachment, detachment and policy deletion during a mixed-writer rollout.

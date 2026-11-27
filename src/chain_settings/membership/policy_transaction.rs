@@ -23,6 +23,8 @@ sol! {
     function createPolicy(string name,string description,Rule[] statements);
     function updatePolicy(uint256 id,string name,string description,Rule[] statements);
     function deletePolicy(uint256 id);
+    function attachGroupPolicy(uint256 groupId,uint256 policyId);
+    function detachGroupPolicy(uint256 groupId,uint256 policyId);
     function deleteGroup(uint256 id);
     function createGroup(string name,string description);
 }
@@ -36,6 +38,11 @@ pub(crate) enum IamMutation<'a> {
     ReplacePolicy(Uuid, &'a Value),
     DeletePolicy(Uuid),
     DeleteGroup(Uuid),
+    GroupPolicy {
+        group: Uuid,
+        policy: Uuid,
+        attach: bool,
+    },
 }
 
 pub(crate) enum PrepareError {
@@ -113,6 +120,31 @@ impl IamMutation<'_> {
                 }
                 .abi_encode())
             }
+            Self::GroupPolicy {
+                group,
+                policy,
+                attach,
+            } => {
+                let group_id = chain
+                    .group_entry(*group)
+                    .await?
+                    .ok_or(PrepareError::MissingGroup(*group))?
+                    .id;
+                let policy_id = chain.required_policy(*policy).await?.id;
+                Ok(if *attach {
+                    attachGroupPolicyCall {
+                        groupId: group_id,
+                        policyId: policy_id,
+                    }
+                    .abi_encode()
+                } else {
+                    detachGroupPolicyCall {
+                        groupId: group_id,
+                        policyId: policy_id,
+                    }
+                    .abi_encode()
+                })
+            }
             Self::DeleteGroup(id) => {
                 // Group deletion checks namespace ownership and then resolves the current chain ID.
                 chain.deletable_group(*id).await?;
@@ -154,14 +186,17 @@ fn quantity(value: &Value) -> Result<TokenId, PrepareError> {
 }
 
 impl Chain {
-    async fn deletable_group(&self, id: Uuid) -> Result<Option<Group>, PrepareError> {
-        let group = self
+    async fn group_entry(&self, id: Uuid) -> Result<Option<Group>, PrepareError> {
+        Ok(self
             .snapshot()
             .await
             .map_err(PrepareError::Catalog)?
             .groups
             .into_iter()
-            .find(|g| chain_uuid("group", g.id) == id);
+            .find(|g| chain_uuid("group", g.id) == id))
+    }
+    async fn deletable_group(&self, id: Uuid) -> Result<Option<Group>, PrepareError> {
+        let group = self.group_entry(id).await?;
         if group.as_ref().is_some_and(|g| g.name.starts_with("rp:")) {
             return Err(PrepareError::ProtectedGroup);
         }
@@ -203,7 +238,7 @@ impl Chain {
     ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
         let call = mutation.calldata(self).await?;
         let address = match mutation {
-            IamMutation::DeleteGroup(_) => self.group.as_deref(),
+            IamMutation::DeleteGroup(_) | IamMutation::GroupPolicy { .. } => self.group.as_deref(),
             _ => self.policy.as_deref(),
         };
         self.prepare_contract(address, call).await
