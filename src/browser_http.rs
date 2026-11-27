@@ -52,7 +52,7 @@ pub(crate) fn location_header(
     HeaderValue::try_from(utf8_percent_encode(target, ESCAPE).to_string())
 }
 
-fn redirect(location: String) -> Response {
+pub(crate) fn redirect(location: String) -> Response {
     match location_header(&location) {
         Ok(value) => (StatusCode::FOUND, [(LOCATION, value)]).into_response(),
         Err(_) => problem(StatusCode::BAD_REQUEST, "Invalid redirect URL"),

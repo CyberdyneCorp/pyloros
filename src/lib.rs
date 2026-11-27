@@ -142,3 +142,5 @@ async fn readiness(State(app): State<App>) -> (StatusCode, Json<Readiness>) {
 pub mod enrolled_factor;
 
 mod passkey_credentials;
+
+pub mod external_oauth;

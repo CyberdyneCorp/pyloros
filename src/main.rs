@@ -30,9 +30,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let profile = pyloros::profile::routes(pool.clone(), environment == "production")?;
     let password_login = pyloros::login_http::routes(pool.clone(), environment == "production")?;
     let login_methods = pyloros::login_methods::routes(&environment)?;
+    let external =
+        pyloros::external_oauth::routes(pool.clone(), &environment, Duration::from_secs(seconds))
+            .await?;
     let app = pyloros::router(environment, pool.clone())
         .merge(token)
         .merge(login_methods)
+        .merge(external)
         .merge(password_login)
         .merge(pyloros::email_link_http::routes(pool.clone())?)
         .merge(profile);

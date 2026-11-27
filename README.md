@@ -51,7 +51,7 @@ Configure `JWT_ALGORITHM` and the same issuer and verification key as the issuin
 
 ## Login method discovery
 
-The shared login page reads `GET /api/v1/auth/oauth/providers` and `GET /api/v1/auth/passkeys/capabilities`. The OAuth list reflects the configured Google and Microsoft client IDs and secrets. Passkey discovery reads `PASSKEYS_ENABLED`, `PASSKEYS_RP_ID` and `PASSKEYS_ORIGINS`. During coexistence, keep OAuth initiation and callbacks on the existing backend.
+The shared login page reads `GET /api/v1/auth/oauth/providers` and `GET /api/v1/auth/passkeys/capabilities`. The OAuth list reflects the configured Google and Microsoft client IDs and secrets. Passkey discovery reads `PASSKEYS_ENABLED`, `PASSKEYS_RP_ID` and `PASSKEYS_ORIGINS`. A client starts external sign-in at `GET /api/v1/auth/oauth/{provider}`. Pass `redirect=true` for an HTTP redirect or use the authorization URL in the JSON response. PostgreSQL stores the provider and return instructions for `OAUTH_STATE_TTL_SECONDS` (default 600). Fragment returns require an exact frontend URL from `OAUTH_CLIENT_REDIRECT_ALLOWLIST` or the active web-origin registry. CLI returns require `CLI_LOGIN_ENABLED`, a loopback port and an S256 code challenge. During coexistence, route external OAuth callbacks to the existing backend.
 
 ## Authorization code exchange
 

@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::{env, error::Error};
 use url::Url;
 
-fn provider_configured(id: &str, secret: &str) -> bool {
+pub(crate) fn provider_configured(id: &str, secret: &str) -> bool {
     env::var(id).is_ok_and(|v| !v.is_empty()) && env::var_os(secret).is_some()
 }
 

@@ -1,0 +1,3 @@
+- [x] Implement provider authorization URLs, request validation and state persistence.
+- [x] Compare both provider URLs, all return modes, redirects and refusal responses with the reference.
+- [x] Complete a Rust-issued state through the development reference callback and confirm replay fails.
