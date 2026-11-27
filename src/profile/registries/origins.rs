@@ -1,4 +1,5 @@
 //! Operator inventory of deployment and managed browser origins.
+pub(super) mod write;
 use super::*;
 use sqlx::{Row, postgres::PgRow};
 use std::collections::BTreeSet;

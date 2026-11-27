@@ -4,74 +4,16 @@ use crate::oauth_uri::validate_resource as validate_uri;
 use crate::{browser_prompt::quoted_string, grant_response::SessionOrigin};
 use serde_json::Map;
 
-pub(in crate::profile) async fn create(
-    State(state): State<Arc<Profile>>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
-    bytes: axum::body::Bytes,
-) -> Response {
-    write(&state, peer, &headers, None, &bytes).await
-}
-
-pub(in crate::profile) async fn update(
-    State(state): State<Arc<Profile>>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    Path(path): Path<String>,
-    headers: HeaderMap,
-    bytes: axum::body::Bytes,
-) -> Response {
-    write(&state, peer, &headers, Some(&path), &bytes).await
-}
-
-async fn write(
-    state: &Profile,
-    peer: SocketAddr,
-    headers: &HeaderMap,
-    target: Option<&str>,
-    bytes: &[u8],
-) -> Response {
-    let body = match admin_fields::body(headers, bytes) {
-        Ok(body) => body,
-        Err(r) => return *r,
-    };
-    let Some(identity) = administrator::identity(state, headers) else {
-        return unauthorized();
-    };
-    let Ok(registry) = catalog(state).await else {
-        return internal();
-    };
-    let (tx, email) = match administrator::session(state, &identity).await {
-        Ok(session) => session,
-        Err(r) => return *r,
-    };
-    let Some(body) = body else { return internal() };
-    let request = match Request::parse(target, &body) {
-        Ok(request) => request,
-        Err(issues) => return passkeys::validation(issues),
-    };
-    let origin = SessionOrigin {
-        ip: crate::token_http::client_ip(headers, peer.ip(), state.proxies),
-        user_agent: crate::token_http::header(headers, "user-agent"),
-    };
-    request
-        .apply(
-            tx,
-            state,
-            registry,
-            (identity.user, email.as_deref()),
-            origin,
-        )
-        .await
-        .unwrap_or_else(|_| internal())
-}
-
-struct Request {
+pub(in crate::profile::registries) struct Request {
     target: Option<Uuid>,
     fields: Value,
 }
 
 impl Request {
-    fn parse(target: Option<&str>, body: &Value) -> Result<Self, Vec<Value>> {
+    pub(in crate::profile::registries) fn parse(
+        target: Option<&str>,
+        body: &Value,
+    ) -> Result<Self, Vec<Value>> {
         let id = target
             .map(|s| crate::query::path_uuid(s, "entry_id"))
             .transpose();
@@ -121,7 +63,7 @@ impl Request {
         })
     }
 
-    async fn apply(
+    pub(in crate::profile::registries) async fn apply(
         self,
         mut tx: Transaction<'static, Postgres>,
         state: &Profile,

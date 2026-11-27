@@ -356,11 +356,13 @@ fn build_routes(
     Ok(Router::new()
         .route(
             "/api/v1/admin/oauth/web-origins",
-            any(registries::list_origins),
+            axum::routing::post(registries::create_origin).fallback(registries::list_origins),
         )
         .route(
             "/api/v1/admin/oauth/web-origins/{origin_id}",
-            axum::routing::delete(registries::deactivate_origin).fallback(registries::get_origin),
+            axum::routing::delete(registries::deactivate_origin)
+                .patch(registries::update_origin)
+                .fallback(registries::get_origin),
         )
         .route(
             "/api/v1/admin/oauth/protected-resources",

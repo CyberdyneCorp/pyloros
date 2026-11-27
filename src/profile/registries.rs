@@ -74,7 +74,8 @@ pub(super) mod origins;
 mod resources;
 pub(super) use deactivate::{origin as deactivate_origin, resource as deactivate_resource};
 pub(super) use mutation::{create, deactivate, update};
-pub(super) use resources::write::{create as create_resource, update as update_resource};
+mod write;
+pub(super) use write::{create_origin, create_resource, update_origin, update_resource};
 
 pub(super) async fn list_scopes(
     State(state): State<Arc<Profile>>,

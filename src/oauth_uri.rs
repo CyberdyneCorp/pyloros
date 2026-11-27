@@ -131,18 +131,27 @@ pub(crate) fn redirect_origin(uri: &str) -> Option<String> {
 }
 
 pub(crate) fn is_https_origin(value: &str) -> bool {
-    let Some(origin) = redirect_origin(value) else {
-        return false;
-    };
-    if !origin.starts_with("https://") {
-        return false;
-    }
+    bare_origin(value).is_ok_and(|origin| origin.starts_with("https://"))
+}
+
+pub(crate) fn bare_origin(value: &str) -> Result<String, String> {
     let cleaned = value.replace(['\n', '\r', '\t'], "");
-    let Some((_, rest)) = cleaned.split_once("://") else {
-        return false;
-    };
-    let tail = rest.find(['/', '?', '#']).map_or("", |i| &rest[i..]);
-    matches!(tail, "" | "/" | "?" | "/?" | "#" | "/#" | "?#" | "/?#")
+    let rest = cleaned
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .or_else(|| cleaned.strip_prefix("//"))
+        .unwrap_or("");
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    validate_authority(authority, authority.rsplit('@').next().unwrap_or(""))?;
+    let tail = &rest[authority.len()..];
+    redirect_origin(value)
+        .filter(|_| matches!(tail, "" | "/" | "?" | "/?" | "#" | "/#" | "?#" | "/?#"))
+        .ok_or_else(|| {
+            format!(
+                "not a bare https (or loopback http) origin: {}",
+                quoted_string(value)
+            )
+        })
 }
 
 #[cfg(test)]

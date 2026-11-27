@@ -7,6 +7,6 @@
 - [x] Implement audited protected-resource creation and updates with scope validation.
 - [x] Implement administrative web-origin list and detail reads.
 - [x] Implement audited web-origin deactivation and publish committed browser policy.
-- [ ] Implement audited web-origin creation and updates with redirect and origin validation.
-- [ ] Verify immediate post-commit policy on the writer, cross-replica refresh, rollback, concurrency and existing consumers.
+- [x] Implement audited web-origin creation and updates with redirect and origin validation.
+- [x] Verify immediate post-commit policy on the writer, cross-replica refresh, rollback, concurrency and existing consumers.
 - [x] Publish previously committed protected-resource changes to dynamic client registration on a local scope write, including when polling is disabled.

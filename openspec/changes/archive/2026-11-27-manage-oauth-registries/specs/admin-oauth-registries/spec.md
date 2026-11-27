@@ -87,3 +87,17 @@ The issuer SHALL support authenticated administrative reads, creation, partial u
 - **THEN** return one deployment entry with its flags and sorted redirect targets, alongside any managed entry for the same origin.
 - **WHEN** dynamic registration is disabled
 - **THEN** its configured origins remain visible in the administrative inventory.
+
+#### Scenario: Register a managed browser origin
+
+- **WHEN** an administrator submits a bare HTTPS or loopback HTTP origin
+- **THEN** canonicalize the origin and validate each fragment redirect against it, including when a deployment entry shares that origin.
+- **WHEN** another managed row already holds the canonical origin
+- **THEN** return a conflict and preserve its policy.
+
+#### Scenario: Update independent browser policies
+
+- **WHEN** an administrator submits a partial update
+- **THEN** preserve omitted values, allow an explicit null to clear the display name, retain flags and redirect targets supplied as null, and audit the submitted editable fields.
+- **WHEN** the audit write fails
+- **THEN** roll back the managed record and preserve effective policy for browser requests, fragment redirects and dynamic registration.
