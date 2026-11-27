@@ -1,0 +1,1 @@
+Evaluate the caller registration, model, account and graph in one repeatable-read snapshot on the PostgreSQL primary. Traverse breadth first and deduplicate object and permission tuples. Limit traversal depth and combined rule and edge work. Keep decisions out of shared caches.

@@ -17,7 +17,7 @@ struct Object {
 
 #[derive(Deserialize, Serialize)]
 #[serde(untagged, deny_unknown_fields)]
-enum Proof {
+pub(super) enum Proof {
     Direct { relation: String },
     Inherited { via: String, permission: String },
 }
@@ -27,6 +27,21 @@ pub(super) fn name(value: &str) -> bool {
 }
 
 impl Model {
+    pub(super) fn rules(&self, kind: &str, permission: &str) -> Option<&[Proof]> {
+        self.types
+            .get(kind)?
+            .permissions
+            .get(permission)
+            .map(Vec::as_slice)
+    }
+
+    pub(super) fn accepts(&self, kind: &str, relation: &str, subject: &str) -> bool {
+        self.types
+            .get(kind)
+            .and_then(|object| object.relations.get(relation))
+            .is_some_and(|types| types.contains(subject))
+    }
+
     pub(super) fn validate(&self) -> Result<(), &'static str> {
         let mut remaining = 65_536;
         for (kind, object) in &self.types {

@@ -9,20 +9,6 @@ pub(in crate::profile) struct Edge {
     subject: ObjectRef,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ObjectRef {
-    #[serde(rename = "type")]
-    kind: String,
-    id: String,
-}
-
-impl ObjectRef {
-    fn valid(&self) -> bool {
-        model::name(&self.kind) && (1..=512).contains(&self.id.len()) && !self.id.contains('\0')
-    }
-}
-
 impl Edge {
     fn validate(&self) -> Result<Option<Uuid>, &'static str> {
         if !self.object.valid()

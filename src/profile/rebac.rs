@@ -1,9 +1,25 @@
 //! Management of a service client's relationship model.
 use super::*;
 use crate::{admin_audit, grant_response::SessionOrigin, login_http::problem};
+mod check;
+pub(super) use check::check;
 mod model;
 mod relationships;
 pub(super) use relationships::write;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjectRef {
+    #[serde(rename = "type")]
+    kind: String,
+    id: String,
+}
+
+impl ObjectRef {
+    fn valid(&self) -> bool {
+        model::name(&self.kind) && (1..=512).contains(&self.id.len()) && !self.id.contains('\0')
+    }
+}
 
 pub(super) async fn put_model(
     State(state): State<Arc<Profile>>,

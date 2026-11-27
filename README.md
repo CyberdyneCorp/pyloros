@@ -29,7 +29,13 @@ Models accept up to 65,536 permission references in total, counting each direct 
 {"object":{"type":"collection","id":"drafts"},"relation":"parent","subject":{"type":"collection","id":"library"}}
 ```
 
-For direct membership, use relation `member` and a subject of type `user` with the account UUID as its ID. Each successful write returns HTTP 204. Retries preserve the assignment state and produce one audit record per actual change. Online permission checks remain planned.
+For direct membership, use relation `member` and a subject of type `user` with the account UUID as its ID. Each successful write returns HTTP 204. Retries preserve the assignment state and produce one audit record per actual change. To evaluate access, grant the calling service the separate `rebac:check` scope and send its token to `POST /api/v1/clients/me/rebac/check` with a JSON body such as:
+
+```json
+{"user_id":"00000000-0000-0000-0000-000000000001","object":{"type":"collection","id":"drafts"},"permission":"read"}
+```
+
+A completed check returns HTTP 200 and `{"allowed":true}` or `{"allowed":false}`. Each check reads a fresh snapshot on the PostgreSQL primary. It follows up to 16 relationship hops and spends up to 1,024 units across permission rules and traversed edges. A check that cannot establish an answer within these limits, or cannot read its graph, returns HTTP 503. Applications should grant access only on an explicit allow. Apply any required role or organization checks alongside this decision.
 
 ## Frontend
 

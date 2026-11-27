@@ -1,0 +1,2 @@
+- [x] Implement scoped checks for direct and inherited permissions.
+- [x] Verify isolation, revocation, cyclic graphs and incomplete evaluations.

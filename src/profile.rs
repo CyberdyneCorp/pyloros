@@ -503,6 +503,10 @@ fn build_routes(
             any(blockchain::get).put(blockchain::update),
         )
         .route(
+            "/api/v1/clients/me/rebac/check",
+            axum::routing::post(rebac::check),
+        )
+        .route(
             "/api/v1/clients/me/rebac/relationships",
             axum::routing::put(rebac::write).delete(rebac::write),
         )
