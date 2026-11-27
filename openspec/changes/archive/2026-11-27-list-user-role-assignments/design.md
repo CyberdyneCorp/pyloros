@@ -1,0 +1,1 @@
+Authorize the operator and resolve the configured provider. Return sorted client and role pairs, grouping organization assignments by UUID. Preserve duplicate stored assignments. Use the shared role parser. A linked chain identity requires a successful provider lookup.

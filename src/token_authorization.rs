@@ -109,24 +109,31 @@ async fn postgres_groups(
     user: Uuid,
 ) -> Result<Option<Vec<String>>, sqlx::Error> {
     let mut lookup = tx.begin().await?;
-    let names = sqlx::query_scalar::<_, Vec<String>>(
-        "SELECT ARRAY(SELECT g.name FROM iam_group_members m JOIN iam_groups g ON g.id=m.group_id
-                      WHERE m.identity_id=(SELECT id FROM iam_identities WHERE user_id=u.id))
-         FROM users u WHERE u.id=$1",
-    )
-    .bind(user)
-    .fetch_one(&mut *lookup)
-    .await;
+    let names = stored_groups(&mut lookup, user).await;
     match names {
         Ok(names) => {
             lookup.commit().await?;
-            Ok(Some(names))
+            Ok(names)
         }
         Err(_) => {
             lookup.rollback().await?;
             Ok(None)
         }
     }
+}
+
+pub(crate) async fn stored_groups(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+) -> Result<Option<Vec<String>>, sqlx::Error> {
+    sqlx::query_scalar::<_, Vec<String>>(
+        "SELECT ARRAY(SELECT g.name FROM iam_group_members m JOIN iam_groups g ON g.id=m.group_id
+                      WHERE m.identity_id=(SELECT id FROM iam_identities WHERE user_id=u.id))
+         FROM users u WHERE u.id=$1",
+    )
+    .bind(user)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 async fn project_groups(

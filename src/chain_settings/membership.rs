@@ -120,13 +120,19 @@ impl Chain {
                 return Ok(None);
             }
         };
-        let Some(id) = id else {
-            return Ok(Some(Vec::new()));
+        Ok(self.membership_names(id).await.ok())
+    }
+
+    pub(crate) async fn membership_names(
+        &self,
+        token: Option<i32>,
+    ) -> Result<Vec<String>, SnapshotError> {
+        let Some(id) = token else {
+            return Ok(Vec::new());
         };
-        let inventory = self.snapshot().await.ok();
-        Ok(inventory.map(|i| {
-            u32::try_from(id).map_or_else(|_| Vec::new(), |n| i.memberships(TokenId::from(n)))
-        }))
+        let inventory = self.snapshot().await?;
+        Ok(u32::try_from(id)
+            .map_or_else(|_| Vec::new(), |n| inventory.memberships(TokenId::from(n))))
     }
 
     async fn snapshot(&self) -> Result<Inventory, SnapshotError> {

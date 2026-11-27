@@ -1,6 +1,8 @@
 //! Operator inventory of global roles for an active client.
 use super::*;
 mod creation;
+mod user_inventory;
+pub(super) use user_inventory::list_user;
 mod removal;
 mod replacement;
 use crate::chain_settings::SnapshotError;

@@ -1,0 +1,2 @@
+- [x] 1. Implement both provider reads and inventory serialization.
+- [x] 2. Compare the API, CLI and frontend against the reference.

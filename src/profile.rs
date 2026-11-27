@@ -414,6 +414,10 @@ fn build_routes(
             any(admin_users::detail).delete(erasure::remove),
         )
         .route(
+            "/api/v1/admin/users/{user_id}/roles",
+            any(admin_client_roles::list_user),
+        )
+        .route(
             "/api/v1/admin/users/{user_id}/passkeys",
             any(passkeys::admin_list),
         )
