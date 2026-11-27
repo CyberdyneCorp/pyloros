@@ -1,4 +1,5 @@
 //! Read the authority's IAM inventory without sending transactions.
+pub(super) mod policy_transaction;
 use super::ChainSettings;
 use alloy_sol_types::{SolCall, sol};
 use data_encoding::{HEXLOWER, HEXLOWER_PERMISSIVE};
@@ -30,7 +31,7 @@ pub(crate) struct Chain {
     endpoint: String,
     policy: Option<String>,
     group: Option<String>,
-    signer_valid: bool,
+    signer: Option<String>,
     timeout: Duration,
 }
 
@@ -42,13 +43,13 @@ impl ChainSettings {
             endpoint: view.rpc_url.unwrap_or_default(),
             policy: view.policy_contract_address,
             group: view.group_contract_address,
-            signer_valid: view.signer_address.is_some(),
+            signer: view.signer_address,
             timeout: self.rpc_timeout.unwrap_or(Duration::from_secs(10)),
         })
     }
 }
 
-type TokenId = <sol!(uint256) as alloy_sol_types::SolType>::RustType;
+type TokenId = alloy_primitives::U256;
 
 #[derive(Debug, Clone)]
 struct Group {
@@ -150,7 +151,7 @@ impl Inventory {
 enum ReadError {
     Failure,
     Transport,
-    Reverted,
+    Rpc(Value, Option<String>),
 }
 
 pub(crate) enum SnapshotError {
@@ -158,9 +159,23 @@ pub(crate) enum SnapshotError {
     Unavailable,
 }
 
+fn validate_address(address: &str) -> Result<(), ReadError> {
+    let hex = address
+        .strip_prefix("0x")
+        .filter(|s| s.len() == 40)
+        .ok_or(ReadError::Failure)?;
+    let bytes = HEXLOWER_PERMISSIVE
+        .decode(hex.as_bytes())
+        .map_err(|_| ReadError::Failure)?;
+    if crate::managed_wallet::checksummed(&bytes) != address {
+        return Err(ReadError::Failure);
+    }
+    Ok(())
+}
+
 impl Chain {
     pub(crate) fn validate_signer(&self) -> Result<(), sqlx::Error> {
-        if self.signer_valid {
+        if self.signer.is_some() {
             Ok(())
         } else {
             Err(sqlx::Error::Configuration("invalid chain signer".into()))
@@ -251,13 +266,15 @@ impl Chain {
         &self,
         id: Uuid,
     ) -> Result<Option<OperatorPolicy>, SnapshotError> {
+        Ok(self.policy_entry(id).await?.map(OperatorPolicy::from))
+    }
+    async fn policy_entry(&self, id: Uuid) -> Result<Option<CatalogEntry>, SnapshotError> {
         Ok(self
             .snapshot()
             .await?
             .policies
             .into_iter()
-            .find(|entry| chain_uuid("policy", entry.id) == id)
-            .map(OperatorPolicy::from))
+            .find(|entry| chain_uuid("policy", entry.id) == id))
     }
 
     pub(crate) async fn operator_roles(&self) -> Result<Vec<Value>, SnapshotError> {
@@ -304,22 +321,19 @@ impl Chain {
         call: C,
     ) -> Result<Vec<CatalogEntry>, ReadError> {
         match self.call(address, call).await {
-            Err(ReadError::Reverted) => Ok(Vec::new()),
+            Err(ReadError::Rpc(err, _))
+                if err["message"]
+                    .as_str()
+                    .is_some_and(|s| s.starts_with("execution reverted")) =>
+            {
+                Ok(Vec::new())
+            }
             result => result,
         }
     }
 
     async fn call<C: SolCall>(&self, address: &str, call: C) -> Result<C::Return, ReadError> {
-        let hex = address
-            .strip_prefix("0x")
-            .filter(|s| s.len() == 40)
-            .ok_or(ReadError::Failure)?;
-        let bytes = HEXLOWER_PERMISSIVE
-            .decode(hex.as_bytes())
-            .map_err(|_| ReadError::Failure)?;
-        if crate::managed_wallet::checksummed(&bytes) != address {
-            return Err(ReadError::Failure);
-        }
+        validate_address(address)?;
         self.rpc("eth_chainId", json!([])).await?;
         let data = format!("0x{}", HEXLOWER.encode(&call.abi_encode()));
         let value = self
@@ -370,17 +384,28 @@ impl Chain {
         if doc["jsonrpc"] != "2.0" || doc["id"] != 1 {
             return Err(ReadError::Failure);
         }
-        if let Some(error) = doc.get("error") {
-            return Err(
-                if error["message"]
-                    .as_str()
-                    .is_some_and(|s| s.starts_with("execution reverted"))
-                {
-                    ReadError::Reverted
-                } else {
-                    ReadError::Failure
-                },
-            );
+        if let Some(error) = doc.get_mut("error") {
+            let representation = if error["data"].is_object() || error["data"].is_array() {
+                #[derive(serde::Deserialize)]
+                struct ErrorEnvelope<'a> {
+                    #[serde(borrow)]
+                    error: ErrorData<'a>,
+                }
+                #[derive(serde::Deserialize)]
+                struct ErrorData<'a> {
+                    #[serde(borrow)]
+                    data: &'a serde_json::value::RawValue,
+                }
+                let wire: ErrorEnvelope =
+                    serde_json::from_slice(&body).map_err(|_| ReadError::Failure)?;
+                Some(
+                    crate::json_representation::representation(wire.error.data)
+                        .map_err(|_| ReadError::Failure)?,
+                )
+            } else {
+                None
+            };
+            return Err(ReadError::Rpc(error.take(), representation));
         }
         doc.get_mut("result")
             .map(Value::take)
@@ -485,7 +510,7 @@ mod tests {
             endpoint: format!("http://{}", socket.local_addr().unwrap()),
             policy: Some(format!("0x{}", "11".repeat(20))),
             group: Some(format!("0x{}", "22".repeat(20))),
-            signer_valid: true,
+            signer: Some("0x0000000000000000000000000000000000000001".into()),
             timeout: Duration::from_secs(2),
         };
         let server = tokio::spawn(async move {
@@ -532,7 +557,7 @@ mod tests {
             endpoint: format!("http://{}", socket.local_addr().unwrap()),
             policy: None,
             group: None,
-            signer_valid: true,
+            signer: Some("0x0000000000000000000000000000000000000001".into()),
             timeout: Duration::from_secs(2),
         };
         let server = tokio::spawn(async move { axum::serve(socket, app).await.unwrap() });

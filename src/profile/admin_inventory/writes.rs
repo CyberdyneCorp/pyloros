@@ -1,5 +1,6 @@
 //! Store ordered policy statements and their operator audit atomically.
 use super::*;
+use crate::chain_settings::{Chain, PolicyMutation, PrepareError};
 use crate::{grant_response::SessionOrigin, request_json::fields};
 
 pub(in crate::profile) async fn create(
@@ -51,14 +52,11 @@ async fn write(
         if tx.commit().await.is_err() {
             return internal();
         }
-        if let Some(id) = id {
-            return unavailable_chain_write(&chain, id, "Blockchain policy update unavailable")
-                .await;
-        }
-        return crate::login_http::problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Blockchain policy creation unavailable",
-        );
+        let mutation = match id {
+            Some(id) => PolicyMutation::Replace(id, &policy),
+            None => PolicyMutation::Create(&policy),
+        };
+        return prepare_chain_write(&chain, mutation).await;
     }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(headers, peer.ip(), state.proxies),
@@ -69,15 +67,29 @@ async fn write(
         .unwrap_or_else(|_| internal())
 }
 
-pub(super) async fn unavailable_chain_write(
-    chain: &crate::chain_settings::Chain,
-    id: Uuid,
-    detail: &str,
-) -> Response {
-    match chain.operator_policy(id).await {
-        Ok(None) => missing(id),
-        Err(error) => admin_client_roles::chain_error(error),
-        Ok(Some(_)) => crate::login_http::problem(StatusCode::SERVICE_UNAVAILABLE, detail),
+pub(super) async fn prepare_chain_write(chain: &Chain, mutation: PolicyMutation<'_>) -> Response {
+    match chain.prepare_policy(&mutation).await {
+        Err(PrepareError::Missing(id)) => missing(id),
+        Err(PrepareError::Catalog(error)) => admin_client_roles::chain_error(error),
+        Err(PrepareError::Invalid) => internal(),
+        Err(PrepareError::Unavailable | PrepareError::Reverted(_))
+            if matches!(mutation, PolicyMutation::Create(_)) =>
+        {
+            internal()
+        }
+        Err(PrepareError::Reverted(detail)) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({
+                "status":502, "type":"about:blank", "title":"Chain transaction failed", "detail":detail
+            })),
+        ).into_response(),
+        Err(PrepareError::Unavailable) => {
+            admin_client_roles::chain_error(crate::chain_settings::SnapshotError::Unavailable)
+        }
+        Ok(_) => crate::login_http::problem(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Blockchain transaction submission unavailable",
+        ),
     }
 }
 

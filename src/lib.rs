@@ -25,6 +25,7 @@ pub mod grant_sessions;
 pub mod headers;
 mod hook_egress;
 pub mod id_tokens;
+mod json_representation;
 pub mod key_encryption;
 pub mod login_http;
 pub mod login_methods;

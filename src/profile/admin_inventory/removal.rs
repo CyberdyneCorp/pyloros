@@ -23,10 +23,9 @@ pub(in crate::profile) async fn remove(
         if tx.commit().await.is_err() {
             return internal();
         }
-        return writes::unavailable_chain_write(
+        return writes::prepare_chain_write(
             &chain,
-            id,
-            "Blockchain policy deletion unavailable",
+            crate::chain_settings::PolicyMutation::Delete(id),
         )
         .await;
     }
