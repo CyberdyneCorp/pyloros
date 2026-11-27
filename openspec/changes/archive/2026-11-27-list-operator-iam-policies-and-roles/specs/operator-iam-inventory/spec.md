@@ -1,3 +1,7 @@
+## Purpose
+
+Give operators access to the policy statements and role session limits used by their IAM provider.
+
 ## ADDED Requirements
 
 ### Requirement: List IAM policies

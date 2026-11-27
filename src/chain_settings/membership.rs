@@ -71,6 +71,37 @@ pub(crate) struct OperatorGroup {
     created_at: Option<String>,
 }
 
+#[derive(serde::Serialize)]
+pub(crate) struct OperatorPolicy {
+    id: Uuid,
+    name: String,
+    description: Option<String>,
+    version: u32,
+    is_active: bool,
+    statements: Vec<Value>,
+    chain_policy_id: Box<serde_json::value::RawValue>,
+    created_at: Option<String>,
+}
+
+impl From<CatalogEntry> for OperatorPolicy {
+    fn from(entry: CatalogEntry) -> Self {
+        Self {
+            id: chain_uuid("policy", entry.id),
+            name: entry.name,
+            description: (!entry.description.is_empty()).then_some(entry.description),
+            version: 1,
+            is_active: true,
+            statements: Vec::new(),
+            chain_policy_id: chain_number(entry.id),
+            created_at: None,
+        }
+    }
+}
+
+fn chain_number(id: TokenId) -> Box<serde_json::value::RawValue> {
+    serde_json::value::RawValue::from_string(id.to_string()).expect("uint256 decimal is JSON")
+}
+
 fn chain_uuid(kind: &str, id: TokenId) -> Uuid {
     const NAMESPACE: Uuid = Uuid::from_u128(0x6f1d4d2a_9b3e_5c7a_8f21_0a1b2c3d4e5f);
     Uuid::new_v5(&NAMESPACE, format!("{kind}:{id}").as_bytes())
@@ -89,8 +120,7 @@ impl From<Group> for OperatorGroup {
                 .into_iter()
                 .map(|id| chain_uuid("policy", id))
                 .collect(),
-            chain_group_id: serde_json::value::RawValue::from_string(group.id.to_string())
-                .expect("uint256 decimal is JSON"),
+            chain_group_id: chain_number(group.id),
             created_at: None,
         }
     }
@@ -98,6 +128,7 @@ impl From<Group> for OperatorGroup {
 
 #[derive(Default)]
 struct Inventory {
+    policies: Vec<CatalogEntry>,
     identities: Vec<TokenId>,
     groups: Vec<Group>,
 }
@@ -206,13 +237,31 @@ impl Chain {
             .collect())
     }
 
+    pub(crate) async fn operator_policies(&self) -> Result<Vec<OperatorPolicy>, SnapshotError> {
+        Ok(self
+            .snapshot()
+            .await?
+            .policies
+            .into_iter()
+            .map(OperatorPolicy::from)
+            .collect())
+    }
+
+    pub(crate) async fn operator_roles(&self) -> Result<Vec<Value>, SnapshotError> {
+        // The contract snapshot enumerates groups and policies. It exposes no IAM role catalog.
+        self.snapshot().await.map(|_| Vec::new())
+    }
+
     async fn inventory(&self) -> Result<Inventory, ReadError> {
         let policy = self.policy.as_deref().ok_or(ReadError::Failure)?;
-        self.list(policy, listPoliciesCall {}).await?;
+        let policies = self.list(policy, listPoliciesCall {}).await?;
         let group = self.group.as_deref().ok_or(ReadError::Failure)?;
         let entries = self.list(group, listGroupsCall {}).await?;
         // These catalogs enumerate policies and groups. They do not attest identity ownership.
-        let mut inventory = Inventory::default();
+        let mut inventory = Inventory {
+            policies,
+            ..Default::default()
+        };
         for entry in entries {
             let (members, policy_ids) =
                 match self.call(group, getMembersCall { groupId: entry.id }).await {
@@ -342,6 +391,7 @@ mod tests {
         }];
         assert!(
             Inventory {
+                policies: vec![],
                 identities: vec![],
                 groups: groups.clone()
             }
@@ -350,6 +400,7 @@ mod tests {
         );
         assert_eq!(
             Inventory {
+                policies: vec![],
                 identities: vec![token],
                 groups
             }

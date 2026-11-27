@@ -2,7 +2,7 @@
 mod admin_client_roles;
 mod admin_clients;
 mod admin_fields;
-mod admin_groups;
+mod admin_inventory;
 mod admin_mfa;
 mod admin_organizations;
 mod admin_password;
@@ -415,7 +415,9 @@ fn build_routes(
             "/api/v1/admin/users/{user_id}",
             any(admin_users::detail).delete(erasure::remove),
         )
-        .route("/api/v1/admin/groups", any(admin_groups::list))
+        .route("/api/v1/admin/policies", any(admin_inventory::policies))
+        .route("/api/v1/admin/roles", any(admin_inventory::roles))
+        .route("/api/v1/admin/groups", any(admin_inventory::groups))
         .route(
             "/api/v1/admin/organizations",
             any(admin_organizations::list)

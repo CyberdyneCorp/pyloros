@@ -1,0 +1,3 @@
+- [x] Implement policy inventory with statements, conditions and provider identifiers.
+- [x] Implement role inventory with session limits and provider identifiers.
+- [x] Verify both providers and the existing CLI and IAM console against the reference.
