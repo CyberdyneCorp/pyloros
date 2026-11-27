@@ -46,7 +46,7 @@ pub(crate) fn document(
 }
 
 // Return complete non-string tokens without interpreting quoted escapes as delimiters.
-fn spans(text: &str) -> impl Iterator<Item = (usize, &str)> {
+pub(crate) fn unquoted_tokens(text: &str) -> impl Iterator<Item = (usize, &str)> {
     const SEPARATORS: &[char] = &['{', '}', ',', '[', ']', ':', ' ', '\n', '\r', '\t'];
     let mut rest = text;
     std::iter::from_fn(move || {
@@ -75,7 +75,7 @@ fn spans(text: &str) -> impl Iterator<Item = (usize, &str)> {
 fn tokens(text: &str) -> Result<Cow<'_, str>, Box<Response>> {
     let mut output = String::new();
     let mut cursor = 0;
-    for (start, token) in spans(text) {
+    for (start, token) in unquoted_tokens(text) {
         let magnitude = token.strip_prefix('-').unwrap_or(token);
         if magnitude.len() > 4300
             && !magnitude.starts_with('0')
@@ -108,7 +108,7 @@ fn original_offset(text: &str, normalized: &str, offset: usize) -> usize {
         .nth(offset)
         .map_or(normalized.len(), |(i, _)| i);
     let mut extra = 0;
-    for (start, token) in spans(text) {
+    for (start, token) in unquoted_tokens(text) {
         if start + extra >= end {
             break;
         }

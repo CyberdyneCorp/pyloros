@@ -14,6 +14,7 @@ mod group_policies;
 pub(super) use delete_group::delete_group;
 pub(super) mod boundary;
 pub(super) mod evaluation;
+pub(super) mod export;
 mod group_members;
 mod user_detail;
 mod user_identity;

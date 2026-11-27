@@ -237,7 +237,7 @@ async fn audit(
         tx,
         "user.provision",
         None,
-        id.as_deref().map(|s| ("user", s)),
+        id.as_deref().map(|s| ("user", Some(s))),
         json!({"client_id":client,"outcome":outcome}),
         SessionOrigin {
             ip: None,

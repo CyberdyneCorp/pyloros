@@ -502,6 +502,10 @@ fn build_routes(
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
+            "/api/v1/admin/iam/export",
+            any(admin_inventory::export::get),
+        )
+        .route(
             "/api/v1/admin/iam/evaluate",
             any(crate::token_http::post_only)
                 .post(admin_inventory::evaluation::evaluate)

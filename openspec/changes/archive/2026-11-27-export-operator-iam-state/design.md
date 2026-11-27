@@ -1,0 +1,1 @@
+Read the PostgreSQL IAM store even when the runtime authority is configured for the chain. Preserve local identifiers, remote references and policy statement data. Return the document only after committing an audit with the operator and inventory counts.

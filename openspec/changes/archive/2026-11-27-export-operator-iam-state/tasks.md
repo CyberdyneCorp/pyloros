@@ -1,0 +1,3 @@
+- [x] Verify the reference document, stored data handling, authorization and audit.
+- [x] Implement the versioned PostgreSQL export with atomic audit.
+- [x] Compare operator clients, provider independence and failure behavior.
