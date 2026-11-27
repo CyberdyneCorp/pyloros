@@ -63,12 +63,7 @@ async fn history(tx: &mut Tx<'_>, page: Page) -> sqlx::Result<Response> {
     let Some(sub) = load(tx, page.id).await? else {
         return Ok(missing());
     };
-    event_types(sub.try_get("events")?, false)?;
-    for col in ["expires", "created", "updated"] {
-        sub.try_get::<Option<&[u8]>, _>(col)?
-            .map(event_time::EventTime::decode)
-            .transpose()?;
-    }
+    validate_stored(&sub)?;
     let total:i64=sqlx::query_scalar("SELECT count(*) FROM webhook_deliveries WHERE subscription_id=$1 AND ($2::text IS NULL OR status=$2)")
         .bind(page.id).bind(&page.status).fetch_one(&mut **tx).await?;
     let offset = (page.number - 1)

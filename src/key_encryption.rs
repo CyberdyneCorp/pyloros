@@ -27,6 +27,14 @@ impl KeyEncryptionKey {
     }
 
     pub(crate) fn encrypt(&self, secret: &[u8]) -> Result<Vec<u8>, EncryptionError> {
+        self.encrypt_with_aad(secret, &[])
+    }
+
+    pub(crate) fn encrypt_with_aad(
+        &self,
+        secret: &[u8],
+        associated: &[u8],
+    ) -> Result<Vec<u8>, EncryptionError> {
         let mut nonce = [0u8; 12];
         SystemRandom::new()
             .fill(&mut nonce)
@@ -36,7 +44,7 @@ impl KeyEncryptionKey {
             .0
             .seal_in_place_separate_tag(
                 aead::Nonce::assume_unique_for_key(nonce),
-                aead::Aad::empty(),
+                aead::Aad::from(associated),
                 &mut buffer,
             )
             .map_err(|_| EncryptionError)?;

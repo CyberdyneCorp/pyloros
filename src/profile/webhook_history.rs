@@ -4,12 +4,20 @@ use crate::login_http::problem;
 use axum::extract::{Path, RawQuery};
 use sqlx::{Row, postgres::PgRow};
 mod deliveries;
+mod management;
 type Tx<'a> = Transaction<'a, Postgres>;
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
         .route("/api/v1/admin/webhooks", any(list))
-        .route("/api/v1/admin/webhooks/{subscription_id}", any(detail))
+        .route(
+            "/api/v1/admin/webhooks/{subscription_id}",
+            any(detail).delete(management::remove),
+        )
+        .route(
+            "/api/v1/admin/webhooks/{subscription_id}/rotate-secret",
+            any(management::rotate),
+        )
         .route(
             "/api/v1/admin/webhooks/{subscription_id}/deliveries",
             any(deliveries::read),
@@ -29,9 +37,9 @@ async fn operator(
         .map(|(tx, _, _)| tx)
 }
 
-const SUBSCRIPTION: &str = "SELECT id,name,url,description,is_active,event_types::text AS events,
+const FIELDS: &str = "id,name,url,description,is_active,event_types::text AS events,
     timestamptz_send(previous_secret_expires_at) AS expires,timestamptz_send(created_at) AS created,
-    timestamptz_send(updated_at) AS updated FROM webhook_subscriptions";
+    timestamptz_send(updated_at) AS updated";
 
 async fn list(State(state): State<Arc<Profile>>, method: Method, headers: HeaderMap) -> Response {
     let mut tx = match operator(&state, method, &headers).await {
@@ -42,9 +50,11 @@ async fn list(State(state): State<Arc<Profile>>, method: Method, headers: Header
 }
 
 async fn inventory(tx: &mut Tx<'_>) -> sqlx::Result<Response> {
-    let rows = sqlx::query(&format!("{SUBSCRIPTION} ORDER BY created_at DESC"))
-        .fetch_all(&mut **tx)
-        .await?;
+    let rows = sqlx::query(&format!(
+        "SELECT {FIELDS} FROM webhook_subscriptions ORDER BY created_at DESC"
+    ))
+    .fetch_all(&mut **tx)
+    .await?;
     let now = Utc::now();
     let items = rows
         .iter()
@@ -77,10 +87,21 @@ async fn detail(
 }
 
 async fn load(tx: &mut Tx<'_>, id: Uuid) -> sqlx::Result<Option<PgRow>> {
-    sqlx::query(&format!("{SUBSCRIPTION} WHERE id=$1"))
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await
+    sqlx::query(&format!(
+        "SELECT {FIELDS} FROM webhook_subscriptions WHERE id=$1"
+    ))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+fn validate_stored(row: &PgRow) -> sqlx::Result<()> {
+    event_types(row.try_get("events")?, false)?;
+    for col in ["expires", "created", "updated"] {
+        row.try_get::<Option<&[u8]>, _>(col)?
+            .map(event_time::EventTime::decode)
+            .transpose()?;
+    }
+    Ok(())
 }
 fn missing() -> Response {
     problem(StatusCode::NOT_FOUND, "Webhook subscription not found")

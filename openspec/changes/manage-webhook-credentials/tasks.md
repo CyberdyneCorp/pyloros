@@ -1,0 +1,3 @@
+- [x] Implement administrator rotation and removal with audit records.
+- [x] Verify ciphertext interoperability, grace expiry, removal, the original clients and rollback on both peers.
+- [ ] Resolve the response status for audit failures deferred until commit.
