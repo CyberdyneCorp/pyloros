@@ -194,3 +194,28 @@ async fn delegated_catalog_writes_require_service_credentials() {
         assert_eq!(body["detail"], "Service token required");
     }
 }
+
+#[tokio::test]
+async fn hook_authoring_authenticates_large_json_envelopes() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    let mut json = Vec::from(b"{}");
+    json.resize((2 << 20) + 1, b' ');
+    for (method, path) in [
+        (Method::POST, "hooks"),
+        (Method::PUT, "hooks/invalid"),
+        (Method::PUT, "hooks/validate"),
+    ] {
+        let request = Request::builder()
+            .method(method)
+            .uri(format!("/api/v1/admin/{path}"))
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json.clone()))
+            .unwrap();
+        let response = routes.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
+}

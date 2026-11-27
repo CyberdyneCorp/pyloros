@@ -1,0 +1,1 @@
+Use the same Axum body extraction policy as other administrative write handlers. The definition parser enforces limits on decoded field values. The standalone source validation handler reads its own bounded body.

@@ -3,7 +3,7 @@ use super::*;
 mod author;
 mod input;
 mod removal;
-use axum::extract::{Path, RawQuery};
+use axum::extract::{DefaultBodyLimit, Path, RawQuery};
 use sqlx::{Row, postgres::PgRow};
 use std::collections::HashMap;
 
@@ -18,6 +18,7 @@ pub(super) fn routes() -> Router<Arc<Profile>> {
             "/api/v1/admin/hooks/{hook_id}",
             any(detail).put(author::update).delete(removal::remove),
         )
+        .layer(DefaultBodyLimit::disable())
         .route("/api/v1/admin/hooks/{hook_id}/executions", any(history))
 }
 

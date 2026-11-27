@@ -69,3 +69,7 @@ The service SHALL accept authorized creation and editing of hook definitions, va
 #### Scenario: Concurrent creation with the same name
 - **WHEN** two requests both observe that a name is available and attempt to insert it
 - **THEN** commit one definition and audit entry, and return an internal error for the failed insertion
+
+#### Scenario: Large authoring envelope
+- **WHEN** a create or edit request contains extra JSON whitespace or a multibyte encoding
+- **THEN** apply authentication and decoded field validation as for a compact request

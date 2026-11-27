@@ -1,0 +1,2 @@
+- [x] Cover large authoring envelopes through the router.
+- [x] Compare creation, editing, authorization and rejection on the packaged services.
