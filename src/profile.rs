@@ -25,13 +25,13 @@ use std::net::SocketAddr;
 use std::{env, error::Error, sync::Arc};
 use uuid::Uuid;
 
-struct Verifier {
+pub(crate) struct Verifier {
     key: DecodingKey,
     validation: Validation,
 }
 
 impl Verifier {
-    fn configured(production: bool) -> Result<Option<Self>, Box<dyn Error>> {
+    pub(crate) fn configured(production: bool) -> Result<Option<Self>, Box<dyn Error>> {
         let public = config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?;
         let alg = env::var("JWT_ALGORITHM").unwrap_or_else(|_| {
             if public.is_some() {
@@ -79,11 +79,58 @@ impl Verifier {
     }
 
     fn read(&self, raw: &str) -> Option<Identity> {
-        let claims = decode::<Claims>(raw, &self.key, &self.validation)
-            .ok()?
-            .claims;
-        if claims.kind != "access"
-            || claims
+        self.claims(raw)?.identity()
+    }
+
+    fn claims(&self, raw: &str) -> Option<Claims> {
+        Some(
+            decode::<Claims>(raw, &self.key, &self.validation)
+                .ok()?
+                .claims,
+        )
+    }
+
+    pub(crate) async fn browser_session(
+        &self,
+        headers: &HeaderMap,
+        tx: &mut Transaction<'_, Postgres>,
+        enforce: bool,
+    ) -> Result<Option<crate::browser_client::grant::BrowserSession>, sqlx::Error> {
+        let Some(claims) = credential(headers).and_then(|raw| self.claims(raw)) else {
+            return Ok(None);
+        };
+        let Some(identity) = claims.identity() else {
+            return Ok(None);
+        };
+        if identity.client_bound || (enforce && revoked(tx, &identity).await?) {
+            return Ok(None);
+        }
+        let authenticated_at = claims
+            .auth_time
+            .as_i64()
+            .and_then(|t| DateTime::from_timestamp(t, 0));
+        let methods: std::collections::BTreeSet<_> = claims
+            .amr
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
+        let amr = authenticated_at.and_then(|_| {
+            (!methods.is_empty()).then(|| methods.into_iter().collect::<Vec<_>>().join(" "))
+        });
+        Ok(Some(crate::browser_client::grant::BrowserSession {
+            user: identity.user,
+            authenticated_at,
+            amr,
+        }))
+    }
+}
+
+impl Claims {
+    fn identity(&self) -> Option<Identity> {
+        if self.kind != "access"
+            || self
                 .client_id
                 .as_ref()
                 .is_some_and(|id| id.starts_with("dcr_"))
@@ -91,20 +138,24 @@ impl Verifier {
             return None;
         }
         Some(Identity {
-            user: claims.sub.parse().ok()?,
-            jti: claims.jti.parse().ok()?,
-            sid: match claims.sid {
+            user: self.sub.parse().ok()?,
+            jti: self.jti.parse().ok()?,
+            sid: match &self.sid {
                 Some(s) => Some(s.parse().ok()?),
                 None => None,
             },
-            iat: claims.iat,
-            client_bound: claims.client_id.is_some(),
+            iat: self.iat,
+            client_bound: self.client_id.is_some(),
         })
     }
 }
 
 #[derive(Deserialize)]
 struct Claims {
+    #[serde(default)]
+    auth_time: Value,
+    #[serde(default)]
+    amr: Value,
     sub: String,
     jti: String,
     sid: Option<String>,

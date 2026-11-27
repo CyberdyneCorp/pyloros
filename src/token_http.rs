@@ -1,5 +1,6 @@
 //! HTTP transport for the authorization-code grant.
 use crate::{
+    browser_http::{self, method_not_allowed},
     code_decision::CodeDecision,
     code_exchange::ExchangeRequest,
     discovery::Provider,
@@ -11,7 +12,7 @@ use axum::{
     extract::{ConnectInfo, FromRequest, Multipart, Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::json;
@@ -29,13 +30,24 @@ pub async fn routes(
 ) -> Result<Router, Box<dyn Error>> {
     let configured = ResourceRegistry::from_env()?;
     let Some(provider) = provider else {
-        return Ok(Router::new());
+        return Ok(Router::new().route(
+            browser_http::PATH,
+            get(|| async { crate::login_http::problem(StatusCode::NOT_FOUND, "OIDC disabled") })
+                .head(method_not_allowed)
+                .fallback(method_not_allowed),
+        ));
     };
     let Some(runtime) = Runtime::load(provider, pool, production, configured).await? else {
         return Ok(Router::new());
     };
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/token", post(exchange))
+        .route(
+            browser_http::PATH,
+            get(browser_http::authorize)
+                .head(method_not_allowed)
+                .fallback(method_not_allowed),
+        )
         .with_state(Arc::new(runtime)))
 }
 

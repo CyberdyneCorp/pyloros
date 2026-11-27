@@ -17,6 +17,10 @@ pub(crate) struct ResourceRegistry {
 
 pub(crate) struct Runtime {
     pub pool: PgPool,
+    pub verifier: crate::profile::Verifier,
+    pub enforce_revocation: bool,
+    pub login_url: Option<String>,
+    pub code_ttl: TimeDelta,
     pub signer: GrantSessionIssuer,
     pub access_ttl: TimeDelta,
     pub id_ttl: TimeDelta,
@@ -180,6 +184,13 @@ impl Runtime {
         )?;
         let admins = crate::config::admin_emails()?;
         Ok(Some(Self {
+            verifier: crate::profile::Verifier::configured(production)?
+                .ok_or("missing browser session verification key")?,
+            enforce_revocation: crate::config::flag("ENFORCE_TOKEN_REVOCATION")?,
+            login_url: ["OIDC_LOGIN_URL", "OAUTH_POST_LOGIN_URL"]
+                .into_iter()
+                .find_map(|key| env::var(key).ok().filter(|s| !s.is_empty())),
+            code_ttl: lifetime("OIDC_CODE_TTL_SECONDS", 60, 1)?,
             access_ttl: lifetime("JWT_ACCESS_TOKEN_TTL_MINUTES", 15, 60)?,
             id_ttl: lifetime("OIDC_ID_TOKEN_TTL_MINUTES", 15, 60)?,
             admins,

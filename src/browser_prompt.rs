@@ -187,7 +187,7 @@ pub fn login_location(
     format!("{login_url}?{}", encode_query(params))
 }
 
-fn encode_query(mut params: url::form_urlencoded::Serializer<'_, String>) -> String {
+pub(crate) fn encode_query(mut params: url::form_urlencoded::Serializer<'_, String>) -> String {
     params.finish().replace("%7E", "~").replace('*', "%2A")
 }
 
