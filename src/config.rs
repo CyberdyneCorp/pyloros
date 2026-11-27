@@ -32,7 +32,11 @@ pub(crate) fn pem(path_var: &str, inline_var: &str) -> Result<Option<String>, Bo
 }
 
 pub(crate) fn admin_emails() -> Result<Vec<String>, Box<dyn Error>> {
-    let list = env::var("ADMIN_EMAIL_LIST").unwrap_or_default();
+    string_list("ADMIN_EMAIL_LIST")
+}
+
+pub(crate) fn string_list(name: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let list = env::var(name).unwrap_or_default();
     let admins = if list.trim_start().starts_with('[') {
         serde_json::from_str(&list)?
     } else {

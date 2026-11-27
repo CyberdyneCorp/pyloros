@@ -22,6 +22,8 @@ The design starts from the experience of application developers, users and opera
 
 ## Extension hooks
 
+With hooks enabled, Pyloros starts a CONNECT proxy on `HOOKS_PROXY_HOST` and `HOOKS_PROXY_PORT` (default `127.0.0.1:8787`). Set `HOOKS_EGRESS_ALLOWLIST` to a comma-separated list or JSON array of allowed domains. The default is empty. The proxy checks each resolved address before connecting and permits ports 80 and 443. Readiness includes `hook_egress_proxy` while hooks are enabled. If the listener cannot bind, this field is false and database readiness is evaluated independently.
+
 The proposed hook runtime is WebAssembly, hosted by Rust. Existing scripts would be ported to modules and tested against representative events before cutover. The design calls for explicit permissions, bounded execution and a Python-free production runtime.
 
 ## Local development

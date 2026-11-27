@@ -1,0 +1,3 @@
+- [x] Implement listener lifecycle, destination checks and bounded request handling.
+- [x] Report disabled, running and degraded states through the HTTP API.
+- [x] Verify wire behavior and readiness with the original client.

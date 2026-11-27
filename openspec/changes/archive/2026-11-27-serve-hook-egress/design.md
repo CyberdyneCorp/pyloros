@@ -1,0 +1,1 @@
+The application owns the listener and cancels its connections on shutdown. Report availability from that listener. Permit CONNECT to allowlisted hosts on web ports, resolve once, verify all returned addresses are public and connect to the chosen numeric address. Keep database and schema checks independent of proxy availability.

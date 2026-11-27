@@ -23,6 +23,7 @@ mod grant_audit;
 pub mod grant_response;
 pub mod grant_sessions;
 pub mod headers;
+mod hook_egress;
 pub mod id_tokens;
 pub mod key_encryption;
 pub mod login_http;
@@ -60,6 +61,7 @@ struct App {
     environment: String,
     pool: PgPool,
     diagnostics: std::sync::Arc<tokio::sync::Semaphore>,
+    hook_egress: Option<std::sync::Arc<hook_egress::Proxy>>,
 }
 
 pub async fn application(
@@ -91,7 +93,8 @@ pub async fn application(
     let login =
         login_http::routes_with_redirects(pool.clone(), &environment, redirects, blockchain)?;
     let methods = login_methods::routes(&environment)?;
-    let app = router(environment, pool.clone())
+    let proxy = hook_egress::Proxy::configured().await?;
+    let app = health_router(environment, pool.clone(), proxy)
         .merge(profile)
         .merge(token)
         .merge(login)
@@ -102,11 +105,20 @@ pub async fn application(
 }
 
 pub fn router(environment: String, pool: PgPool) -> Router {
+    health_router(environment, pool, None)
+}
+
+fn health_router(
+    environment: String,
+    pool: PgPool,
+    hook_egress: Option<std::sync::Arc<hook_egress::Proxy>>,
+) -> Router {
     foundation::get_resource("/api/v1/health", liveness)
         .merge(foundation::get_resource("/api/v1/health/ready", readiness))
         .with_state(App {
             environment,
             pool,
+            hook_egress,
             diagnostics: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
         })
 }
@@ -131,6 +143,8 @@ struct Readiness {
     status: &'static str,
     database: bool,
     migrations: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hook_egress_proxy: Option<bool>,
     version: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
@@ -143,6 +157,7 @@ async fn readiness(State(app): State<App>) -> (StatusCode, Json<Readiness>) {
         status: if ready { "ready" } else { "not_ready" },
         database,
         migrations: ready,
+        hook_egress_proxy: app.hook_egress.as_ref().map(|p| p.running()),
         version: VERSION,
         detail,
     };
