@@ -51,13 +51,15 @@ Configure `JWT_ALGORITHM` and the same issuer and verification key as the issuin
 
 ## Login method discovery
 
-The shared login page reads `GET /api/v1/auth/oauth/providers` and `GET /api/v1/auth/passkeys/capabilities`. The OAuth list reflects the configured Google and Microsoft client IDs and secrets. Passkey discovery reads `PASSKEYS_ENABLED`, `PASSKEYS_RP_ID` and `PASSKEYS_ORIGINS`. During coexistence, keep OAuth initiation, callbacks and passkey reauthentication on the existing backend.
+The shared login page reads `GET /api/v1/auth/oauth/providers` and `GET /api/v1/auth/passkeys/capabilities`. The OAuth list reflects the configured Google and Microsoft client IDs and secrets. Passkey discovery reads `PASSKEYS_ENABLED`, `PASSKEYS_RP_ID` and `PASSKEYS_ORIGINS`. During coexistence, keep OAuth initiation, callbacks and passkey reauthentication verification on the existing backend.
 
 ## Authorization code exchange
 
 Set `JWT_ALGORITHM=RS256` and supply `JWT_PRIVATE_KEY_PATH` or an inline `JWT_PRIVATE_KEY` alongside the discovery configuration to activate `POST /api/v1/auth/oauth2/token`. The private key must match the published RSA public key. A discovery-only instance can continue using just the public key.
 
 A browser or native client can start passkey sign-in through `POST /api/v1/auth/passkeys/login/options` without identifying the account. The response requests user verification and omits the credential list so the authenticator can offer discoverable credentials. Either backend can finish the assertion at `POST /api/v1/auth/passkeys/login/verify` using the shared PostgreSQL challenge and client binding. A valid assertion issues a session or starts a TOTP challenge. The client must retain its original origin and binding through MFA completion.
+
+A signed-in client can request `POST /api/v1/auth/passkeys/reauth/options` to get the active credentials for its account and relying party. The challenge is bound to the current session and can be completed on the existing backend.
 
 A recently authenticated user can start passkey enrollment with `POST /api/v1/auth/passkeys/register/options`. Either backend can finish through `POST /api/v1/auth/passkeys/register/verify` using the challenge stored in PostgreSQL. Rust records the verified credential and enrollment event together. Apple anonymous attestation requires a chain to the Apple WebAuthn root that is valid at registration time. Android Key enrollment checks the presented Google hardware root, certificate chain, and device-enforced signing authorization. The Pixel 8a registration path has been compared with the reference. Keep Android SafetyNet and Android Key certificates reporting the StrongBox security level on the existing verifier during coexistence. Both services must use the same ordered browser and native origin lists and relying party ID. `PASSKEYS_CHALLENGE_TTL_SECONDS` accepts 30–300 seconds and defaults to 300. Outside development, native clients require HTTPS through a proxy trusted by `FORWARDED_ALLOW_IPS`. Restrict that setting to your TLS-terminating proxies and configure them to overwrite the forwarded scheme.
 

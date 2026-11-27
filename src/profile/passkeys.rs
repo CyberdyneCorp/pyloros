@@ -37,6 +37,7 @@ pub(super) struct Inventory {
     creation: Option<creation::Settings>,
     login_start_quota: LoginThrottle,
     start_quota: LoginThrottle,
+    reauth_start_quota: LoginThrottle,
     finish_quota: LoginThrottle,
     quota: LoginThrottle,
     rename_quota: LoginThrottle,
@@ -66,6 +67,7 @@ impl Inventory {
             creation: None,
             login_start_quota: LoginThrottle::new(limit),
             start_quota: LoginThrottle::new(limit),
+            reauth_start_quota: LoginThrottle::new(limit),
             finish_quota: LoginThrottle::new(limit),
             quota: LoginThrottle::new(limit),
             rename_quota: LoginThrottle::new(limit),
@@ -154,6 +156,25 @@ pub(super) async fn start_enrollment(
     method: Method,
     headers: HeaderMap,
 ) -> Response {
+    start_options(state, peer, method, headers, Operation::Enroll).await
+}
+
+pub(super) async fn start_reauthentication(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    method: Method,
+    headers: HeaderMap,
+) -> Response {
+    start_options(state, peer, method, headers, Operation::Reauthenticate).await
+}
+
+async fn start_options(
+    state: Arc<Profile>,
+    peer: SocketAddr,
+    method: Method,
+    headers: HeaderMap,
+    operation: fn(Option<creation::Transport>) -> Operation,
+) -> Response {
     if method != Method::POST {
         return post_required();
     }
@@ -162,10 +183,11 @@ pub(super) async fn start_enrollment(
         .creation
         .as_ref()
         .and_then(|settings| settings.transport(&headers, peer.ip(), true));
-    run(&state, &headers, peer.ip(), Operation::Enroll(binding)).await
+    run(&state, &headers, peer.ip(), operation(binding)).await
 }
 
 enum Operation {
+    Reauthenticate(Option<creation::Transport>),
     Enroll(Option<creation::Transport>),
     Finish(
         Result<finish::Proof, Vec<Value>>,
@@ -237,6 +259,7 @@ async fn inventory(
     };
     let quota = match &operation {
         Operation::Finish(_, _) => &state.passkeys.finish_quota,
+        Operation::Reauthenticate(_) => &state.passkeys.reauth_start_quota,
         Operation::Enroll(_) => &state.passkeys.start_quota,
         Operation::List => &state.passkeys.quota,
         Operation::Revoke(_) => &state.passkeys.revoke_quota,
@@ -272,7 +295,10 @@ async fn inventory(
         return finish::register(state, id, &enrollment, proof, challenge, origin, request_id)
             .await;
     }
-    if matches!(operation, Operation::Enroll(None)) {
+    if matches!(
+        operation,
+        Operation::Enroll(None) | Operation::Reauthenticate(None)
+    ) {
         return Ok(problem(
             StatusCode::UNAUTHORIZED,
             "Invalid passkey ceremony or authentication proof",
@@ -302,6 +328,14 @@ async fn inventory(
             "Invalid passkey ceremony or authentication proof",
         ));
     };
+    if let Operation::Reauthenticate(Some(binding)) = operation {
+        let settings = state
+            .passkeys
+            .creation
+            .as_ref()
+            .expect("validated passkey settings");
+        return creation::reauth_options(tx, settings, id.user, session, rp, binding).await;
+    }
     if let Operation::Enroll(Some(binding)) = operation {
         let settings = state
             .passkeys

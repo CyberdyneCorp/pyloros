@@ -173,12 +173,7 @@ pub(super) async fn issue(
         .bind(id.user)
         .fetch_one(&mut *tx)
         .await?;
-    let keys: Vec<String> = sqlx::query_scalar("SELECT credential_id FROM passkeys WHERE user_id=$1 AND rp_id=$2 AND revoked_at IS NULL ORDER BY created_at")
-        .bind(id.user).bind(rp).fetch_all(&mut *tx).await?;
-    let exclude: Vec<_> = keys
-        .into_iter()
-        .map(|key| json!({"type":"public-key","id":key}))
-        .collect();
+    let exclude = descriptors(&mut tx, id.user, rp).await?;
     let handle = URL_SAFE_NO_PAD.encode(handle);
     let document = json!({"ceremony_id":ceremony,"publicKey":{
         "rp":{"id":rp,"name":settings.name},"user":{"id":handle,"name":handle,"displayName":"CyberdyneAuth account"},
@@ -187,6 +182,48 @@ pub(super) async fn issue(
         "authenticatorSelection":{"residentKey":"required","requireResidentKey":true,"userVerification":"required"},
         "attestation":"none"
     }});
+    options_response(tx, settings, binding, document).await
+}
+
+async fn descriptors(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    rp: &str,
+) -> Result<Vec<Value>, sqlx::Error> {
+    let keys: Vec<String> = sqlx::query_scalar("SELECT credential_id FROM passkeys WHERE user_id=$1 AND rp_id=$2 AND revoked_at IS NULL ORDER BY created_at")
+        .bind(user).bind(rp).fetch_all(&mut **tx).await?;
+    Ok(keys
+        .into_iter()
+        .map(|key| json!({"type":"public-key","id":key}))
+        .collect())
+}
+
+pub(super) async fn reauth_options(
+    mut tx: Transaction<'_, Postgres>,
+    settings: &Settings,
+    user: Uuid,
+    session: Uuid,
+    rp: &str,
+    binding: Transport,
+) -> Result<Response, sqlx::Error> {
+    let keys = descriptors(&mut tx, user, rp).await?;
+    if keys.is_empty() {
+        return Ok(problem(StatusCode::NOT_FOUND, "Passkey not found"));
+    }
+    let account = crate::passkey_ceremonies::Enrollment {
+        user,
+        session,
+        relying_party: rp,
+        origin: &binding.origin,
+        binding: &binding.secret,
+        policy_digest: &settings.digest,
+    };
+    let challenge = random_bytes();
+    let ceremony = account
+        .issue_reauthentication(&mut tx, &challenge, settings.ttl)
+        .await?;
+    let mut document = assertion_options(ceremony, rp, &challenge, settings.ttl);
+    document["publicKey"]["allowCredentials"] = json!(keys);
     options_response(tx, settings, binding, document).await
 }
 
@@ -205,11 +242,20 @@ pub(super) async fn login_options(
         policy_digest: &settings.digest,
     };
     let ceremony = login.issue_login(&mut tx, &challenge, settings.ttl).await?;
-    let document = json!({"ceremony_id":ceremony,"publicKey":{
-        "rpId":rp,"timeout":settings.ttl*1000,"userVerification":"required",
+    options_response(
+        tx,
+        settings,
+        binding,
+        assertion_options(ceremony, rp, &challenge, settings.ttl),
+    )
+    .await
+}
+
+fn assertion_options(ceremony: Uuid, rp: &str, challenge: &[u8; 32], ttl: i64) -> Value {
+    json!({"ceremony_id":ceremony,"publicKey":{
+        "rpId":rp,"timeout":ttl*1000,"userVerification":"required",
         "challenge":URL_SAFE_NO_PAD.encode(challenge)
-    }});
-    options_response(tx, settings, binding, document).await
+    }})
 }
 
 async fn options_response(

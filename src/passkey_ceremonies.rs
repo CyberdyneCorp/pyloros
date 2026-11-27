@@ -36,7 +36,30 @@ impl Enrollment<'_> {
         ttl_seconds: i64,
     ) -> Result<Uuid, sqlx::Error> {
         self.transport()
-            .insert(tx, Some((self.user, self.session)), challenge, ttl_seconds)
+            .insert(
+                tx,
+                "register",
+                Some((self.user, self.session)),
+                challenge,
+                ttl_seconds,
+            )
+            .await
+    }
+
+    pub async fn issue_reauthentication(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        challenge: &[u8; 32],
+        ttl_seconds: i64,
+    ) -> Result<Uuid, sqlx::Error> {
+        self.transport()
+            .insert(
+                tx,
+                "reauth",
+                Some((self.user, self.session)),
+                challenge,
+                ttl_seconds,
+            )
             .await
     }
 
@@ -58,7 +81,7 @@ impl CeremonyBinding<'_> {
         challenge: &[u8; 32],
         ttl_seconds: i64,
     ) -> Result<Uuid, sqlx::Error> {
-        self.insert(tx, None, challenge, ttl_seconds).await
+        self.insert(tx, "login", None, challenge, ttl_seconds).await
     }
 
     pub async fn claim_login(
@@ -72,15 +95,11 @@ impl CeremonyBinding<'_> {
     async fn insert(
         &self,
         tx: &mut Transaction<'_, Postgres>,
+        purpose: &'static str,
         account: Option<(Uuid, Uuid)>,
         challenge: &[u8; 32],
         ttl_seconds: i64,
     ) -> Result<Uuid, sqlx::Error> {
-        let purpose = if account.is_some() {
-            "register"
-        } else {
-            "login"
-        };
         let (user, session) = account.unzip();
         let id = Uuid::new_v4();
         sqlx::query(
