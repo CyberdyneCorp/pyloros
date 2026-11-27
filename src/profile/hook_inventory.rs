@@ -9,6 +9,10 @@ pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
         .route("/api/v1/admin/hooks", any(list))
         .route(
+            "/api/v1/admin/hooks/validate",
+            any(wasm_hooks::validate_source),
+        )
+        .route(
             "/api/v1/admin/hooks/{hook_id}",
             any(detail).delete(removal::remove),
         )

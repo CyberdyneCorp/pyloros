@@ -234,13 +234,17 @@ A first-party session can edit its phone with `PATCH /api/v1/users/me` or `cyber
 
 ### Inspect legacy hook source during migration
 
-Run `pyloros-hook-worker --parse-hook-source < hook.py` to check syntax and
-restricted names, attributes, statements and calls without executing the module. The worker reads up
-to 2 MiB of UTF-8 source and returns JSON. A `rejected` result includes a
-diagnostic. A `compiler_error` result identifies a compilation failure, such as
-a duplicate parameter or a control statement outside its enclosing scope. A
-`parsed` result means the module passed the implemented static checks. Keep the v1 validation route on the existing service while the remaining
-restricted-language and compiler diagnostics are being implemented.
+Administrators can send `{"code":"print(context)"}` to
+`POST /api/v1/admin/hooks/validate`. The endpoint checks source without
+executing it. A completed check returns `valid` and `error`. Certain compiler
+failures, including a duplicate parameter, return HTTP 500.
+
+Build both release binaries with `just build-release`. Deploy the matching
+`pyloros-hook-worker` alongside the backend, or set
+`PYLOROS_HOOK_WORKER` to its path. The worker accepts up to 2 MiB of decoded
+UTF-8 source. The HTTP handler accepts JSON envelopes up to 64 MiB, including
+UTF-16 and UTF-32 requests. A missing or busy worker returns HTTP 503.
+For local inspection, run `pyloros-hook-worker --parse-hook-source < hook.py`.
 
 ### Validate a WebAssembly hook
 

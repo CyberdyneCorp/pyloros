@@ -105,6 +105,11 @@ async fn read_event(req: Request) -> Result<Bytes, Box<Response>> {
 }
 
 pub(super) async fn invoke(component: &[u8], event: &[u8]) -> io::Result<Value> {
+    let length = (component.len() as u32).to_be_bytes();
+    invoke_worker(None, &[&length, component, event]).await
+}
+
+pub(super) async fn invoke_worker(mode: Option<&str>, chunks: &[&[u8]]) -> io::Result<Value> {
     let path = match std::env::var_os("PYLOROS_HOOK_WORKER") {
         Some(path) => PathBuf::from(path),
         None => std::env::current_exe()?.with_file_name(format!(
@@ -113,6 +118,7 @@ pub(super) async fn invoke(component: &[u8], event: &[u8]) -> io::Result<Value> 
         )),
     };
     let mut child = Command::new(path)
+        .args(mode)
         .env_clear()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -123,11 +129,9 @@ pub(super) async fn invoke(component: &[u8], event: &[u8]) -> io::Result<Value> 
         .stdin
         .take()
         .ok_or_else(|| io::Error::other("Missing worker input"))?;
-    stdin
-        .write_all(&(component.len() as u32).to_be_bytes())
-        .await?;
-    stdin.write_all(component).await?;
-    stdin.write_all(event).await?;
+    for chunk in chunks {
+        stdin.write_all(chunk).await?;
+    }
     drop(stdin);
     let output = child.wait_with_output().await?;
     if !output.status.success() {

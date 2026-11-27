@@ -31,6 +31,11 @@ run: hook-worker
 hook-worker:
     cargo build --manifest-path hook-worker/Cargo.toml --target-dir hook-worker/target --locked
 
+# Build the release backend and matching worker side by side.
+build-release:
+    cargo build --locked --release --bin pyloros
+    cargo build --locked --release --manifest-path hook-worker/Cargo.toml --target-dir "${CARGO_TARGET_DIR:-target}"
+
 # Boot the database, then run the API in the foreground.
 dev: db-up run
 

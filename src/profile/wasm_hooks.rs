@@ -24,7 +24,9 @@ pub(super) mod binding;
 pub(super) mod delivery;
 pub use delivery::worker::ComponentHookWorker;
 mod dry_run;
+mod source;
 pub(super) use dry_run::dry_run;
+pub(super) use source::validate_source;
 mod storage;
 pub(super) use storage::{download, install};
 

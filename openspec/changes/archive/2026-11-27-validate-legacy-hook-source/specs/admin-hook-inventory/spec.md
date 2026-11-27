@@ -10,3 +10,15 @@ The service SHALL accept source validation requests from authorized administrato
 #### Scenario: Rejected source
 - **WHEN** parsing or an authoring restriction rejects source
 - **THEN** return a negative validation result with the diagnostic and preserve stored hooks and bindings
+
+#### Scenario: Compiler context error
+- **WHEN** a parsed module would fail during compilation because of an invalid declaration or control-flow context
+- **THEN** report an internal server error without executing the module
+
+#### Scenario: Worker unavailable
+- **WHEN** the source-validation worker cannot accept or complete a request
+- **THEN** return a service unavailable response and preserve stored hooks
+
+#### Scenario: Source admission limits
+- **WHEN** the decoded UTF-8 source exceeds 2 MiB or the HTTP envelope exceeds 64 MiB
+- **THEN** return HTTP 413 before invoking the worker

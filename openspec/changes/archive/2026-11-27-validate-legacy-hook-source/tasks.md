@@ -1,4 +1,4 @@
 - [x] Implement isolated Rust parsing and initial syntax-tree checks.
 - [x] Check restricted names, attributes, statements, definitions and calls, and distinguish misplaced control flow from authoring errors.
 - [x] Match captured syntax diagnostics, declaration conflicts and the ordering of compound-expression diagnostics.
-- [ ] Connect complete validation to the v1 administrator HTTP route and verify the existing clients.
+- [x] Connect source validation to the v1 administrator HTTP route and compare the unchanged console and CLI.
