@@ -65,13 +65,21 @@ pub(super) async fn handle(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
-    let (headers, body) = match password_change::read_body(req).await {
+    let (parts, body) = match password_change::post_parts(req) {
         Ok(parts) => parts,
         Err(r) => return *r,
     };
-    let (email, password) = match fields(body) {
+    let headers = parts.headers;
+    let (email, password) = match crate::request_json::fields::read_fields(
+        &headers,
+        body,
+        &["email", "password"],
+        fields,
+    )
+    .await
+    {
         Ok(fields) => fields,
-        Err(issues) => return password_change::invalid(issues),
+        Err(response) => return *response,
     };
     let origin = SessionOrigin {
         ip: client_ip(&headers, peer.ip(), state.proxies),
@@ -285,6 +293,32 @@ pub(in crate::profile) fn event_body(kind: &str, data: Value, now: DateTime<Utc>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn registration_reports_email_type_errors_in_wide_json() {
+        use axum::body::{Body, to_bytes};
+        use tower::ServiceExt;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://localhost/pyloros")
+            .unwrap();
+        let router = crate::profile::routes(pool, false).unwrap();
+        let document = r#"{"email":17,"password":"Example-Pass123"}"#;
+        let input: Vec<u8> = document
+            .chars()
+            .flat_map(|ch| u32::from(ch).to_be_bytes())
+            .collect();
+        let req = Request::post("/api/v1/auth/register")
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .header("content-type", "application/json")
+            .body(Body::from(input))
+            .unwrap();
+        let response = router.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = to_bytes(response.into_body(), 4096).await.unwrap();
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["detail"][0]["loc"], json!(["body", "email"]));
+        assert_eq!(value["detail"][0]["input"], 17);
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL; run just test-db"]

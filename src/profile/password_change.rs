@@ -4,7 +4,7 @@ use crate::{
     grant_audit::{AuditActivity, AuditSubject, write_activity},
     grant_response::SessionOrigin,
     login_http::problem,
-    request_json::{parse_body, token_field},
+    request_json::token_field,
     token_http::{client_ip, header as value},
 };
 use axum::{
@@ -72,7 +72,7 @@ pub(super) fn invalid(issues: Vec<Value>) -> Response {
         .into_response()
 }
 
-fn post_parts(req: Request) -> Result<(Parts, Body), Box<Response>> {
+pub(super) fn post_parts(req: Request) -> Result<(Parts, Body), Box<Response>> {
     if req.method() != Method::POST {
         let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
         response
@@ -81,18 +81,6 @@ fn post_parts(req: Request) -> Result<(Parts, Body), Box<Response>> {
         return Err(Box::new(response));
     }
     Ok(req.into_parts())
-}
-
-pub(super) async fn read_body(req: Request) -> Result<(HeaderMap, Value), Box<Response>> {
-    let (parts, body) = post_parts(req)?;
-    let Ok(bytes) = to_bytes(body, 2 * 1024 * 1024).await else {
-        return Err(Box::new(StatusCode::PAYLOAD_TOO_LARGE.into_response()));
-    };
-    let body = match parse_body(&parts.headers, &bytes) {
-        Ok(body) => body,
-        Err(issue) => return Err(Box::new(invalid(vec![issue]))),
-    };
-    Ok((parts.headers, body))
 }
 
 pub(super) async fn handle(

@@ -1,0 +1,2 @@
+- [x] Decode registration requests with the shared scalar validator and cover wide JSON.
+- [x] Compare packaged responses and verify cross-service account activation.
