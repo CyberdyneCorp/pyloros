@@ -6,6 +6,7 @@ use crate::{
     grant_audit::{AuditActivity, AuditSubject, write_activity},
     grant_response::SessionOrigin,
     login_http::problem,
+    request_json::fields::read_fields,
     token_http::{client_ip, header as value},
 };
 
@@ -14,13 +15,18 @@ pub(super) async fn confirm(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
-    let (headers, body) = match password_change::read_body(req).await {
-        Ok(input) => input,
-        Err(response) => return *response,
-    };
-    let (token, password) = match password_change::fields(body, "token") {
+    if req.method() != Method::POST {
+        return crate::token_http::post_only().await;
+    }
+    let (parts, stream) = req.into_parts();
+    let headers = parts.headers;
+    let fields = read_fields(&headers, stream, &["token", "new_password"], |body| {
+        password_change::fields(body, "token")
+    })
+    .await;
+    let (token, password) = match fields {
         Ok(fields) => fields,
-        Err(issues) => return password_change::invalid(issues),
+        Err(response) => return *response,
     };
     let origin = SessionOrigin {
         ip: client_ip(&headers, peer.ip(), state.proxies),
@@ -123,17 +129,14 @@ pub(super) async fn request(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request,
 ) -> Response {
-    let (headers, body) = match password_change::read_body(req).await {
-        Ok(pair) => pair,
-        Err(response) => return *response,
-    };
-    if !body.is_object() {
-        let issue = crate::request_json::token_field(body, "email", 0, usize::MAX).unwrap_err();
-        return password_change::invalid(vec![issue]);
+    if req.method() != Method::POST {
+        return crate::token_http::post_only().await;
     }
-    let email = match crate::login_http::email_field(&body) {
+    let (parts, stream) = req.into_parts();
+    let headers = parts.headers;
+    let email = match read_fields(&headers, stream, &["email"], recovery_email).await {
         Ok(email) => email,
-        Err(issues) => return password_change::invalid(issues),
+        Err(response) => return *response,
     };
     let origin = SessionOrigin {
         ip: client_ip(&headers, peer.ip(), state.proxies),
@@ -149,6 +152,13 @@ pub(super) async fn request(
     issue(&state, email, origin, value(&headers, "x-request-id"))
         .await
         .unwrap_or_else(|_| internal())
+}
+
+fn recovery_email(body: Value) -> Result<String, Vec<Value>> {
+    if body.is_object() {
+        return crate::login_http::email_field(&body);
+    }
+    crate::request_json::token_field(body, "email", 0, usize::MAX).map_err(|issue| vec![issue])
 }
 
 async fn issue(
@@ -223,6 +233,33 @@ async fn issue(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn confirmation_reports_both_errors_with_original_inputs() {
+        use axum::body::{Body, to_bytes};
+        use tower::ServiceExt;
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://localhost/pyloros")
+            .unwrap();
+        let request = Request::post("/api/v1/auth/password/reset-confirm")
+            .header(header::CONTENT_TYPE, "application/json")
+            .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 8080))))
+            .body(Body::from(
+                r#"{"token":[184467440737095516171],"unrelated":42}"#,
+            ))
+            .unwrap();
+        let response = routes(pool, false).unwrap().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let bytes = to_bytes(response.into_body(), 2048).await.unwrap();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        assert!(body.contains(r#""input":[184467440737095516171]"#));
+        assert!(body.contains(r#""input":{"token":[184467440737095516171],"unrelated":42}"#));
+        assert!(
+            body.find(r#"["body","token"]"#).unwrap()
+                < body.find(r#"["body","new_password"]"#).unwrap()
+        );
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]

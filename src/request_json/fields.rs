@@ -1,4 +1,4 @@
-//! Decode single-field requests and retain exact submitted values for errors.
+//! Decode request fields and retain exact submitted values for errors.
 use crate::{
     login_http::{internal_error, problem},
     request_json,
@@ -61,23 +61,33 @@ pub(crate) fn validation_input<'a>(
     raw: &'a RawValue,
     key: &str,
 ) -> Result<(Value, &'a RawValue), Box<Response>> {
-    let text = raw.get();
-    if !text.starts_with('{') {
-        return Ok((
-            if text == "null" {
-                Value::Null
-            } else {
-                json!([])
-            },
-            raw,
-        ));
+    let fields = object_fields(raw)?;
+    let original = fields.get(key).copied().unwrap_or(raw);
+    Ok((project(raw, &fields, &[key]), original))
+}
+
+fn object_fields(raw: &RawValue) -> Result<HashMap<String, &RawValue>, Box<Response>> {
+    if raw.get().starts_with('{') {
+        serde_json::from_str(raw.get()).map_err(|_| Box::new(internal_error()))
+    } else {
+        Ok(HashMap::new())
     }
-    let fields: HashMap<String, &RawValue> =
-        serde_json::from_str(text).map_err(|_| Box::new(internal_error()))?;
-    Ok(match fields.get(key) {
-        Some(value) => (json!({(key):field_value(value.get())}), *value),
-        None => (json!({}), raw),
-    })
+}
+
+fn project(raw: &RawValue, fields: &HashMap<String, &RawValue>, keys: &[&str]) -> Value {
+    match raw.get().as_bytes().first() {
+        Some(b'{') => Value::Object(
+            keys.iter()
+                .filter_map(|&key| {
+                    fields
+                        .get(key)
+                        .map(|value| (key.to_owned(), field_value(value.get())))
+                })
+                .collect(),
+        ),
+        Some(b'n') => Value::Null,
+        _ => json!([]),
+    }
 }
 
 fn field_value(text: &str) -> Value {
@@ -90,6 +100,38 @@ fn field_value(text: &str) -> Value {
     }
 }
 
+pub(crate) async fn read_fields<T>(
+    headers: &HeaderMap,
+    stream: Body,
+    keys: &[&str],
+    validate: impl FnOnce(Value) -> Result<T, Vec<Value>>,
+) -> Result<T, Box<Response>> {
+    let bytes = to_bytes(stream, usize::MAX)
+        .await
+        .map_err(|_| Box::new(internal_error()))?;
+    let raw = document(headers, &bytes)?.ok_or_else(|| Box::new(internal_error()))?;
+    let fields = object_fields(&raw)?;
+    validate(project(&raw, &fields, keys)).map_err(|issues| {
+        #[derive(Serialize)]
+        struct Errors<'a> {
+            detail: Vec<FieldIssue<'a>>,
+        }
+        let detail = issues
+            .into_iter()
+            .map(|issue| {
+                let input = issue["loc"]
+                    .get(1)
+                    .and_then(Value::as_str)
+                    .and_then(|key| fields.get(key))
+                    .copied()
+                    .unwrap_or(&raw);
+                field_issue(issue, input)
+            })
+            .collect();
+        Box::new((StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { detail })).into_response())
+    })
+}
+
 pub(crate) async fn read_string(
     headers: &HeaderMap,
     stream: Body,
@@ -97,21 +139,10 @@ pub(crate) async fn read_string(
     min: usize,
     max: usize,
 ) -> Result<String, Box<Response>> {
-    let bytes = to_bytes(stream, usize::MAX)
-        .await
-        .map_err(|_| Box::new(internal_error()))?;
-    let raw = document(headers, &bytes)?.ok_or_else(|| Box::new(internal_error()))?;
-    let (body, original) = validation_input(&raw, key)?;
-    request_json::token_field(body, key, min, max).map_err(|issue| {
-        #[derive(Serialize)]
-        struct Errors<'a> {
-            detail: [FieldIssue<'a>; 1],
-        }
-        let errors = Errors {
-            detail: [field_issue(issue, original)],
-        };
-        Box::new((StatusCode::UNPROCESSABLE_ENTITY, Json(errors)).into_response())
+    read_fields(headers, stream, &[key], |body| {
+        request_json::token_field(body, key, min, max).map_err(|issue| vec![issue])
     })
+    .await
 }
 
 #[cfg(test)]

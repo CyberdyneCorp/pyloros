@@ -1,0 +1,1 @@
+Project the small set of fields that each validator consumes and retain the original JSON for reporting. A missing field points to the containing document. Each invalid field points to its own value. Validate the request before consuming a recovery quota or looking up a token.
