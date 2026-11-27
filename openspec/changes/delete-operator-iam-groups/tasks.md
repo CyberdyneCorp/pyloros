@@ -1,0 +1,3 @@
+- [ ] Implement PostgreSQL group deletion, namespace protection and auditing.
+- [ ] Verify relationship cleanup, access decisions, rollback, concurrency and both original clients.
+- [ ] Implement and verify chain-backed deletion and provider switches.
