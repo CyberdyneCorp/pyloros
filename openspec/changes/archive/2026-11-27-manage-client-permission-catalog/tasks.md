@@ -1,0 +1,2 @@
+- [x] Implement validated, audited creation and deletion.
+- [x] Verify isolation, rollback, limits, concurrency and client behavior.

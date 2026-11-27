@@ -119,8 +119,16 @@ pub(crate) fn validate_fields<T>(
     validate: impl FnOnce(Value) -> Result<T, Vec<Value>>,
 ) -> Result<T, Box<Response>> {
     let raw = document(headers, bytes)?.ok_or_else(|| Box::new(internal_error()))?;
-    let fields = object_fields(&raw)?;
-    validate(project(&raw, &fields, keys)).map_err(|issues| {
+    validate_document(&raw, keys, validate)
+}
+
+pub(crate) fn validate_document<T>(
+    raw: &RawValue,
+    keys: &[&str],
+    validate: impl FnOnce(Value) -> Result<T, Vec<Value>>,
+) -> Result<T, Box<Response>> {
+    let fields = object_fields(raw)?;
+    validate(project(raw, &fields, keys)).map_err(|issues| {
         #[derive(Serialize)]
         struct Errors<'a> {
             detail: Vec<FieldIssue<'a>>,
@@ -133,7 +141,7 @@ pub(crate) fn validate_fields<T>(
                     .and_then(Value::as_str)
                     .and_then(|key| fields.get(key))
                     .copied()
-                    .unwrap_or(&raw);
+                    .unwrap_or(raw);
                 field_issue(issue, input)
             })
             .collect();

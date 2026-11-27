@@ -1,7 +1,9 @@
 //! Operator access to a client's PostgreSQL permission catalog.
+mod writes;
 use super::*;
 use axum::extract::Path;
 use sqlx::Row;
+pub(super) use writes::{create, remove};
 
 pub(super) async fn list(
     State(state): State<Arc<Profile>>,

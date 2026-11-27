@@ -1,0 +1,1 @@
+Authorize the operator before validating fields. Serialize catalog capacity checks per client and use the database uniqueness constraint for concurrent registrations. Delete a permission and its role assignments in the same transaction as its audit entry.
