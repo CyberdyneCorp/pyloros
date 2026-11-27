@@ -45,7 +45,11 @@ fn locale(body: &Value) -> Result<Option<String>, Value> {
     }
     Ok(locale)
 }
-pub(super) fn parse(body: Value) -> Result<Invitation, Vec<Value>> {
+pub(super) fn document(body: &serde_json::value::RawValue) -> Result<Invitation, Box<Response>> {
+    crate::request_json::fields::validate_scalar_document(body, &["email", "name", "locale"], parse)
+}
+
+fn parse(body: Value) -> Result<Invitation, Vec<Value>> {
     admin_fields::object(&body)?;
     match (
         crate::login_http::email_field(&body),
@@ -70,6 +74,21 @@ pub(super) fn parse(body: Value) -> Result<Invitation, Vec<Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn invitation_preserves_large_numeric_name_in_field_errors() {
+        let digits = "7".repeat(402);
+        let input = format!(r#"{{"email":"invite@example.com","name":{digits}}}"#);
+        let raw = serde_json::value::RawValue::from_string(input).unwrap();
+        let response = document(&raw).err().expect("numeric names are invalid");
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let text = std::str::from_utf8(&bytes).unwrap();
+        assert!(text.contains(&format!(r#""input":{digits}"#)));
+        assert!(text.contains(r#""loc":["body","name"]"#));
+    }
 
     #[test]
     fn invitation_normalizes_the_address_and_preserves_only_plain_name_hints() {

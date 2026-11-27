@@ -76,7 +76,7 @@ pub(super) async fn handle(
     headers: HeaderMap,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let body = match admin_fields::body(&headers, &bytes) {
+    let body = match crate::request_json::iam_document::document(&headers, &bytes) {
         Ok(body) => body,
         Err(r) => return *r,
     };
@@ -85,9 +85,9 @@ pub(super) async fn handle(
         Err(r) => return *r,
     };
     let Some(body) = body else { return internal() };
-    let invitation = match input::parse(body) {
+    let invitation = match input::document(&body) {
         Ok(i) => i,
-        Err(issues) => return password_change::invalid(issues),
+        Err(response) => return *response,
     };
     if !state.provisioning.clients.allow_client(Some(&client), None) {
         return RateLimited.into_response();

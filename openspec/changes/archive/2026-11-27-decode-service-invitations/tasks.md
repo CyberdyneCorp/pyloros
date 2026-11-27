@@ -1,0 +1,2 @@
+- [x] Use shared JSON field validation and cover optional invitation fields.
+- [x] Compare HTTP responses and redeem emailed links across deployments.
