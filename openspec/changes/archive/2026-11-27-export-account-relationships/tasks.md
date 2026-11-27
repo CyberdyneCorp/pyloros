@@ -1,0 +1,2 @@
+- [x] Extend the shared inventory and preserve compatibility on databases without graph storage.
+- [x] Verify isolation, truncation and both download routes.

@@ -1,0 +1,1 @@
+Discover the optional table within the export transaction. Read direct assignments through the existing field inventory and the account index. Sort by the graph key to make truncation predictable. Append the section only when the account owns rows.

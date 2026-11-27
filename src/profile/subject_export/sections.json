@@ -27,5 +27,6 @@
   {"table": "auth_events", "strategy": "pseudonymise", "fields": ["id", "occurred_at", "schema_version", "event_class", "activity", "outcome", "reason_code", "auth_protocol", "is_mfa", "subject_format", "subject_user_id", "subject_email", "subject_issuer", "subject_identifier", "actor_type", "actor_user_id", "actor_client_id", "client_id", "organization_id", "ip_address", "user_agent", "request_id", "details", "content_hash"], "times": ["occurred_at"]},
   {"table": "admin_action_logs", "strategy": "retained", "fields": ["action", "target_type", "ip_address", "user_agent", "created_at"], "times": ["created_at"]},
   {"table": "webhook_events", "strategy": "retained", "fields": ["id", "type", "body", "occurred_at"], "times": ["occurred_at"]},
-  {"table": "oauth_token_issuance_log", "strategy": "retained", "fields": ["id", "client_id", "success", "error_code", "scopes", "audience", "ip_address", "user_agent", "issued_at"], "times": ["issued_at"]}
+  {"table": "oauth_token_issuance_log", "strategy": "retained", "fields": ["id", "client_id", "success", "error_code", "scopes", "audience", "ip_address", "user_agent", "issued_at"], "times": ["issued_at"]},
+  {"table": "pyloros_user_relationships", "strategy": "cascade", "optional": true, "fields": ["client_id", "object_type", "object_id", "relation", "user_id"], "times": []}
 ]

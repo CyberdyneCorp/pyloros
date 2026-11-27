@@ -8,6 +8,8 @@ use std::sync::LazyLock;
 struct Entry {
     table: &'static str,
     strategy: &'static str,
+    #[serde(default)]
+    optional: bool,
     fields: Vec<&'static str>,
     times: Vec<&'static str>,
 }
@@ -34,12 +36,40 @@ pub(super) async fn collect(
 ) -> sqlx::Result<Vec<Section>> {
     let mut result = Vec::with_capacity(INVENTORY.len());
     for entry in INVENTORY.iter() {
-        let mut note = settings.export_note(entry.table).map(str::to_owned);
-        let mut rows = Vec::new();
-        if let Some(predicate) = entry.predicate(ids) {
-            rows = entry.read(tx, user, ids, since, predicate).await?;
+        if let Some(section) = entry.section(tx, settings, user, ids, since).await? {
+            result.push(section);
         }
-        if entry.table == "auth_events" {
+    }
+    Ok(result)
+}
+
+impl Entry {
+    async fn section(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        settings: &erasure::Settings,
+        user: Uuid,
+        ids: &Identifiers,
+        since: DateTime<Utc>,
+    ) -> sqlx::Result<Option<Section>> {
+        if self.optional {
+            let installed: bool = sqlx::query_scalar("SELECT to_regclass($1) IS NOT NULL")
+                .bind(self.table)
+                .fetch_one(&mut **tx)
+                .await?;
+            if !installed {
+                return Ok(None);
+            }
+        }
+        let mut note = settings.export_note(self.table).map(str::to_owned);
+        let mut rows = Vec::new();
+        if let Some(predicate) = self.predicate(ids) {
+            rows = self.read(tx, user, ids, since, predicate).await?;
+        }
+        if self.optional && rows.is_empty() {
+            return Ok(None);
+        }
+        if self.table == "auth_events" {
             note = Some(format!(
                 "Events since {}, newest first. {}",
                 since.date_naive(),
@@ -48,23 +78,22 @@ pub(super) async fn collect(
         }
         let truncated = rows.len() > 1000;
         rows.truncate(1000);
-        result.push(Section {
-            table: entry.table,
-            on_erasure: entry.strategy,
+        Ok(Some(Section {
+            table: self.table,
+            on_erasure: self.strategy,
             rows,
             truncated,
             note,
-        });
+        }))
     }
-    Ok(result)
-}
-
-impl Entry {
     fn predicate(&self, ids: &Identifiers) -> Option<&'static str> {
         match self.table {
             "webhook_events" | "oauth_token_issuance_log" => None,
             "phone_otps" if ids.phones.is_empty() => None,
             "phone_otps" => Some("phone_number=ANY(p.phones)"),
+            "pyloros_user_relationships" => {
+                Some("user_id=p.uid ORDER BY client_id,object_type,object_id,relation")
+            }
             "users" => Some("id=p.uid"),
             "admin_action_logs" => Some("actor_user_id=p.uid"),
             "auth_challenges" => Some("user_id=p.uid OR lower(wallet_address)=ANY(p.wallets)"),
@@ -210,6 +239,57 @@ mod tests {
         assert_eq!(actor["subject_user_id"].get(), "null");
         assert_eq!(actor["subject_email"].get(), "null");
         assert_eq!(actor["ip_address"].get(), r#""192.0.2.5""#);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn optional_graph_section_only_exports_the_subjects_assignments() -> sqlx::Result<()> {
+        let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = pool.begin().await?;
+        sqlx::query("SET LOCAL search_path TO pg_temp")
+            .execute(&mut *tx)
+            .await?;
+        let entry = INVENTORY
+            .iter()
+            .find(|e| e.table == "pyloros_user_relationships")
+            .unwrap();
+        let settings = serde_json::from_value(json!({"retained":{}, "processors":[]})).unwrap();
+        let ids = Identifiers::default();
+        let user = Uuid::new_v4();
+        let now = Utc::now();
+        assert!(
+            entry
+                .section(&mut tx, &settings, user, &ids, now)
+                .await?
+                .is_none()
+        );
+        sqlx::raw_sql("CREATE TEMP TABLE pyloros_user_relationships (
+            client_id uuid, object_type text, object_id text, relation text, user_id uuid
+        ); INSERT INTO pyloros_user_relationships VALUES (gen_random_uuid(),'file','foreign','viewer',gen_random_uuid());")
+            .execute(&mut *tx).await?;
+        assert!(
+            entry
+                .section(&mut tx, &settings, user, &ids, now)
+                .await?
+                .is_none()
+        );
+        sqlx::query(
+            "INSERT INTO pyloros_user_relationships
+            SELECT $1,'file',lpad(n::text,4,'0'),'viewer',$2 FROM generate_series(1001,1,-1) n",
+        )
+        .bind(Uuid::new_v4())
+        .bind(user)
+        .execute(&mut *tx)
+        .await?;
+        let section = entry
+            .section(&mut tx, &settings, user, &ids, now)
+            .await?
+            .unwrap();
+        assert!(section.truncated);
+        assert_eq!(section.rows.len(), 1000);
+        assert_eq!(section.rows[0]["object_id"].get(), r#""0001""#);
+        assert_eq!(section.rows[999]["object_id"].get(), r#""1000""#);
+        tx.rollback().await
     }
 
     #[test]
