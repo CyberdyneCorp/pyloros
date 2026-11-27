@@ -1,0 +1,4 @@
+- [x] Authenticate push deliveries and parse package-scoped messages.
+- [x] Apply verified subscription transitions and deduplicate deliveries atomically.
+- [x] Verify provider failures, replays, mixed backend reads and concurrent deliveries.
+- [ ] Check live store delivery and entitlement hook dispatch before migration signoff.

@@ -7,13 +7,15 @@ use zeroize::Zeroizing;
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const PLAY_URL: &str = "https://androidpublisher.googleapis.com/androidpublisher/v3/applications";
 pub(in crate::profile) struct Provider {
-    package: String,
+    pub(super) package: String,
     credentials: Zeroizing<String>,
+    pub(super) push: Option<super::push_identity::Identity>,
+    pub(super) store_slots: tokio::sync::Semaphore,
     client: OnceCell<Client>,
 }
 
-struct Client {
-    http: reqwest::Client,
+pub(super) struct Client {
+    pub(super) http: reqwest::Client,
     signing: EncodingKey,
     issuer: String,
     key_id: Option<String>,
@@ -57,6 +59,8 @@ impl Provider {
             .filter(|s| !s.is_empty())
             .map(|credentials| Self {
                 package,
+                push: super::push_identity::Identity::configured(),
+                store_slots: tokio::sync::Semaphore::new(3),
                 credentials: Zeroizing::new(credentials),
                 client: OnceCell::new(),
             }))
@@ -66,12 +70,14 @@ impl Provider {
         token: &str,
         product: &str,
     ) -> Result<DateTime<Utc>, Failure> {
-        let client = self
-            .client
-            .get_or_try_init(|| async { Client::new(&self.credentials) })
-            .await?;
-        let doc = client.subscription(&self.package, token).await?;
+        let client = self.client().await?;
+        let doc = client.subscription(&self.package, token, false).await?;
         doc.expiry(product, Utc::now())
+    }
+    pub(super) async fn client(&self) -> Result<&Client, Failure> {
+        self.client
+            .get_or_try_init(|| async { Client::new(&self.credentials) })
+            .await
     }
 }
 impl Client {
@@ -136,7 +142,12 @@ impl Client {
         *cached = Some((now.saturating_add(reply.expires_in), token.clone()));
         Ok(token)
     }
-    async fn subscription(&self, package: &str, token: &str) -> Result<Subscription, Failure> {
+    pub(super) async fn subscription(
+        &self,
+        package: &str,
+        token: &str,
+        push: bool,
+    ) -> Result<Subscription, Failure> {
         if matches!(token, "." | "..") {
             return Err(Failure::Invalid);
         }
@@ -152,6 +163,12 @@ impl Client {
             .send()
             .await
             .map_err(|_| Failure::Unavailable)?;
+        if push && matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
+            return Err(Failure::Gone);
+        }
+        if push && response.status() != StatusCode::OK {
+            return Err(Failure::Unavailable);
+        }
         if response.status() != StatusCode::OK {
             return Err(Failure::Invalid);
         }
@@ -162,8 +179,8 @@ impl Client {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Subscription {
-    subscription_state: String,
+pub(super) struct Subscription {
+    pub(super) subscription_state: String,
     line_items: Vec<Item>,
 }
 #[derive(Deserialize)]
@@ -172,8 +189,33 @@ struct Item {
     product_id: String,
     expiry_time: Option<String>,
 }
+impl Item {
+    fn expiry(&self) -> Option<DateTime<Utc>> {
+        self.expiry_time.as_deref()?.parse().ok()
+    }
+}
+
 impl Subscription {
-    fn expiry(&self, product: &str, now: DateTime<Utc>) -> Result<DateTime<Utc>, Failure> {
+    pub(super) fn expired_items(&self, now: DateTime<Utc>) -> bool {
+        !self.line_items.is_empty()
+            && self
+                .line_items
+                .iter()
+                .all(|item| item.expiry().is_some_and(|expiry| expiry <= now))
+    }
+    pub(super) fn active_products(&self, now: DateTime<Utc>) -> std::collections::BTreeSet<&str> {
+        self.line_items
+            .iter()
+            .filter(|item| item.expiry().is_some_and(|expiry| expiry > now))
+            .map(|item| item.product_id.as_str())
+            .collect()
+    }
+
+    pub(super) fn expiry(
+        &self,
+        product: &str,
+        now: DateTime<Utc>,
+    ) -> Result<DateTime<Utc>, Failure> {
         if !matches!(
             self.subscription_state.as_str(),
             "SUBSCRIPTION_STATE_ACTIVE"
@@ -185,7 +227,7 @@ impl Subscription {
         self.line_items
             .iter()
             .filter(|i| i.product_id == product)
-            .filter_map(|i| i.expiry_time.as_ref()?.parse::<DateTime<Utc>>().ok())
+            .filter_map(Item::expiry)
             .filter(|expiry| *expiry > now)
             .max()
             .ok_or(Failure::Invalid)
@@ -239,3 +281,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "claim_lock_test.rs"]
+mod claim_lock_test;

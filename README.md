@@ -38,6 +38,8 @@ Pyloros intentionally fulfills correctly signed events that the previous provide
 
 Enable billing with `BILLING_ENABLED=true`, set `GOOGLE_PACKAGE_NAME` to the Android application ID, and supply `GOOGLE_SERVICE_ACCOUNT_JSON` as a server-side secret with Android Publisher access. Signed-in users submit `purchase_token` and `product_id` to `POST /api/v1/billing/google/validate`. Pyloros checks the purchased line item and expiry with Google before granting the mapped product. A purchase can belong to one account. An active entitlement hook requires the dispatcher before the grant can commit.
 
+For subscription updates, configure an authenticated Google Pub/Sub push subscription to `POST /api/v1/webhooks/google`. Set `GOOGLE_PUBSUB_AUDIENCE` to its exact audience and `GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL` to its push identity. Pyloros verifies the sender and application, then checks current subscription state with Play. Canceled subscriptions retain access until the confirmed expiry. Processed message IDs are acknowledged on replay. An unknown purchase or product is recorded as deferred and can be resubmitted after the mapping exists. A temporary provider failure returns HTTP 503 so Pub/Sub can retry.
+
 ## Outbound webhooks
 
 Each service replica runs a PostgreSQL outbox worker when `WEBHOOKS_ENABLED=true` (the default). Replicas lease queued deliveries before sending them. Receivers can deduplicate retries by the stable `webhook-id` header. The worker signs the stored body with the subscription key and includes both signatures during key rotation. Configure the same `MASTER_KEY` on all replicas.

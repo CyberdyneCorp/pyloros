@@ -2,12 +2,15 @@
 use super::*;
 use crate::{login_http::problem, request_json::fields};
 use axum::body::Bytes;
+pub(super) mod notifications;
 mod provider;
+mod push_identity;
 pub(super) use provider::Provider;
 
 #[derive(Debug)]
 enum Failure {
     Invalid,
+    Gone,
     Unavailable,
 }
 
@@ -71,23 +74,12 @@ pub(super) async fn handle(
         )
             .into_response();
     };
-    let expiry = match provider.expiry(&token, &product).await {
-        Ok(t) => t,
-        Err(Failure::Invalid) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error":"invalid purchase"})),
-            )
-                .into_response();
-        }
-        Err(Failure::Unavailable) => return internal(),
-    };
     claim(
         &state.pool,
         id.user,
         &token,
         &product,
-        expiry,
+        provider,
         state.registration.hooks,
     )
     .await
@@ -98,10 +90,26 @@ async fn claim(
     user: Uuid,
     token: &str,
     store_product: &str,
-    expires: DateTime<Utc>,
+    provider: &Provider,
     hooks: bool,
 ) -> sqlx::Result<Response> {
+    let Ok(_slot) = provider.store_slots.acquire().await else {
+        return Ok(internal());
+    };
     let mut tx = pool.begin().await?;
+    lock_purchase(&mut tx, token).await?;
+    let expiry = match provider.expiry(token, store_product).await {
+        Ok(t) => t,
+        Err(Failure::Invalid | Failure::Gone) => {
+            return Ok((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error":"invalid purchase"})),
+            )
+                .into_response());
+        }
+        Err(Failure::Unavailable) => return Ok(internal()),
+    };
+
     let missing = || {
         problem(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -117,10 +125,6 @@ async fn claim(
     let Some((product, plan)) = mapping else {
         return Ok(missing());
     };
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('google-purchase'),hashtext($1))")
-        .bind(token)
-        .execute(&mut *tx)
-        .await?;
     let owner = sqlx::query_scalar::<_, Uuid>(
         "SELECT user_id FROM google_purchases WHERE purchase_token=$1",
     )
@@ -151,7 +155,7 @@ async fn claim(
     let grant = billing_grants::Grant {
         product: &product,
         plan: plan.as_deref(),
-        expires: Some(expires),
+        expires: Some(expiry),
         reference: Some(token),
         source: "google",
     };
@@ -165,8 +169,13 @@ async fn claim(
     let access = plan
         .filter(|p| !p.is_empty())
         .map_or_else(|| product.clone(), |p| format!("{product}:{p}"));
-    Ok(
-        Json(json!({"granted":true,"token":access,"expires_at":timestamp(expires)}))
-            .into_response(),
-    )
+    Ok(Json(json!({"granted":true,"token":access,"expires_at":timestamp(expiry)})).into_response())
+}
+
+async fn lock_purchase(tx: &mut Transaction<'_, Postgres>, token: &str) -> sqlx::Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('google-purchase'),hashtext($1))")
+        .bind(token)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }

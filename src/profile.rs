@@ -453,6 +453,10 @@ fn build_routes(
             any(google_play::handle).layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
+            "/api/v1/webhooks/google",
+            any(google_play::notifications::handle),
+        )
+        .route(
             "/api/v1/webhooks/stripe",
             any(stripe_events::handle).layer(axum::extract::DefaultBodyLimit::disable()),
         )
