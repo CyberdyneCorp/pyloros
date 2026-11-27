@@ -1,0 +1,2 @@
+- [ ] Implement membership removal, clearing of a matching primary, scoped role revocation and operator auditing.
+- [ ] Compare provider behavior, role events, rollback, retries and client interoperability against the reference.
