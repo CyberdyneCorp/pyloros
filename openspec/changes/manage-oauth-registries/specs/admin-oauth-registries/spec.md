@@ -73,3 +73,10 @@ The issuer SHALL support authenticated administrative reads, creation, partial u
 - **THEN** token issuance, registration redirects, browser origin checks and OAuth fragment redirects use the current policy.
 - **WHEN** the scope transaction rolls back
 - **THEN** those consumers retain their previous policy.
+
+#### Scenario: Partially update a protected resource
+
+- **WHEN** an administrator updates a managed resource by identifier
+- **THEN** retain its URI, clear nullable display fields or audience when explicitly null, preserve omitted fields and retain its scopes when the supplied scope list is null.
+- **WHEN** the request supplies a scope list
+- **THEN** validate the names against the effective catalog, store distinct trimmed names and preserve the submitted list in the audit entry.

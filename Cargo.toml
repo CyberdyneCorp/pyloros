@@ -29,6 +29,7 @@ zeroize = "1"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 percent-encoding = "2"
 unicode-general-category = "1"
+unicode-normalization = "0.1"
 k256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
 sha3 = "0.10"
 minijinja = { version = "2", default-features = false, features = ["loader", "serde"] }

@@ -4,7 +4,7 @@
 - [x] Implement audited scope creation and partial updates.
 - [x] Implement administrative protected-resource list and detail reads.
 - [x] Implement audited protected-resource deactivation and publish the change to token and registration consumers.
-- [ ] Implement audited protected-resource creation and updates with scope validation.
+- [x] Implement audited protected-resource creation and updates with scope validation.
 - [ ] Implement web-origin reads and audited mutations with redirect and origin validation.
 - [ ] Verify immediate post-commit policy on the writer, cross-replica refresh, rollback, concurrency and existing consumers.
 - [x] Publish previously committed protected-resource changes to dynamic client registration on a local scope write, including when polling is disabled.

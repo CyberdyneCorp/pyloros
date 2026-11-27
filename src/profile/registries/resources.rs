@@ -1,4 +1,5 @@
 //! Read the protected-resource inventory directly from the deployment configuration and database.
+pub(super) mod write;
 use super::*;
 use crate::token_runtime::ResourceRegistry;
 use std::collections::BTreeSet;

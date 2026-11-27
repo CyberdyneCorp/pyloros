@@ -111,7 +111,7 @@ pub(super) fn redirects(
     }
     Ok(())
 }
-pub(super) fn validate_scopes(
+pub(in crate::profile) fn validate_scopes(
     requested: &BTreeSet<String>,
     scopes: &BTreeMap<String, String>,
 ) -> Result<(), String> {

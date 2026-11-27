@@ -8,6 +8,26 @@ pub(super) struct Fields<'a> {
     pub(super) issues: Vec<Value>,
 }
 impl Fields<'_> {
+    pub(super) fn string_list(&mut self, key: &str, nullable: bool) -> Option<Vec<String>> {
+        let v = self.body.get(key)?;
+        if nullable && v.is_null() {
+            return None;
+        }
+        let Some(items) = v.as_array() else {
+            self.issues.push(json!({"type":"list_type","loc":["body",key],"msg":"Input should be a valid list","input":v}));
+            return None;
+        };
+        let mut values = Vec::new();
+        for (i, item) in items.iter().enumerate() {
+            if let Some(s) = item.as_str() {
+                values.push(s.to_owned());
+            } else {
+                self.issues.push(json!({"type":"string_type","loc":["body",key,i],"msg":"Input should be a valid string","input":item}));
+            }
+        }
+        Some(values)
+    }
+
     pub(super) fn string(
         &mut self,
         key: &str,

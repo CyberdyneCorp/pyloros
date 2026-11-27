@@ -19,23 +19,8 @@ pub(super) struct Metadata {
 
 impl Fields<'_> {
     fn list(&mut self, key: &str, nullable: bool) -> Option<BTreeSet<String>> {
-        let v = self.body.get(key)?;
-        if nullable && v.is_null() {
-            return None;
-        }
-        let Some(items) = v.as_array() else {
-            self.issues.push(json!({"type":"list_type","loc":["body",key],"msg":"Input should be a valid list","input":v}));
-            return None;
-        };
-        let mut values = BTreeSet::new();
-        for (i, item) in items.iter().enumerate() {
-            if let Some(s) = item.as_str() {
-                values.insert(s.to_owned());
-            } else {
-                self.issues.push(json!({"type":"string_type","loc":["body",key,i],"msg":"Input should be a valid string","input":item}));
-            }
-        }
-        Some(values)
+        self.string_list(key, nullable)
+            .map(|items| items.into_iter().collect())
     }
     fn ttl(&mut self) -> i32 {
         let Some(v) = self.body.get("max_token_ttl_s") else {

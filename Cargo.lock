@@ -2386,6 +2386,7 @@ dependencies = [
  "tokio",
  "tower",
  "unicode-general-category",
+ "unicode-normalization",
  "url",
  "uuid",
  "webauthn-rs-core",

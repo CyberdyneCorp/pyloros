@@ -151,10 +151,46 @@ pub(crate) fn quoted_string(s: &str) -> String {
     } else {
         '\''
     };
-    let escaped = s
-        .replace('\\', "\\\\")
-        .replace(quote, &format!("\\{quote}"));
-    format!("{quote}{escaped}{quote}")
+    let mut out = String::from(quote);
+    for c in s.chars() {
+        match c {
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote || c == '\\' => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if unprintable(c) => {
+                use std::fmt::Write;
+                let n = c as u32;
+                match n {
+                    0..=255 => write!(out, "\\x{n:02x}"),
+                    256..=65535 => write!(out, "\\u{n:04x}"),
+                    _ => write!(out, "\\U{n:08x}"),
+                }
+                .expect("write to string");
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
+}
+
+fn unprintable(c: char) -> bool {
+    use unicode_general_category::GeneralCategory::*;
+    c != ' '
+        && matches!(
+            get_general_category(c),
+            Control
+                | Format
+                | PrivateUse
+                | Unassigned
+                | LineSeparator
+                | ParagraphSeparator
+                | SpaceSeparator
+        )
 }
 
 pub(crate) fn quoted_list(items: &[&str]) -> String {
@@ -193,6 +229,12 @@ pub(crate) fn encode_query(mut params: url::form_urlencoded::Serializer<'_, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnostics_escape_control_and_format_characters() {
+        assert_eq!(quoted_string("a\nb\u{200b}\t\0"), r"'a\nb\u200b\t\x00'");
+    }
+
     #[test]
     fn freshness_includes_fractional_seconds_and_requires_signed_evidence() {
         let now = DateTime::from_timestamp(100, 1000).unwrap();

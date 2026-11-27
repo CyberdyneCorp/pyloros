@@ -95,7 +95,7 @@ fn invalid(issues: Vec<Value>) -> Box<Response> {
     )
 }
 
-fn trimmed(s: &str) -> &str {
+pub(super) fn trimmed(s: &str) -> &str {
     s.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
 }
 
