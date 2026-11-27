@@ -1,0 +1,2 @@
+- [x] Update CLI exchange decoding and add regression coverage.
+- [x] Compare responses under both CLI feature settings.

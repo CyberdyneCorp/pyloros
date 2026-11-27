@@ -1,0 +1,1 @@
+Use the shared Unicode JSON decoder, then project only code and verifier. Preserve the exchange-specific invalid-grant response for malformed JSON and field errors. Transport decoding errors use the service parsing problem.

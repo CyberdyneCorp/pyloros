@@ -20,11 +20,9 @@ pub(super) async fn handle(
         return response;
     }
     let (parts, body) = req.into_parts();
-    let Ok(bytes) = axum::body::to_bytes(body, 2 * 1024 * 1024).await else {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
-    };
-    let Ok(body) = crate::request_json::parse_body(&parts.headers, &bytes) else {
-        return invalid_grant();
+    let body = match exchange_document(&parts.headers, body).await {
+        Ok(document) => document,
+        Err(response) => return *response,
     };
     let Some((code, verifier)) = fields(&body) else {
         return invalid_grant();
@@ -51,6 +49,30 @@ pub(super) async fn handle(
         )
         .await
         .unwrap_or_else(|_| crate::headers::unhandled_error())
+}
+
+async fn exchange_document(
+    headers: &axum::http::HeaderMap,
+    body: axum::body::Body,
+) -> Result<serde_json::Value, Box<Response>> {
+    use crate::request_json::{fields, iam_document};
+    let bytes = axum::body::to_bytes(body, usize::MAX).await.map_err(|_| {
+        Box::new(problem(
+            StatusCode::BAD_REQUEST,
+            "There was an error parsing the body",
+        ))
+    })?;
+    let raw = match iam_document::document(headers, &bytes) {
+        Ok(Some(raw)) => raw,
+        Err(response) if response.status() == StatusCode::BAD_REQUEST => return Err(response),
+        _ => return Err(Box::new(invalid_grant())),
+    };
+    let submitted = fields::object_fields(&raw)?;
+    Ok(fields::project(
+        &raw,
+        &submitted,
+        &["code", "code_verifier"],
+    ))
 }
 
 fn fields(body: &serde_json::Value) -> Option<(&str, &str)> {
@@ -207,6 +229,18 @@ mod tests {
     use super::*;
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use sha2::{Digest, Sha256};
+
+    #[tokio::test]
+    async fn large_unicode_exchange_ignores_unrelated_numeric_fields() {
+        let mut text = String::from(r#"{"code":"abc","code_verifier":"proof","extra":NaN}"#);
+        text.extend(std::iter::repeat_n(' ', 1 << 20));
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(h::CONTENT_TYPE, "application/json".parse().unwrap());
+        let parsed = exchange_document(&headers, bytes.into()).await.unwrap();
+        assert_eq!(fields(&parsed), Some(("abc", "proof")));
+    }
 
     #[test]
     fn an_empty_verifier_reaches_redemption_and_oversized_fields_do_not() {
