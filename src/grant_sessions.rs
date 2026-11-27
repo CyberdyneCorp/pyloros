@@ -22,6 +22,7 @@ pub(crate) struct SessionRecord<'a> {
 
 pub struct GrantSessionIssuer {
     pub(crate) blockchain: std::sync::Arc<crate::chain_settings::ChainSettings>,
+    pub(crate) login_hooks: bool,
     signing: std::sync::Arc<SigningIdentity>,
     id_issuer: Option<String>,
     refresh_lifetime: TimeDelta,
@@ -31,6 +32,8 @@ pub struct GrantSessionIssuer {
 pub enum SessionError {
     #[error("OIDC ID tokens require jwt_algorithm=RS256")]
     UnsupportedIdToken,
+    #[error("Login hook dispatcher unavailable")]
+    HookUnavailable,
     #[error("invalid token lifetime")]
     InvalidLifetime,
     #[error("the grant resource is no longer available")]
@@ -63,6 +66,7 @@ impl GrantSessionIssuer {
         }
         Ok(Self {
             blockchain: Default::default(),
+            login_hooks: false,
             signing: std::sync::Arc::new(signing),
             id_issuer: None,
             refresh_lifetime,
@@ -72,6 +76,7 @@ impl GrantSessionIssuer {
     pub(crate) fn for_id_issuer(&self, issuer: &str) -> Self {
         Self {
             blockchain: self.blockchain.clone(),
+            login_hooks: self.login_hooks,
             signing: self.signing.clone(),
             id_issuer: Some(issuer.to_owned()),
             refresh_lifetime: self.refresh_lifetime,

@@ -239,22 +239,13 @@ pub(super) async fn exchange(
         .signer
         .store_session(&mut tx, record, origin, now)
         .await?;
-    let mut response = signer
+    let response = match signer
         .session_response(&mut tx, record, req.client, settings, now)
-        .await?;
-    response.refresh_token = approved
-        .scopes
-        .split_whitespace()
-        .any(|v| v == "offline_access")
-        .then_some(token);
-    sqlx::query(
-        "UPDATE device_authorizations SET status='consumed', consumed_at=$2, session_id=$3 WHERE id=$1",
-    )
-    .bind(approved.id)
-    .bind(now)
-    .bind(session)
-    .execute(&mut *tx)
-    .await?;
+        .await
+    {
+        issued @ (Ok(_) | Err(SessionError::UnsupportedIdToken)) => issued,
+        Err(error) => return Err(error),
+    };
     let event = GrantEvent::issued(
         &mut tx,
         approved.user,
@@ -264,14 +255,76 @@ pub(super) async fn exchange(
         &approved.scopes,
     )
     .await?;
-    write_event(&mut *tx, event, origin, request_id, now).await?;
+    signer
+        .record_user_grant(&mut tx, event, origin, request_id, now)
+        .await?;
+    let response = response.map(|mut response| {
+        response.refresh_token = approved
+            .scopes
+            .split_whitespace()
+            .any(|v| v == "offline_access")
+            .then_some(token);
+        response
+    });
+    finish_device_grant(tx, approved.id, session, response, now).await
+}
+
+// The protocol signing refusal commits the new session but exposes no credentials.
+async fn finish_device_grant(
+    mut tx: Transaction<'_, Postgres>,
+    id: Uuid,
+    session: Uuid,
+    response: Result<crate::grant_response::TokenResponse, SessionError>,
+    now: DateTime<Utc>,
+) -> Result<CodeDecision, SessionError> {
+    let bound = match response {
+        Ok(_) => Some(session),
+        Err(SessionError::UnsupportedIdToken) => None,
+        Err(error) => return Err(error),
+    };
+    sqlx::query("UPDATE device_authorizations SET status='consumed', consumed_at=$2, session_id=$3 WHERE id=$1")
+        .bind(id).bind(now).bind(bound).execute(&mut *tx).await?;
     tx.commit().await?;
-    Ok(CodeDecision::Issued(response))
+    response.map(CodeDecision::Issued)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn unsupported_id_token_commits_prior_writes_and_consumes_device_without_binding() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("CREATE TEMP TABLE device_authorizations(id uuid PRIMARY KEY,status text,consumed_at timestamptz,session_id uuid)")
+            .execute(&mut *tx).await.unwrap();
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO device_authorizations(id,status) VALUES($1,'approved')")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let now = Utc::now();
+        assert!(matches!(
+            finish_device_grant(
+                tx,
+                id,
+                Uuid::new_v4(),
+                Err(SessionError::UnsupportedIdToken),
+                now
+            )
+            .await,
+            Err(SessionError::UnsupportedIdToken)
+        ));
+        let consumed: bool = sqlx::query_scalar("SELECT status='consumed' AND consumed_at=$2 AND session_id IS NULL FROM device_authorizations WHERE id=$1")
+            .bind(id).bind(now).fetch_one(&pool).await.unwrap();
+        assert!(consumed);
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]

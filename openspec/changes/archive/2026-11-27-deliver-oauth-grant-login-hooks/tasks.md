@@ -1,0 +1,2 @@
+- [x] Queue grant login events and preserve the committed ID-token error path.
+- [x] Verify grant consumption, retries, replay, audit failure and recipient privacy.

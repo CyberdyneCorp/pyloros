@@ -58,8 +58,27 @@ impl GrantSessionIssuer {
             scope,
         )
         .await?;
-        write_event(&mut **tx, event, origin, request_id, now).await?;
+        self.record_user_grant(tx, event, origin, request_id, now)
+            .await?;
         response
+    }
+
+    pub(crate) async fn record_user_grant(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        event: GrantEvent<'_>,
+        origin: SessionOrigin<'_>,
+        request_id: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<(), SessionError> {
+        if self.login_hooks
+            && let Some(user) = event.user
+            && !crate::profile::logged_in(tx, user, event.email.as_deref(), origin).await?
+        {
+            return Err(SessionError::HookUnavailable);
+        }
+        write_event(&mut **tx, event, origin, request_id, now).await?;
+        Ok(())
     }
 }
 

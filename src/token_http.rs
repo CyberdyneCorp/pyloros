@@ -345,6 +345,10 @@ fn exchange_response(
             Json(error),
         )
             .into_response(),
+        Err(crate::grant_sessions::SessionError::HookUnavailable) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error":"temporarily_unavailable","error_description":"Login hook dispatcher unavailable"})),
+        ).into_response(),
         Err(err @ crate::grant_sessions::SessionError::UnsupportedIdToken) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error":"server_error", "error_description":err.to_string()})),

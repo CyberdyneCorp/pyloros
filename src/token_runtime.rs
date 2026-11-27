@@ -227,7 +227,7 @@ impl Runtime {
         production: bool,
         resources: ResourceCatalog,
     ) -> Result<Option<Self>, Box<dyn Error>> {
-        let (signer, refresh_verifier) = if provider.uses_shared_secret() {
+        let (mut signer, refresh_verifier) = if provider.uses_shared_secret() {
             let Some((identity, verifier)) = crate::login_http::signing_identity(production)?
             else {
                 return Ok(None);
@@ -261,6 +261,7 @@ impl Runtime {
             )?;
             (signer, verifier)
         };
+        signer.login_hooks = crate::config::flag_with_default("HOOKS_ENABLED", true)?;
         let admins = crate::config::admin_emails()?;
         Ok(Some(Self {
             refresh_verifier,
