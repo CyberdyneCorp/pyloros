@@ -72,11 +72,8 @@ pub(super) async fn apply(
     .bind(source)
     .execute(&mut **tx)
     .await?;
-    if superseded.rows_affected() > 0
+    let needs_dispatch = superseded.rows_affected() > 0
         && hooks
-        && registration::pending_hook(tx, "entitlement_revoked").await?
-    {
-        return Ok(false);
-    }
-    Ok(true)
+        && registration::pending_hook(tx, "entitlement_revoked").await?;
+    Ok(!needs_dispatch)
 }
