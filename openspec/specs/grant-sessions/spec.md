@@ -158,3 +158,12 @@ The service SHALL decode supported JSON encodings before validating credentials 
 
 - **WHEN** a session operation receives a nonempty plain-text or URL-encoded body
 - **THEN** it returns the compatible internal error response without issuing credentials
+
+### Requirement: Coordinate logout with account erasure
+
+Account-wide logout SHALL revoke visible sessions before advancing the account cutoff and SHALL commit session revocations, cutoff and audit together.
+
+#### Scenario: Accepted logout overlaps account deletion
+
+- **WHEN** both operations have admitted their callers and contend for the same open session
+- **THEN** both operations can complete, the account is erased and its refresh credentials are refused

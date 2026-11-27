@@ -68,6 +68,7 @@ async fn end_sessions(
     user: Uuid,
     now: DateTime<Utc>,
 ) -> Result<(u64, AuditSubject), sqlx::Error> {
+    let count = revoke_sessions(tx, user, now).await?;
     let (email, organization) = sqlx::query_as::<_, (Option<String>, Option<Uuid>)>(
         "UPDATE users SET tokens_valid_after=GREATEST(tokens_valid_after,$2) WHERE id=$1
          RETURNING primary_email, organization_id",
@@ -78,7 +79,7 @@ async fn end_sessions(
     .await?
     .unwrap_or_default();
     Ok((
-        revoke_sessions(tx, user, now).await?,
+        count,
         AuditSubject {
             user: Some(user),
             email,
@@ -130,6 +131,21 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
+        // Catch a reversed lock order even when this test runs without contention.
+        sqlx::raw_sql(
+            "CREATE FUNCTION pg_temp.check_logout_order() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN
+               IF EXISTS (SELECT 1 FROM sessions WHERE user_id=NEW.id AND revoked_at IS NULL) THEN
+                 RAISE EXCEPTION 'logout updated account before revoking its sessions';
+               END IF;
+               RETURN NEW;
+             END $$;
+             CREATE TRIGGER check_logout_order BEFORE UPDATE ON users
+             FOR EACH ROW EXECUTE FUNCTION pg_temp.check_logout_order();",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         let now = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
         assert_eq!(end_sessions(&mut tx, user, now).await.unwrap().0, 2);
         assert_eq!(end_sessions(&mut tx, user, now).await.unwrap().0, 0);

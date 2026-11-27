@@ -1,0 +1,2 @@
+- [x] 1. Align the transaction order and add a PostgreSQL regression check.
+- [x] 2. Verify overlapping requests with both writers.
