@@ -1,0 +1,3 @@
+- [ ] Implement PostgreSQL membership changes with authorization, identity resolution, namespace protection and auditing.
+- [ ] Compare repeated, concurrent and failed operations and their effects on inherited access.
+- [ ] Exercise the existing clients and verify provider-specific behavior and confirmed chain writes.
