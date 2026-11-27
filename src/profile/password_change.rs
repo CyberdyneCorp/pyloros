@@ -224,6 +224,7 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
+            google_play: None,
             stripe_checkout: None,
             stripe_events: None,
             blockchain: Default::default(),

@@ -1,0 +1,1 @@
+Use service-account OAuth to query subscriptions for the configured package. Match the submitted product to a purchased line item, use its expiry, and check subscription state before granting. Serialize claims of a purchase token and commit the ownership and access updates together. Share billing grant behavior with Stripe.

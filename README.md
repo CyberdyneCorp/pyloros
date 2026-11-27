@@ -34,6 +34,10 @@ The response contains the hosted session's `id` and `url`. The service identifie
 
 Pyloros intentionally fulfills correctly signed events that the previous provider adapter could reject with HTTP 500 during decoding. During migration, an active entitlement hook requiring a dispatcher returns HTTP 503 and leaves the billing event available for retry.
 
+## Google Play purchases
+
+Enable billing with `BILLING_ENABLED=true`, set `GOOGLE_PACKAGE_NAME` to the Android application ID, and supply `GOOGLE_SERVICE_ACCOUNT_JSON` as a server-side secret with Android Publisher access. Signed-in users submit `purchase_token` and `product_id` to `POST /api/v1/billing/google/validate`. Pyloros checks the purchased line item and expiry with Google before granting the mapped product. A purchase can belong to one account. An active entitlement hook requires the dispatcher before the grant can commit.
+
 ## Outbound webhooks
 
 Each service replica runs a PostgreSQL outbox worker when `WEBHOOKS_ENABLED=true` (the default). Replicas lease queued deliveries before sending them. Receivers can deduplicate retries by the stable `webhook-id` header. The worker signs the stored body with the subscription key and includes both signatures during key rotation. Configure the same `MASTER_KEY` on all replicas.

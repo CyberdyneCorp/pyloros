@@ -18,6 +18,7 @@ mod admin_wallet;
 mod administrator;
 mod analytics;
 mod auth_policy;
+mod billing_grants;
 mod blockchain;
 mod datetime;
 mod delegated;
@@ -25,6 +26,7 @@ mod edit;
 mod email_verification;
 mod entitlement_reports;
 mod erasure;
+mod google_play;
 mod org_directory;
 mod registries;
 mod store_products;
@@ -229,6 +231,24 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
         .bind(id.user).bind(id.iat).bind(id.jti).bind(id.sid).fetch_one(&mut **tx).await
 }
 
+async fn authenticated_transaction(
+    state: &Profile,
+    id: &Identity,
+) -> Result<Option<Transaction<'static, Postgres>>, Box<Response>> {
+    if state.enforce {
+        let Ok(mut tx) = state.pool.begin().await else {
+            return Err(Box::new(internal()));
+        };
+        match account_revoked(&mut tx, id).await {
+            Ok(false) => Ok(Some(tx)),
+            Ok(true) => Err(Box::new(unauthorized())),
+            Err(_) => Err(Box::new(internal())),
+        }
+    } else {
+        Ok(None)
+    }
+}
+
 async fn account_revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> sqlx::Result<bool> {
     // Loading the account for the revocation check also decodes its stored metadata.
     let metadata: Option<String> =
@@ -272,6 +292,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    google_play: Option<google_play::Provider>,
     stripe_checkout: Option<stripe_checkout::Provider>,
     stripe_events: Option<stripe_events::Verifier>,
     blockchain: Arc<crate::chain_settings::ChainSettings>,
@@ -379,6 +400,7 @@ fn build_routes(
     blockchain: Arc<crate::chain_settings::ChainSettings>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        google_play: google_play::Provider::configured()?,
         stripe_checkout: stripe_checkout::Provider::configured()?,
         stripe_events: stripe_events::Verifier::configured()?,
         blockchain,
@@ -426,6 +448,10 @@ fn build_routes(
         .merge(subject_export::routes())
         .merge(webhook_history::routes())
         .merge(store_products::routes())
+        .route(
+            "/api/v1/billing/google/validate",
+            any(google_play::handle).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route(
             "/api/v1/webhooks/stripe",
             any(stripe_events::handle).layer(axum::extract::DefaultBodyLimit::disable()),

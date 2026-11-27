@@ -278,24 +278,6 @@ pub(super) async fn handle(
         .await
 }
 
-async fn authenticated_transaction(
-    state: &Profile,
-    id: &Identity,
-) -> Result<Option<Transaction<'static, Postgres>>, Box<Response>> {
-    if state.enforce {
-        let Ok(mut tx) = state.pool.begin().await else {
-            return Err(Box::new(internal()));
-        };
-        match account_revoked(&mut tx, id).await {
-            Ok(false) => Ok(Some(tx)),
-            Ok(true) => Err(Box::new(unauthorized())),
-            Err(_) => Err(Box::new(internal())),
-        }
-    } else {
-        Ok(None)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
