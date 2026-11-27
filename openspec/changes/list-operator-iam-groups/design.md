@@ -1,0 +1,11 @@
+## Decisions
+
+Use the configured IAM provider for each request. Project the provider's group identifiers, timestamps, policy references and membership counts into the existing operator response.
+
+## Verification
+
+Compare PostgreSQL and chain-backed results for empty and populated inventories, authorization failures, method handling and unavailable providers. Exercise the existing clients.
+
+## Console dependency
+
+The IAM console loads the policy, group and role inventories together. Verify the group endpoint with the CLI independently, then exercise the full console when all three inventory reads are available on Rust.
