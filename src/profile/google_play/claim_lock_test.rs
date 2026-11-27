@@ -65,6 +65,15 @@ async fn purchase_lookup_holds_the_shared_transaction_lock() {
     assert!(!try_lock().await.unwrap());
     release.notify_one();
     assert_eq!(claim.await.unwrap().status(), StatusCode::BAD_REQUEST);
-    assert!(try_lock().await.unwrap());
+    // SQLx queues rollback when a transaction is dropped. Wait for PostgreSQL
+    // to release the lock before a second claimant proceeds.
+    let acquire =
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext('google-purchase'),hashtext($1))")
+            .bind(&token)
+            .execute(&pool);
+    tokio::time::timeout(std::time::Duration::from_secs(5), acquire)
+        .await
+        .unwrap()
+        .unwrap();
     server.abort();
 }
