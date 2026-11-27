@@ -19,7 +19,7 @@ struct Disabled;
 
 pub struct Provider {
     metadata: Value,
-    keys: Value,
+    public_jwk: Option<Value>,
     scopes: tokio::sync::watch::Receiver<BTreeMap<String, String>>,
 }
 
@@ -33,14 +33,22 @@ impl Provider {
         if !flag("OIDC_ENABLED")? {
             return Ok(None);
         }
-        let pem = crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?
-            .ok_or("OIDC discovery requires an RSA public key")?;
+        let explicit = env::var("JWT_ALGORITHM").ok();
+        let public = match explicit.as_deref() {
+            Some("HS256") => None,
+            Some("RS256") => Some(
+                crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?
+                    .ok_or("RS256 discovery requires an RSA public key")?,
+            ),
+            None => crate::config::pem("JWT_PUBLIC_KEY_PATH", "JWT_PUBLIC_KEY")?,
+            _ => return Err("unsupported discovery signing algorithm".into()),
+        };
         let issuer = env::var("OIDC_ISSUER")?;
         let scopes = env::var("OIDC_SCOPES")
             .unwrap_or_else(|_| "openid profile email offline_access".into());
-        let provider = Self::new(
+        let provider = Self::configured(
             &issuer,
-            &pem,
+            public.as_deref(),
             env::var("JWT_KEY_ID").ok(),
             &scopes,
             flag("OAUTH_DCR_ENABLED")?,
@@ -52,6 +60,17 @@ impl Provider {
     pub fn new(
         issuer: &str,
         pem: &str,
+        key_id: Option<String>,
+        scopes: &str,
+        registration: bool,
+        device: bool,
+    ) -> Result<Self, ConfigError> {
+        Self::configured(issuer, Some(pem), key_id, scopes, registration, device)
+    }
+
+    fn configured(
+        issuer: &str,
+        pem: Option<&str>,
         key_id: Option<String>,
         scopes: &str,
         registration: bool,
@@ -71,11 +90,15 @@ impl Provider {
                     .into(),
             );
         }
-        let public = RsaPublicKey::from_public_key_pem(pem)?;
-        let n = URL_SAFE_NO_PAD.encode(public.n().to_bytes_be());
-        let e = URL_SAFE_NO_PAD.encode(public.e().to_bytes_be());
-        let kid = key_id.unwrap_or_else(|| rsa_kid(&n, &e));
-        let keys = json!({"keys":[{"alg":"RS256","use":"sig","kty":"RSA","kid":kid,"n":n,"e":e}]});
+        let public_jwk = if let Some(pem) = pem {
+            let public = RsaPublicKey::from_public_key_pem(pem)?;
+            let n = URL_SAFE_NO_PAD.encode(public.n().to_bytes_be());
+            let e = URL_SAFE_NO_PAD.encode(public.e().to_bytes_be());
+            let kid = key_id.unwrap_or_else(|| rsa_kid(&n, &e));
+            Some(json!({"alg":"RS256","use":"sig","kty":"RSA","kid":kid,"n":n,"e":e}))
+        } else {
+            None
+        };
         let base = format!("{issuer}/api/v1/auth");
         let oauth = format!("{base}/oauth2");
         let methods = ["client_secret_basic", "client_secret_post", "none"];
@@ -110,7 +133,7 @@ impl Provider {
         .1;
         Ok(Self {
             metadata,
-            keys,
+            public_jwk,
             scopes,
         })
     }
@@ -131,8 +154,15 @@ impl Provider {
         self.metadata["issuer"].as_str().expect("configured issuer")
     }
 
+    pub(crate) fn uses_shared_secret(&self) -> bool {
+        self.public_jwk.is_none()
+    }
+
     pub(crate) fn signing_identity(&self, key: &RsaPublicKey) -> Result<(&str, &str), ConfigError> {
-        let jwk = &self.keys["keys"][0];
+        let jwk = self
+            .public_jwk
+            .as_ref()
+            .ok_or("RSA discovery key missing")?;
         if jwk["n"] != URL_SAFE_NO_PAD.encode(key.n().to_bytes_be())
             || jwk["e"] != URL_SAFE_NO_PAD.encode(key.e().to_bytes_be())
         {
@@ -319,7 +349,8 @@ async fn metadata(State(provider): State<ProviderState>) -> Document {
 }
 
 async fn keys(State(provider): State<ProviderState>) -> Document {
-    Ok(Json(provider.as_ref().ok_or(Disabled)?.keys.clone()))
+    let provider = provider.as_ref().ok_or(Disabled)?;
+    Ok(Json(json!({"keys":provider.public_jwk.as_slice()})))
 }
 
 pub fn routes(provider: Option<Provider>) -> Router {
@@ -338,6 +369,24 @@ pub fn routes(provider: Option<Provider>) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn symmetric_provider_has_no_public_key_and_only_advertises_rsa_id_tokens() {
+        let provider = Provider::configured(
+            "https://issuer.example",
+            None,
+            Some("old-key".into()),
+            "openid",
+            false,
+            false,
+        )
+        .unwrap();
+        assert!(provider.uses_shared_secret());
+        assert_eq!(
+            provider.metadata["id_token_signing_alg_values_supported"],
+            json!(["RS256"])
+        );
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]

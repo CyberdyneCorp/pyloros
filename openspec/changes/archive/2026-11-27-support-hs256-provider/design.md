@@ -1,0 +1,1 @@
+Use the server's signing configuration for all token operations. Keep the public key document empty in symmetric mode. Check ID-token capability before signing. Preserve one-time code consumption on an unsupported ID-token request. Compare grant responses and replay against both implementations on isolated PostgreSQL.

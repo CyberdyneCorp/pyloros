@@ -221,29 +221,42 @@ impl Runtime {
         production: bool,
         resources: ResourceCatalog,
     ) -> Result<Option<Self>, Box<dyn Error>> {
-        let Some(pem) = crate::config::pem("JWT_PRIVATE_KEY_PATH", "JWT_PRIVATE_KEY")? else {
-            return Ok(None);
-        };
-        if env::var("JWT_ALGORITHM").is_ok_and(|s| s != "RS256") {
-            return Err("code issuance requires RS256".into());
-        }
-        let key =
-            RsaPrivateKey::from_pkcs8_pem(&pem).or_else(|_| RsaPrivateKey::from_pkcs1_pem(&pem))?;
-        let (issuer, kid) = provider.signing_identity(&key.to_public_key())?;
-        let signer = GrantSessionIssuer::new(
-            issuer.into(),
-            kid.into(),
-            pem.as_bytes(),
-            lifetime("JWT_REFRESH_TOKEN_TTL_DAYS", 30, 86400)?,
-        )?;
-        let admins = crate::config::admin_emails()?;
-        Ok(Some(Self {
-            refresh_verifier: crate::mfa_challenges::ChallengeVerifier::rsa(
+        let (signer, refresh_verifier) = if provider.uses_shared_secret() {
+            let Some((identity, verifier)) = crate::login_http::signing_identity(production)?
+            else {
+                return Ok(None);
+            };
+            (
+                GrantSessionIssuer::with_identity(
+                    identity,
+                    lifetime("JWT_REFRESH_TOKEN_TTL_DAYS", 30, 86400)?,
+                )?,
+                verifier,
+            )
+        } else {
+            let Some(pem) = crate::config::pem("JWT_PRIVATE_KEY_PATH", "JWT_PRIVATE_KEY")? else {
+                return Ok(None);
+            };
+            let key = RsaPrivateKey::from_pkcs8_pem(&pem)
+                .or_else(|_| RsaPrivateKey::from_pkcs1_pem(&pem))?;
+            let (issuer, kid) = provider.signing_identity(&key.to_public_key())?;
+            let signer = GrantSessionIssuer::new(
+                issuer.into(),
+                kid.into(),
+                pem.as_bytes(),
+                lifetime("JWT_REFRESH_TOKEN_TTL_DAYS", 30, 86400)?,
+            )?;
+            let verifier = crate::mfa_challenges::ChallengeVerifier::rsa(
                 issuer,
                 key.to_public_key()
                     .to_public_key_pem(LineEnding::LF)?
                     .as_bytes(),
-            )?,
+            )?;
+            (signer, verifier)
+        };
+        let admins = crate::config::admin_emails()?;
+        Ok(Some(Self {
+            refresh_verifier,
             consent_page: crate::consent_page::Page::configured()?,
             verifier: crate::profile::Verifier::configured(production)?
                 .ok_or("missing browser session verification key")?,

@@ -35,6 +35,10 @@ impl SigningIdentity {
         })
     }
 
+    pub(crate) fn supports_id_tokens(&self) -> bool {
+        self.header.alg == Algorithm::RS256
+    }
+
     pub(crate) fn issuer(&self) -> &str {
         &self.issuer
     }

@@ -20,7 +20,7 @@ The service SHALL sign a refresh JWT containing issuer, user, session ID, unique
 - **THEN** the session and refresh records are created and the client receives no refresh credential
 
 ### Requirement: Grant identity token
-An OpenID grant SHALL produce an RS256 ID token whose subject is the granted user and whose audience is the calling client. It SHALL carry issuer, issuance time, expiry, and any recorded nonce and original authentication context. Other grants SHALL omit the ID token.
+With RSA signing configured, an OpenID grant SHALL produce an RS256 ID token whose subject is the granted user and whose audience is the calling client. It SHALL carry issuer, issuance time, expiry, and any recorded nonce and original authentication context. Other grants SHALL omit the ID token.
 
 #### Scenario: Email and profile consent
 - **WHEN** the grant includes email and profile scopes
@@ -35,7 +35,7 @@ An OpenID grant SHALL produce an RS256 ID token whose subject is the granted use
 - **THEN** role and permission fields are absent from the ID token
 
 ### Requirement: User access tokens
-User-grant access tokens SHALL be signed with RS256 and identify the issuer, user, session, unique token, lifetime, calling client and granted scopes. They SHALL include the effective admin flag, active personal and primary-organization entitlements, active memberships, and available role and permission claims. A missing authorization snapshot SHALL omit the unresolved claims. A bound resource SHALL determine the audience and an unregistered bound resource SHALL prevent issuance.
+User-grant access tokens SHALL be signed with the configured session algorithm (RS256 or HS256) and identify the issuer, user, session, unique token, lifetime, calling client and granted scopes. They SHALL include the effective admin flag, active personal and primary-organization entitlements, active memberships, and available role and permission claims. A missing authorization snapshot SHALL omit the unresolved claims. A bound resource SHALL determine the audience and an unregistered bound resource SHALL prevent issuance.
 
 #### Scenario: Organization entitlements
 - **WHEN** a user's active primary organization grants a product already granted to the user

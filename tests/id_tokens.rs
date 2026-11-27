@@ -79,6 +79,18 @@ async fn signed_claims_follow_grant_and_audience() {
             .is_none()
     );
     claimed.grant.scopes = "openid email profile roles".into();
+    let symmetric = GrantSessionIssuer::with_identity(
+        pyloros::signing::SigningIdentity::hmac("https://issuer.example".into(), b"test-secret")
+            .unwrap(),
+        Duration::days(30),
+    )
+    .unwrap();
+    assert!(matches!(
+        symmetric
+            .issue_id_token(&mut tx, &claimed, None, now, ttl)
+            .await,
+        Err(pyloros::grant_sessions::SessionError::UnsupportedIdToken)
+    ));
     let token = issuer
         .issue_id_token(&mut tx, &claimed, Some(&roles), now, ttl)
         .await

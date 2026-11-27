@@ -65,11 +65,11 @@ impl GrantSessionIssuer {
         .await?;
         authorization_fields(&mut claims, auth.as_ref());
         let access_token = self.sign(&claims)?;
-        let id_token = self
-            .issue_id_token(tx, claimed, auth.as_ref(), now, settings.id_lifetime)
-            .await?;
         let refresh_token = self
             .create(tx, claimed, now, origin.user_agent, origin.ip)
+            .await?;
+        let id_token = self
+            .issue_id_token(tx, claimed, auth.as_ref(), now, settings.id_lifetime)
             .await?;
         Ok(TokenResponse {
             access_token,

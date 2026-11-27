@@ -133,6 +133,9 @@ impl GrantSessionIssuer {
         if !scopes.contains("openid") {
             return Ok(None);
         }
+        if !self.supports_id_tokens() {
+            return Err(SessionError::UnsupportedIdToken);
+        }
         if lifetime.num_seconds() < 1 {
             return Err(SessionError::InvalidLifetime);
         }

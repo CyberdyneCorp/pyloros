@@ -31,7 +31,7 @@ fn grant_details(kind: &str, session: Uuid, scopes: &str) -> Value {
 }
 
 impl GrantSessionIssuer {
-    /// Issue a code grant and record its decision. Roll back the transaction on any error.
+    /// Issue a code grant and record its decision. ID-token refusal retains the issued session and grant event.
     pub async fn issue_code_response(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -43,18 +43,23 @@ impl GrantSessionIssuer {
     ) -> Result<TokenResponse, SessionError> {
         let response = self
             .issue_grant_response(tx, claimed, settings, origin, now)
-            .await?;
+            .await;
+        let scope = match &response {
+            Ok(tokens) => &tokens.scope,
+            Err(SessionError::UnsupportedIdToken) => &claimed.grant.sorted_scopes(),
+            Err(_) => return response,
+        };
         let event = GrantEvent::issued(
             tx,
             claimed.grant.user_id,
             &claimed.grant.client_id,
             "authorization_code",
             claimed.session_id,
-            &response.scope,
+            scope,
         )
         .await?;
         write_event(&mut **tx, event, origin, request_id, now).await?;
-        Ok(response)
+        response
     }
 }
 

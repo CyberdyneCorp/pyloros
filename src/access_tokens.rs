@@ -7,7 +7,7 @@ use crate::{
 use chrono::{DateTime, TimeDelta, Utc};
 use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 /// Effective issuer settings and IAM results for this exchange.
@@ -71,15 +71,8 @@ impl GrantSessionIssuer {
             ),
             None => default_audience.as_deref(),
         };
-        let scopes = grant
-            .scopes
-            .split_ascii_whitespace()
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>()
-            .join(" ");
         doc["client_id"] = json!(grant.client_id);
-        doc["scope"] = json!(scopes);
+        doc["scope"] = json!(grant.sorted_scopes());
         if let Some(aud) = audience {
             doc["aud"] = json!(aud);
         }

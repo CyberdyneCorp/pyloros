@@ -100,9 +100,13 @@ impl GrantSessionIssuer {
                     tx.commit().await?;
                     return Ok(CodeDecision::Issued(response));
                 }
-                Err(SessionError::UnknownResource) => {
+                Err(err @ (SessionError::UnknownResource | SessionError::UnsupportedIdToken)) => {
                     sqlx::query("UPDATE oidc_authorization_codes SET session_id=NULL WHERE code_hash=$1 AND session_id=$2")
                         .bind(digest(req.code)).bind(session).execute(&mut *tx).await?;
+                    if matches!(err, SessionError::UnsupportedIdToken) {
+                        tx.commit().await?;
+                        return Err(err);
+                    }
                     Refusal::ResourceRemoved
                 }
                 Err(err) => return Err(err),

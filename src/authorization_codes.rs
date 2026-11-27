@@ -19,6 +19,17 @@ pub struct Grant {
     pub amr: Option<String>,
 }
 
+impl Grant {
+    pub(crate) fn sorted_scopes(&self) -> String {
+        self.scopes
+            .split_ascii_whitespace()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
 pub struct StoredCode {
     pub id: Uuid,
     pub grant: Grant,

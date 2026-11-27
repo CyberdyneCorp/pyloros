@@ -313,6 +313,12 @@ async fn exchange(
             .exchange_code(&rt.pool, &req, &settings, origin, request_id, now)
             .await
     };
+    exchange_response(decision)
+}
+
+fn exchange_response(
+    decision: Result<CodeDecision, crate::grant_sessions::SessionError>,
+) -> Response {
     match decision {
         Ok(CodeDecision::Issued(body)) => (
             [("cache-control", "no-store"), ("pragma", "no-cache")],
@@ -322,6 +328,11 @@ async fn exchange(
         Ok(CodeDecision::Refused(error)) => (
             StatusCode::from_u16(error.status()).expect("OAuth status"),
             Json(error),
+        )
+            .into_response(),
+        Err(err @ crate::grant_sessions::SessionError::UnsupportedIdToken) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error":"server_error", "error_description":err.to_string()})),
         )
             .into_response(),
         Err(_) => {

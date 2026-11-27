@@ -32,15 +32,19 @@ The metadata SHALL advertise a registration endpoint only when dynamic registrat
 - **THEN** the grant list contains authorization code, refresh token and client credentials and the two optional endpoint fields are absent
 
 ### Requirement: RSA verification key
-The key set SHALL publish one RSA signing key identified by `kid`, with algorithm `RS256`, use `sig`, and public modulus and exponent encoded as unpadded base64url integers.
+The key set SHALL publish one public RSA signing key when RS256 is selected and an empty keys array when HS256 is selected. The RSA key SHALL have a kid, algorithm RS256, use sig, and unsigned modulus and exponent encoded as unpadded base64url integers.
 
 #### Scenario: Default identifier
-- **WHEN** the issuer has a configured public key and no explicit key identifier
-- **THEN** the published identifier is its RFC 7638 SHA-256 JWK thumbprint
+- **WHEN** an RSA issuer has no explicit key identifier
+- **THEN** publish its RFC 7638 SHA-256 JWK thumbprint
 
 #### Scenario: Explicit identifier
-- **WHEN** the operator sets `JWT_KEY_ID`
-- **THEN** the key set publishes that identifier for the configured public key
+- **WHEN** an RSA issuer has a configured key identifier
+- **THEN** publish that identifier
+
+#### Scenario: Symmetric deployment
+- **WHEN** discovery is enabled with HS256 and a configured issuer
+- **THEN** both metadata endpoints advertise RS256 for ID tokens and the public key set is empty
 
 ### Requirement: Discovery scope refresh
 When discovery is enabled, each replica SHALL load active PostgreSQL scope names at startup and at the configured refresh interval, which defaults to 30 seconds. Both metadata documents SHALL advertise the sorted union of these names and the configured base scopes. An interval of zero SHALL disable database loading.
@@ -60,3 +64,10 @@ All three discovery routes SHALL accept GET and return the service method-error 
 #### Scenario: HEAD on discovery
 - **WHEN** a client sends HEAD to the key set or either metadata route
 - **THEN** return HTTP 405 with the GET allowance and an empty body.
+
+### Requirement: Symmetric OAuth code exchange
+A provider using HS256 SHALL sign access tokens for valid non-OpenID authorization codes and honor offline access. An exchange requiring an ID token SHALL return HTTP 500 with an OAuth server_error and consume the code. The issued session, refresh record and successful grant audit event SHALL persist, with no session bound to the consumed code.
+
+#### Scenario: OpenID code replay
+- **WHEN** a client retries a valid OpenID code following the unsupported signing response
+- **THEN** redemption fails with invalid_grant

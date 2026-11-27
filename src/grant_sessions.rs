@@ -27,6 +27,8 @@ pub struct GrantSessionIssuer {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
+    #[error("OIDC ID tokens require jwt_algorithm=RS256")]
+    UnsupportedIdToken,
     #[error("invalid token lifetime")]
     InvalidLifetime,
     #[error("the grant resource is no longer available")]
@@ -61,6 +63,10 @@ impl GrantSessionIssuer {
             signing,
             refresh_lifetime,
         })
+    }
+
+    pub(crate) fn supports_id_tokens(&self) -> bool {
+        self.signing.supports_id_tokens()
     }
 
     pub(crate) fn issuer(&self) -> &str {
