@@ -1,6 +1,7 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
 mod admin_clients;
 mod admin_fields;
+mod admin_sessions;
 mod administrator;
 mod edit;
 mod email_verification;
@@ -354,6 +355,11 @@ fn build_routes(
         production,
     };
     Ok(Router::new()
+        .route("/api/v1/admin/sessions", any(admin_sessions::list))
+        .route(
+            "/api/v1/admin/sessions/{session_id}",
+            any(admin_sessions::revoke),
+        )
         .route(
             "/api/v1/admin/oauth/web-origins",
             axum::routing::post(registries::create_origin).fallback(registries::list_origins),

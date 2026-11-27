@@ -1,4 +1,4 @@
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::collections::HashMap;
 
 pub(super) struct Page {
@@ -10,20 +10,7 @@ impl Page {
     pub fn parse(query: &str) -> Result<Self, Vec<Value>> {
         let fields: HashMap<_, _> = url::form_urlencoded::parse(query.as_bytes()).collect();
         let mut issues = Vec::new();
-        let mut number = |name, default, max| {
-            let Some(raw) = fields.get(name) else {
-                return default;
-            };
-            match bounded(name, raw, max) {
-                Ok(n) => n,
-                Err(e) => {
-                    issues.push(e);
-                    default
-                }
-            }
-        };
-        let page = number("page", 1, None);
-        let size = number("page_size", 50, Some(200)) as i64;
+        let (page, size) = crate::query::pagination(&fields, 50, 200, &mut issues);
         let active_only = crate::query::active_only(fields.get("active_only").map(|v| v.as_ref()))
             .unwrap_or_else(|e| {
                 issues.push(e);
@@ -40,40 +27,10 @@ impl Page {
         }
     }
 }
-fn bounded(name: &str, raw: &str, max: Option<i128>) -> Result<i128, Value> {
-    let error =
-        |kind: &str, msg: &str| json!({"loc":["query",name],"type":kind,"msg":msg,"input":raw});
-    let digits = crate::query::integer(raw).map_err(|(k, m)| error(k, m))?;
-    let n = digits.parse().unwrap_or_else(|_| {
-        if digits.starts_with('-') {
-            i128::MIN
-        } else {
-            i128::MAX
-        }
-    });
-    let (kind, msg, ctx) = if n < 1 {
-        (
-            "greater_than_equal",
-            "Input should be greater than or equal to 1",
-            json!({"ge":"1"}),
-        )
-    } else if max.is_some_and(|m| n > m) {
-        (
-            "less_than_equal",
-            "Input should be less than or equal to 200",
-            json!({"le":"200"}),
-        )
-    } else {
-        return Ok(n);
-    };
-    let mut e = error(kind, msg);
-    e["ctx"] = ctx;
-    Err(e)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn reports_all_invalid_fields_in_contract_order() {

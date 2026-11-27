@@ -176,6 +176,10 @@ pub(crate) enum AuditActivity<'a> {
     PasskeyRevoked(Uuid),
     PasskeyEnrolled(Uuid),
     LogoffAll(u64),
+    SessionRevoked {
+        operator: Uuid,
+        session: Uuid,
+    },
     Authenticator(&'static str, Option<&'static str>),
     Logoff {
         protocol: Option<&'static str>,
@@ -202,28 +206,28 @@ fn outcome(failed: bool) -> &'static str {
     if failed { "failure" } else { "success" }
 }
 
-pub(crate) async fn write_activity<'e>(
-    executor: impl sqlx::Executor<'e, Database = Postgres>,
-    activity: AuditActivity<'_>,
-    subject: AuditSubject,
-    origin: SessionOrigin<'_>,
-    request_id: Option<&str>,
-    now: DateTime<Utc>,
-) -> Result<(), sqlx::Error> {
-    let AuditSubject {
-        user,
-        email,
-        organization,
-    } = subject;
-    let is_mfa = matches!(
-        activity,
-        AuditActivity::FactorLogin(_, _, _) | AuditActivity::PasskeyLogin(_, _)
-    );
-    let federated_identity = match &activity {
-        AuditActivity::Federated { identity, .. } => *identity,
-        _ => None,
-    };
-    let (class, activity, protocol, client, outcome, reason, details) = match activity {
+// Class, activity, protocol, client, outcome, reason and activity-specific details.
+type Classification<'a> = (
+    &'static str,
+    &'static str,
+    Option<&'a str>,
+    &'a str,
+    &'static str,
+    Option<&'a str>,
+    Value,
+);
+
+fn classify(activity: AuditActivity<'_>) -> Classification<'_> {
+    match activity {
+        AuditActivity::SessionRevoked { session, .. } => (
+            "session",
+            "session_revoke",
+            None,
+            "",
+            "success",
+            None,
+            json!({"session_id":session}),
+        ),
         AuditActivity::DeviceDecision {
             client,
             approved,
@@ -403,11 +407,7 @@ pub(crate) async fn write_activity<'e>(
         AuditActivity::Registration(reason) => (
             "account_lifecycle",
             "register",
-            if reason == Some("rate_limited") {
-                None
-            } else {
-                Some("password")
-            },
+            (reason != Some("rate_limited")).then_some("password"),
             "",
             outcome(reason.is_some()),
             reason,
@@ -496,11 +496,7 @@ pub(crate) async fn write_activity<'e>(
         AuditActivity::EmailDecision { reason } => (
             "authentication",
             "magic_link_decision",
-            if reason == Some("invalid_token") {
-                None
-            } else {
-                Some("magic_link")
-            },
+            (reason != Some("invalid_token")).then_some("magic_link"),
             "",
             outcome(reason.is_some()),
             reason,
@@ -549,7 +545,35 @@ pub(crate) async fn write_activity<'e>(
             }),
             json!({"method":method}),
         ),
+    }
+}
+
+pub(crate) async fn write_activity<'e>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
+    activity: AuditActivity<'_>,
+    subject: AuditSubject,
+    origin: SessionOrigin<'_>,
+    request_id: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    let AuditSubject {
+        user,
+        email,
+        organization,
+    } = subject;
+    let operator = match &activity {
+        AuditActivity::SessionRevoked { operator, .. } => Some(*operator),
+        _ => None,
     };
+    let is_mfa = matches!(
+        activity,
+        AuditActivity::FactorLogin(_, _, _) | AuditActivity::PasskeyLogin(_, _)
+    );
+    let federated_identity = match &activity {
+        AuditActivity::Federated { identity, .. } => *identity,
+        _ => None,
+    };
+    let (class, activity, protocol, client, outcome, reason, details) = classify(activity);
     let email = email.filter(|s| !s.is_empty()).map(|s| {
         s.trim()
             .to_lowercase()
@@ -589,6 +613,10 @@ pub(crate) async fn write_activity<'e>(
         "user_agent": origin.user_agent.filter(|s| !s.is_empty()).map(|s| s.chars().take(512).collect::<String>()),
         "details": details
     });
+    if let Some(operator) = operator {
+        event["actor_type"] = json!("admin");
+        event["actor_user_id"] = json!(operator);
+    }
     if let Some((provider, identifier)) = federated_identity {
         event["subject_format"] = json!("iss_sub");
         event["subject_issuer"] = json!(provider.chars().take(255).collect::<String>());

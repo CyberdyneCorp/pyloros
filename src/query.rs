@@ -59,12 +59,78 @@ fn uuid_reason(path: &str, error: uuid::Error) -> String {
 }
 
 pub(crate) fn path_uuid(path: &str, field: &str) -> Result<uuid::Uuid, serde_json::Value> {
+    uuid_field(path, "path", field)
+}
+
+pub(crate) fn uuid_field(
+    path: &str,
+    source: &str,
+    field: &str,
+) -> Result<uuid::Uuid, serde_json::Value> {
     uuid::Uuid::parse_str(path).map_err(|error| {
         let reason = uuid_reason(path, error);
         serde_json::json!({
-            "type":"uuid_parsing", "loc":["path",field],
+            "type":"uuid_parsing", "loc":[source,field],
             "msg":format!("Input should be a valid UUID, {reason}"),
             "input":path, "ctx":{"error":reason}
         })
     })
+}
+
+use serde_json::{Value, json};
+use std::{borrow::Cow, collections::HashMap};
+
+pub(crate) fn pagination(
+    fields: &HashMap<Cow<'_, str>, Cow<'_, str>>,
+    default_size: i64,
+    max_size: i64,
+    issues: &mut Vec<Value>,
+) -> (i128, i64) {
+    let mut number = |name, default, max| {
+        let Some(raw) = fields.get(name) else {
+            return default;
+        };
+        match bounded(name, raw, max) {
+            Ok(n) => n,
+            Err(e) => {
+                issues.push(e);
+                default
+            }
+        }
+    };
+    (
+        number("page", 1, None),
+        number("page_size", default_size.into(), Some(max_size.into())) as i64,
+    )
+}
+
+fn bounded(name: &str, raw: &str, max: Option<i128>) -> Result<i128, Value> {
+    let error =
+        |kind: &str, msg: &str| json!({"loc":["query",name],"type":kind,"msg":msg,"input":raw});
+    let digits = crate::query::integer(raw).map_err(|(k, m)| error(k, m))?;
+    let n = digits.parse().unwrap_or_else(|_| {
+        if digits.starts_with('-') {
+            i128::MIN
+        } else {
+            i128::MAX
+        }
+    });
+    let (kind, msg, ctx) = if n < 1 {
+        (
+            "greater_than_equal",
+            "Input should be greater than or equal to 1".to_owned(),
+            json!({"ge":"1"}),
+        )
+    } else if let Some(limit) = max.filter(|m| n > *m) {
+        (
+            "less_than_equal",
+            format!("Input should be less than or equal to {limit}"),
+            json!({"le":limit.to_string()}),
+        )
+    } else {
+        return Ok(n);
+    };
+    let mut e = error(kind, &msg);
+    e["ctx"] = ctx;
+    Err(e)
 }

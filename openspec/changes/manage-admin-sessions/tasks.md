@@ -1,0 +1,4 @@
+- [x] Implement the paginated session inventory and compare authorization, filters, metadata and validation against the reference.
+- [x] Implement single-session revocation and verify state, authentication events, audit and cross-backend refresh.
+- [x] Verify administration through the existing clients.
+- [ ] Resolve the mixed-writer rollout decision for simultaneous first-party refresh and administrative revocation.
