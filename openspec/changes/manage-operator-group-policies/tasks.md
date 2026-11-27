@@ -1,0 +1,4 @@
+- [ ] Implement PostgreSQL attachment and detachment with operator authorization and atomic auditing.
+- [ ] Compare API outcomes, inherited decisions and inventory through the existing clients.
+- [ ] Compare concurrent changes against both writers.
+- [ ] Implement and verify selected chain-provider behavior, including confirmed mutations.
