@@ -26,6 +26,12 @@ With hooks enabled, Pyloros starts a CONNECT proxy on `HOOKS_PROXY_HOST` and `HO
 
 The proposed hook runtime is WebAssembly, hosted by Rust. Existing scripts would be ported to modules and tested against representative events before cutover. The design calls for explicit permissions, bounded execution and a Python-free production runtime.
 
+## Stripe Checkout
+
+Set `BILLING_ENABLED=true` and configure `STRIPE_API_KEY` on the server to enable `POST /api/v1/billing/stripe/checkout`. The caller supplies `price_id`, `product_key`, `success_url`, and `cancel_url`. The optional `mode` accepts `subscription` (default) or `payment`, and `plan` identifies the product tier.
+
+The response contains the hosted session's `id` and `url`. The service identifies the signed-in user to Stripe, reuses a mapped customer when available, and sends one line item. Each new checkout request gets a new provider idempotency key. Retries of that provider request reuse its key. Payment fulfillment is tracked separately.
+
 ## Outbound webhooks
 
 Each service replica runs a PostgreSQL outbox worker when `WEBHOOKS_ENABLED=true` (the default). Replicas lease queued deliveries before sending them. Receivers can deduplicate retries by the stable `webhook-id` header. The worker signs the stored body with the subscription key and includes both signatures during key rotation. Configure the same `MASTER_KEY` on all replicas.

@@ -224,6 +224,7 @@ mod tests {
             .await
             .unwrap();
         let state = Profile {
+            stripe_checkout: None,
             blockchain: Default::default(),
             builtin_scopes: Default::default(),
             configured_resources: Default::default(),

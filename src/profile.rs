@@ -28,6 +28,7 @@ mod erasure;
 mod org_directory;
 mod registries;
 mod store_products;
+mod stripe_checkout;
 mod subject_export;
 mod subject_identifiers;
 pub(crate) use email_verification::verify_account;
@@ -270,6 +271,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    stripe_checkout: Option<stripe_checkout::Provider>,
     blockchain: Arc<crate::chain_settings::ChainSettings>,
     configured_origins: Vec<Value>,
     configured_resources: crate::token_runtime::ResourceRegistry,
@@ -375,6 +377,7 @@ fn build_routes(
     blockchain: Arc<crate::chain_settings::ChainSettings>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        stripe_checkout: stripe_checkout::Provider::configured()?,
         blockchain,
         configured_origins: registries::origins::configured()?,
         configured_resources: crate::token_runtime::ResourceRegistry::from_env()?,
@@ -420,6 +423,10 @@ fn build_routes(
         .merge(subject_export::routes())
         .merge(webhook_history::routes())
         .merge(store_products::routes())
+        .route(
+            "/api/v1/billing/stripe/checkout",
+            any(stripe_checkout::handle).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route("/api/v1/orgs/{org_id}/members", any(org_directory::read))
         .route(
             "/api/v1/admin/settings/blockchain",

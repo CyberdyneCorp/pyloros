@@ -1,0 +1,1 @@
+Use the existing self-service token rules and grantable product lookup. Send checkout details and the authenticated subject to Stripe with server credentials. Release the database connection before waiting on the provider. Entitlement changes occur separately during billing event processing.

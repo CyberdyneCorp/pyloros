@@ -217,9 +217,26 @@ pub(super) async fn grantable(
     tx: &mut Transaction<'_, Postgres>,
     product: &str,
 ) -> sqlx::Result<bool> {
-    let client = sqlx::query_scalar("SELECT active AND registration_source IS DISTINCT FROM 'dynamic' FROM oauth_clients WHERE client_id=$1").bind(product).fetch_optional(&mut **tx).await?;
-    if let Some(eligible) = client {
-        return Ok(eligible);
+    use sqlx::Row;
+    let client = sqlx::query(
+        "SELECT active AND registration_source IS DISTINCT FROM 'dynamic' AS eligible,
+        allowed_audiences::text,redirect_uris::text,post_logout_redirect_uris::text
+        FROM oauth_clients WHERE client_id=$1",
+    )
+    .bind(product)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some(row) = client {
+        for field in [
+            "allowed_audiences",
+            "redirect_uris",
+            "post_logout_redirect_uris",
+        ] {
+            if let Some(raw) = row.try_get::<Option<&str>, _>(field)? {
+                crate::stored_json::validate_client_set(raw)?;
+            }
+        }
+        return row.try_get("eligible");
     }
     sqlx::query_scalar("SELECT EXISTS(SELECT FROM products WHERE key=$1 AND active)")
         .bind(product)
@@ -318,7 +335,7 @@ mod tests {
     async fn registered_clients_take_precedence_over_virtual_products() -> sqlx::Result<()> {
         let pool = PgPool::connect(&env::var("DATABASE_URL").unwrap()).await?;
         let mut tx = pool.begin().await?;
-        sqlx::raw_sql("CREATE TEMP TABLE oauth_clients(client_id text,active bool,registration_source text);
+        sqlx::raw_sql("CREATE TEMP TABLE oauth_clients(client_id text,active bool,registration_source text,allowed_audiences jsonb,redirect_uris jsonb,post_logout_redirect_uris jsonb);
                        CREATE TEMP TABLE products(key text,active bool);
                        INSERT INTO oauth_clients VALUES ('disabled',false,'admin'),('dynamic',true,'dynamic'),('client',true,'admin');
                        INSERT INTO products VALUES ('virtual',true),('disabled',true),('dynamic',true),('inactive',false);")
@@ -333,6 +350,10 @@ mod tests {
         ] {
             assert_eq!(grantable(&mut tx, key).await?, expected, "{key}");
         }
+        sqlx::query("UPDATE oauth_clients SET allowed_audiences='[[1]]' WHERE client_id='client'")
+            .execute(&mut *tx)
+            .await?;
+        assert!(grantable(&mut tx, "client").await.is_err());
         Ok(())
     }
 }

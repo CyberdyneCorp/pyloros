@@ -65,7 +65,7 @@ async fn product_name(tx: &mut Transaction<'_, Postgres>, key: &str) -> sqlx::Re
     if let Some(row) = client {
         for i in 1..=3 {
             if let Some(raw) = row.try_get::<Option<String>, _>(i)? {
-                validate_client_set(&raw)?;
+                crate::stored_json::validate_client_set(&raw)?;
             }
         }
         return row.try_get("name");
@@ -75,24 +75,6 @@ async fn product_name(tx: &mut Transaction<'_, Postgres>, key: &str) -> sqlx::Re
         .fetch_optional(&mut **tx)
         .await?
         .unwrap_or_else(|| key.to_owned()))
-}
-
-fn validate_client_set(raw: &str) -> sqlx::Result<()> {
-    crate::stored_json::check_integers(raw)?;
-    use serde_json::value::RawValue;
-    let valid = match raw.as_bytes().first() {
-        Some(b'n' | b'{' | b'"') => true,
-        Some(b'[') => serde_json::from_str::<Vec<&RawValue>>(raw)
-            .map_err(|e| sqlx::Error::Decode(e.into()))?
-            .iter()
-            .all(|v| !v.get().starts_with(['[', '{'])),
-        _ => false,
-    };
-    if valid {
-        Ok(())
-    } else {
-        Err(sqlx::Error::Decode("invalid client collection".into()))
-    }
 }
 
 #[cfg(test)]

@@ -37,3 +37,21 @@ pub(crate) fn project_fractions(json: String, for_database: bool) -> Result<Stri
     normalized.push_str(&json[cursor..]);
     Ok(normalized)
 }
+
+pub(crate) fn validate_client_set(raw: &str) -> sqlx::Result<()> {
+    check_integers(raw)?;
+    use serde_json::value::RawValue;
+    let valid = match raw.as_bytes().first() {
+        Some(b'n' | b'{' | b'"') => true,
+        Some(b'[') => serde_json::from_str::<Vec<&RawValue>>(raw)
+            .map_err(|e| sqlx::Error::Decode(e.into()))?
+            .iter()
+            .all(|v| !v.get().starts_with(['[', '{'])),
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(sqlx::Error::Decode("invalid client collection".into()))
+    }
+}

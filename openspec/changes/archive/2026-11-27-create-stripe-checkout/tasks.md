@@ -1,0 +1,2 @@
+- [x] Implement and test session creation, eligibility and request validation.
+- [x] Compare authenticated HTTP and provider requests, returning customers, failure responses and disabled operation.
