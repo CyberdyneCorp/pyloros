@@ -406,7 +406,11 @@ fn build_routes(
         )
         .route(
             "/api/v1/clients/me/users/{user_id}/roles",
-            any(admin_client_roles::delegated_user),
+            any(admin_client_roles::delegated_user).post(admin_client_roles::grant::<true>),
+        )
+        .route(
+            "/api/v1/clients/me/users/{user_id}/roles/{role_key}",
+            any(admin_client_roles::revoke),
         )
         .route(
             "/api/v1/clients/me/roles",
@@ -615,7 +619,7 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/users/{user_id}/roles",
-            any(admin_client_roles::list_user).post(admin_client_roles::grant),
+            any(admin_client_roles::list_user).post(admin_client_roles::grant::<false>),
         )
         .route(
             "/api/v1/admin/users/{user_id}/roles/{client_id}/{role_key}",

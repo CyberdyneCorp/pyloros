@@ -3,7 +3,7 @@ use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem, request_json::fields};
 use serde_json::value::RawValue;
 
-fn input(path: &str, raw: &RawValue) -> Result<Assignment, Box<Response>> {
+fn input(path: &str, raw: &RawValue, owner: Option<&str>) -> Result<Assignment, Box<Response>> {
     let submitted = fields::object_fields(raw)?;
     let value = fields::project(
         raw,
@@ -22,7 +22,9 @@ fn input(path: &str, raw: &RawValue) -> Result<Assignment, Box<Response>> {
                 body,
                 issues: Vec::new(),
             };
-            let client = model.string("client_id", Some(64), true);
+            let client = owner
+                .map(str::to_owned)
+                .or_else(|| model.string("client_id", Some(64), true));
             let key = model.string("role_key", Some(48), true);
             let org = match body.get("organization_id") {
                 Some(Value::String(text)) => {
@@ -71,7 +73,7 @@ fn input(path: &str, raw: &RawValue) -> Result<Assignment, Box<Response>> {
     ))
 }
 
-pub(in crate::profile) async fn grant(
+pub(in crate::profile) async fn grant<const DELEGATED: bool>(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
@@ -82,7 +84,7 @@ pub(in crate::profile) async fn grant(
         Ok(body) => body,
         Err(error) => return *error,
     };
-    let (tx, actor, email) = match administrator::operator(&state, &headers).await {
+    let (tx, caller) = match delegated::RoleCaller::authorize(&state, &headers, DELEGATED).await {
         Ok(v) => v,
         Err(e) => return *e,
     };
@@ -90,7 +92,7 @@ pub(in crate::profile) async fn grant(
         return internal();
     };
     let Some(body) = body else { return internal() };
-    let grant = match input(&path, &body) {
+    let grant = match input(&path, &body, caller.client_id()) {
         Ok(v) => v,
         Err(e) => return *e,
     };
@@ -99,7 +101,7 @@ pub(in crate::profile) async fn grant(
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
     grant
-        .apply(tx, &state, chain, (actor, email.as_deref()), origin)
+        .apply(tx, &state, chain, caller.actor(), origin)
         .await
         .unwrap_or_else(|_| internal())
 }
@@ -110,7 +112,7 @@ impl Assignment {
         mut tx: Transaction<'_, Postgres>,
         state: &Profile,
         chain: Option<crate::chain_settings::Chain>,
-        actor: (Uuid, Option<&str>),
+        actor: crate::admin_audit::Actor<'_>,
         origin: SessionOrigin<'_>,
     ) -> Result<Response, sqlx::Error> {
         if let Some(error) = self.check_target(&mut tx).await? {
@@ -118,7 +120,13 @@ impl Assignment {
         }
         if let Some(chain) = chain {
             tx.commit().await?;
-            return self.chain(state, chain).await;
+            let edit = MembershipEdit::Grant {
+                delegated: matches!(actor, crate::admin_audit::Actor::Client(_)),
+            };
+            return Ok(self
+                .prepare_membership(&state.pool, &chain, edit)
+                .await?
+                .unwrap_or_else(internal));
         }
         let name = format!("rp:{}:{}", self.client, self.key);
         if global_key(&self.client, &name).is_none() {
@@ -158,7 +166,7 @@ impl Assignment {
         self.finish(tx, state, created, actor, origin).await
     }
 
-    async fn is_member(
+    pub(super) async fn is_member(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         org: Uuid,
@@ -174,51 +182,12 @@ impl Assignment {
         Ok(membership.is_some())
     }
 
-    async fn chain(
-        &self,
-        state: &Profile,
-        chain: crate::chain_settings::Chain,
-    ) -> Result<Response, sqlx::Error> {
-        let groups = match chain.group_catalog().await {
-            Ok(v) => v,
-            Err(e) => return Ok(chain_error(e)),
-        };
-        if !groups
-            .iter()
-            .any(|g| global_key(&self.client, &g.0).as_deref() == Some(&self.key))
-        {
-            return Ok(missing_role(&self.client, &self.key));
-        }
-        let mut tx = state.pool.begin().await?;
-        if let Some(org) = self.org
-            && !self.is_member(&mut tx, org).await?
-        {
-            return Ok(not_member());
-        }
-        let linked = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT FROM iam_identities WHERE user_id=$1 AND chain_token_id IS NOT NULL)",
-        )
-        .bind(self.user)
-        .fetch_one(&mut *tx)
-        .await?;
-        if !linked && self.org.is_none() {
-            return Ok(problem(
-                StatusCode::CONFLICT,
-                "user has no IAM identity; create one before granting roles",
-            ));
-        }
-        Ok(problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Blockchain role assignment unavailable",
-        ))
-    }
-
     async fn finish(
         &self,
         mut tx: Transaction<'_, Postgres>,
         state: &Profile,
         created: bool,
-        actor: (Uuid, Option<&str>),
+        actor: crate::admin_audit::Actor<'_>,
         origin: SessionOrigin<'_>,
     ) -> Result<Response, sqlx::Error> {
         let target = self.user.to_string();
@@ -229,21 +198,21 @@ impl Assignment {
             registration::enqueue_event(&mut tx, "role.granted", data, Utc::now()).await?;
         }
         if created {
-            crate::admin_audit::append(
+            crate::admin_audit::append_actor_record(
                 &mut tx,
                 "iam_identity.create",
-                Some(actor),
-                ("user", &target),
+                actor,
+                Some(("user", Some(&target))),
                 json!({"reason":"role_grant"}),
                 origin,
             )
             .await?;
         }
-        crate::admin_audit::append(
+        crate::admin_audit::append_actor_record(
             &mut tx,
             "client_role.grant",
-            Some(actor),
-            ("user", &target),
+            actor,
+            Some(("user", Some(&target))),
             item.clone(),
             origin,
         )
@@ -253,7 +222,7 @@ impl Assignment {
     }
 }
 
-fn not_member() -> Response {
+pub(super) fn not_member() -> Response {
     problem(StatusCode::CONFLICT, "user is not a member of organization")
 }
 
@@ -304,6 +273,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn delegated_grant_uses_the_verified_client_and_preserves_organization_scope() {
+        let user = Uuid::new_v4();
+        let org = Uuid::new_v4();
+        let raw = serde_json::value::to_raw_value(&json!({
+            "client_id":"other", "role_key":"staff", "organization_id":org,
+        }))
+        .unwrap();
+        let grant = input(&user.to_string(), &raw, Some("app")).unwrap();
+        assert_eq!(grant.client, "app");
+        assert_eq!(grant.user, user);
+        assert_eq!(grant.org, Some(org));
+    }
+
+    #[test]
     fn invalid_organization_input_cannot_become_a_global_grant() {
         let path = Uuid::new_v4().to_string();
         for value in [
@@ -316,13 +299,13 @@ mod tests {
             let text =
                 format!(r#"{{"client_id":"c","role_key":"read","organization_id":{value}}}"#);
             let body = RawValue::from_string(text).unwrap();
-            assert!(input(&path, &body).is_err());
+            assert!(input(&path, &body, None).is_err());
         }
         let body = RawValue::from_string(
             r#"{"client_id":"c","role_key":"read","organization_id":null}"#.to_owned(),
         )
         .unwrap();
-        assert!(input(&path, &body).unwrap().org.is_none());
+        assert!(input(&path, &body, None).unwrap().org.is_none());
     }
 
     #[tokio::test]

@@ -1,6 +1,8 @@
 //! Operator inventory of global roles for an active client.
 use super::*;
+mod chain_assignment;
 mod creation;
+use chain_assignment::MembershipEdit;
 mod grant;
 mod revoke;
 pub(super) use grant::grant;
@@ -192,6 +194,18 @@ pub(super) fn chain_error(error: SnapshotError) -> Response {
             })),
         )
             .into_response(),
+    }
+}
+
+fn preparation_error(error: crate::chain_settings::PrepareError) -> Response {
+    use crate::chain_settings::PrepareError;
+    match error {
+        PrepareError::Catalog(error) => chain_error(error),
+        PrepareError::Reverted(detail) => (StatusCode::BAD_GATEWAY,
+            Json(json!({"status":502, "type":"about:blank", "title":"Chain transaction failed", "detail":detail}))).into_response(),
+        PrepareError::Rpc(_) | PrepareError::Unavailable | PrepareError::Argument(_) =>
+            chain_error(crate::chain_settings::SnapshotError::Unavailable),
+        _ => internal(),
     }
 }
 

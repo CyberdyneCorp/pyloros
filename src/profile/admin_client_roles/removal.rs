@@ -52,7 +52,6 @@ async fn prepare_removal(
     client: &str,
     key: &str,
 ) -> Response {
-    use crate::chain_settings::PrepareError;
     let inventory = match chain.snapshot().await {
         Ok(inventory) => inventory,
         Err(error) => return chain_error(error),
@@ -68,13 +67,11 @@ async fn prepare_removal(
         return missing_role(client, key);
     };
     match chain.prepare_role_group_removal(group.id).await {
-        Ok(_) => problem(StatusCode::SERVICE_UNAVAILABLE, "Blockchain role deletion unavailable"),
-        Err(PrepareError::Catalog(error)) => chain_error(error),
-        Err(PrepareError::Reverted(detail)) => (StatusCode::BAD_GATEWAY,
-            Json(json!({"status":502, "type":"about:blank", "title":"Chain transaction failed", "detail":detail}))).into_response(),
-        Err(PrepareError::Rpc(_) | PrepareError::Unavailable | PrepareError::Argument(_)) =>
-            chain_error(crate::chain_settings::SnapshotError::Unavailable),
-        Err(_) => internal(),
+        Ok(_) => problem(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Blockchain role deletion unavailable",
+        ),
+        Err(error) => preparation_error(error),
     }
 }
 

@@ -3,12 +3,19 @@ use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem};
 use axum::extract::RawQuery;
 
+#[derive(Deserialize)]
+pub(in crate::profile) struct RevokePath {
+    user_id: String,
+    client_id: Option<String>,
+    role_key: String,
+}
+
 pub(in crate::profile) async fn revoke(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     method: Method,
     headers: HeaderMap,
-    Path((user, client, key)): Path<(String, String, String)>,
+    Path(path): Path<RevokePath>,
     RawQuery(query): RawQuery,
 ) -> Response {
     if method != Method::DELETE {
@@ -18,14 +25,15 @@ pub(in crate::profile) async fn revoke(
             .insert(header::ALLOW, header::HeaderValue::from_static("DELETE"));
         return response;
     }
-    let (mut tx, actor, email) = match administrator::operator(&state, &headers).await {
-        Ok(value) => value,
-        Err(error) => return *error,
-    };
+    let (mut tx, caller) =
+        match delegated::CatalogCaller::authorize(&state, &headers, path.client_id).await {
+            Ok(value) => value,
+            Err(error) => return *error,
+        };
     let Ok(chain) = authority(&state).await else {
         return internal();
     };
-    let user = crate::query::path_uuid(&user, "user_id");
+    let user = crate::query::path_uuid(&path.user_id, "user_id");
     let org = url::form_urlencoded::parse(query.as_deref().unwrap_or_default().as_bytes())
         .filter(|(key, _)| key == "organization_id")
         .last()
@@ -34,8 +42,8 @@ pub(in crate::profile) async fn revoke(
     let assignment = match (user, org) {
         (Ok(user), Ok(org)) => Assignment {
             user,
-            client,
-            key,
+            client: caller.client.clone(),
+            key: path.role_key,
             org,
         },
         (user, org) => {
@@ -52,7 +60,7 @@ pub(in crate::profile) async fn revoke(
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
     assignment
-        .revoke(tx, &state, chain, (actor, email.as_deref()), origin)
+        .revoke(tx, &state, chain, caller.actor(), origin)
         .await
         .unwrap_or_else(|_| internal())
 }
@@ -63,22 +71,20 @@ impl Assignment {
         mut tx: Transaction<'_, Postgres>,
         state: &Profile,
         chain: Option<crate::chain_settings::Chain>,
-        actor: (Uuid, Option<&str>),
+        actor: crate::admin_audit::Actor<'_>,
         origin: SessionOrigin<'_>,
     ) -> Result<Response, sqlx::Error> {
         let global = format!("rp:{}:{}", self.client, self.key);
         let scoped = self.org.map(|org| format!("{global}@{org}"));
-        let selected = scoped.as_deref().unwrap_or(&global);
         if let Some(chain) = chain {
             tx.commit().await?;
-            let groups = match chain.group_catalog().await {
-                Ok(groups) => groups,
-                Err(error) => return Ok(chain_error(error)),
-            };
-            tx = state.pool.begin().await?;
-            if let Some(error) = self.chain_outcome(&mut tx, &groups, selected).await? {
-                return Ok(error);
+            if let Some(response) = self
+                .prepare_membership(&state.pool, &chain, MembershipEdit::Revoke)
+                .await?
+            {
+                return Ok(response);
             }
+            tx = state.pool.begin().await?;
         } else {
             let Some(global_id) = group_id(&mut tx, &global).await? else {
                 return Ok(missing_role(&self.client, &self.key));
@@ -96,49 +102,21 @@ impl Assignment {
                 return Ok(error);
             }
         }
-        crate::admin_audit::append(
+        crate::admin_audit::append_actor_record(
             &mut tx,
             "client_role.revoke",
-            Some(actor),
-            ("user", &self.user.to_string()),
+            actor,
+            Some(("user", Some(&self.user.to_string()))),
             self.metadata(),
             origin,
         )
         .await?;
         tx.commit().await?;
-        Ok(StatusCode::NO_CONTENT.into_response())
-    }
-
-    async fn chain_outcome(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        groups: &[(String, Option<String>, i64)],
-        selected: &str,
-    ) -> Result<Option<Response>, sqlx::Error> {
-        if !groups
-            .iter()
-            .any(|g| global_key(&self.client, &g.0).as_deref() == Some(&self.key))
-        {
-            return Ok(Some(missing_role(&self.client, &self.key)));
-        }
-        if !groups.iter().any(|g| g.0 == selected) {
-            return Ok(None);
-        }
-        let linked: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT FROM iam_identities WHERE user_id=$1 AND chain_token_id IS NOT NULL)",
+        Ok((
+            StatusCode::NO_CONTENT,
+            [(header::CONTENT_TYPE, "application/json")],
         )
-        .bind(self.user)
-        .fetch_one(&mut **tx)
-        .await?;
-        let error = if linked {
-            problem(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Blockchain role revocation unavailable",
-            )
-        } else {
-            no_identity()
-        };
-        Ok(Some(error))
+            .into_response())
     }
 
     async fn withdraw(
@@ -194,7 +172,7 @@ pub(in crate::profile) async fn withdraw_scoped(
     .await
 }
 
-fn no_identity() -> Response {
+pub(super) fn no_identity() -> Response {
     problem(
         StatusCode::CONFLICT,
         "user has no IAM identity; nothing to revoke",

@@ -70,11 +70,23 @@ pub(crate) async fn append_record(
     meta: Value,
     origin: SessionOrigin<'_>,
 ) -> Result<(), sqlx::Error> {
-    let mut meta = meta;
-    meta.sort_all_objects();
-    append_sorted_record(tx, action, Actor::User(actor), target, &meta, origin).await
+    append_actor_record(tx, action, Actor::User(actor), target, meta, origin).await
 }
 
+pub(crate) async fn append_actor_record(
+    tx: &mut Transaction<'_, Postgres>,
+    action: &str,
+    actor: Actor<'_>,
+    target: Option<(&str, Option<&str>)>,
+    meta: Value,
+    origin: SessionOrigin<'_>,
+) -> Result<(), sqlx::Error> {
+    let mut meta = meta;
+    meta.sort_all_objects();
+    append_sorted_record(tx, action, actor, target, &meta, origin).await
+}
+
+#[derive(Clone, Copy)]
 pub(crate) enum Actor<'a> {
     User(Option<(Uuid, Option<&'a str>)>),
     Client(&'a str),
