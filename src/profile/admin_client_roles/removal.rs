@@ -2,18 +2,12 @@
 use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem};
 
-#[derive(Deserialize)]
-pub(in crate::profile) struct RemovePath {
-    client_id: Option<String>,
-    role_key: String,
-}
-
 pub(in crate::profile) async fn remove(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     method: Method,
     headers: HeaderMap,
-    Path(path): Path<RemovePath>,
+    Path(path): Path<RolePath>,
 ) -> Response {
     if method != Method::DELETE {
         let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");

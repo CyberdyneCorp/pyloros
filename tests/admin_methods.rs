@@ -168,6 +168,7 @@ async fn delegated_catalog_writes_require_service_credentials() {
         (Method::POST, "/api/v1/clients/me/permissions"),
         (Method::DELETE, "/api/v1/clients/me/permissions/read"),
         (Method::POST, "/api/v1/clients/me/roles"),
+        (Method::PUT, "/api/v1/clients/me/roles/reader/permissions"),
         (Method::DELETE, "/api/v1/clients/me/roles/reader"),
     ] {
         let request = Request::builder()

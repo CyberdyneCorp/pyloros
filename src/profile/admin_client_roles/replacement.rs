@@ -1,4 +1,4 @@
-//! Replace an operator-managed role mapping and its audit event atomically.
+//! Replace a client role mapping and append its audit entry atomically.
 use super::*;
 use crate::grant_response::SessionOrigin;
 use crate::login_http::problem;
@@ -6,8 +6,7 @@ use std::collections::BTreeSet;
 
 pub(super) struct Change<'a> {
     keys: BTreeSet<String>,
-    actor: Uuid,
-    email: Option<String>,
+    actor: crate::admin_audit::Actor<'a>,
     origin: SessionOrigin<'a>,
 }
 
@@ -15,17 +14,18 @@ pub(in crate::profile) async fn put(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    Path((client, key)): Path<(String, String)>,
+    Path(path): Path<RolePath>,
     bytes: axum::body::Bytes,
 ) -> Response {
     let body = match crate::request_json::fields::document(&headers, &bytes) {
         Ok(body) => body,
         Err(response) => return *response,
     };
-    let (tx, actor, email) = match administrator::operator(&state, &headers).await {
-        Ok(operator) => operator,
-        Err(response) => return *response,
-    };
+    let (tx, caller) =
+        match delegated::CatalogCaller::authorize(&state, &headers, path.client_id).await {
+            Ok(result) => result,
+            Err(response) => return *response,
+        };
     let Ok(chain) = authority(&state).await else {
         return internal();
     };
@@ -40,17 +40,16 @@ pub(in crate::profile) async fn put(
     };
     let change = Change {
         keys,
-        actor,
-        email,
+        actor: caller.actor(),
         origin,
     };
     catalog(
         &state,
         chain,
         tx,
-        &client,
+        &caller.client,
         Some(Target {
-            key: &key,
+            key: &path.role_key,
             change: Some(change),
         }),
     )
@@ -160,12 +159,12 @@ impl Change<'_> {
             }
             return Err(error);
         }
-        crate::admin_audit::append(
+        crate::admin_audit::append_sorted_record(
             &mut tx,
             "client_role.permissions_set",
-            Some((self.actor, self.email.as_deref())),
-            ("client_role", &format!("{client}:{key}")),
-            json!({"permissions":keys}),
+            self.actor,
+            Some(("client_role", Some(&format!("{client}:{key}")))),
+            &json!({"permissions":keys}),
             self.origin,
         )
         .await?;
@@ -208,8 +207,7 @@ mod tests {
         let actor = Uuid::new_v4();
         let change = || Change {
             keys: BTreeSet::from(["write".into()]),
-            actor,
-            email: None,
+            actor: crate::admin_audit::Actor::User(Some((actor, None))),
             origin: SessionOrigin {
                 ip: None,
                 user_agent: None,
@@ -254,5 +252,26 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(audit, (actor, json!({"permissions":["write"]})));
+        let delegated = Change {
+            actor: crate::admin_audit::Actor::Client("app"),
+            keys: BTreeSet::new(),
+            ..change()
+        };
+        let result = delegated
+            .apply(db.begin().await.unwrap(), "app", "operator")
+            .await
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        let cleared: (String, Option<Uuid>, Value) = sqlx::query_as(
+            "SELECT actor_client_id,actor_user_id,extra_metadata FROM admin_action_logs WHERE actor_type='client'"
+        ).fetch_one(&mut db).await.unwrap();
+        assert_eq!(cleared, ("app".into(), None, json!({"permissions":[]})));
+        assert!(
+            sqlx::query_scalar::<_, String>(mapping)
+                .fetch_all(&mut db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }

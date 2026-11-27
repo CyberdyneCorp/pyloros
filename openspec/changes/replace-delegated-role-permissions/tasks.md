@@ -1,0 +1,5 @@
+- [x] Implement delegated replacement and service-client audit attribution.
+- [x] Compare validation, isolated role mappings, audit integrity, CLI, browser and provider changes.
+- [x] Verify global and organization-scoped permissions after rotating tokens on the opposite backend.
+- [x] Exercise immediate audit failure, deferred commit rejection, and overlapping and disjoint concurrent replacements.
+- [ ] Resolve the concurrency and failed-commit response contracts for migration signoff.

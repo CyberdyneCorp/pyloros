@@ -62,6 +62,12 @@ impl Assignment {
 }
 
 #[derive(Deserialize)]
+pub(in crate::profile) struct RolePath {
+    client_id: Option<String>,
+    role_key: String,
+}
+
+#[derive(Deserialize)]
 pub(super) struct InventoryPath {
     client_id: Option<String>,
     role_key: Option<String>,
