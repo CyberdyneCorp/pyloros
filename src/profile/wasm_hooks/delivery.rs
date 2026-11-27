@@ -1,10 +1,57 @@
-//! Persist the exact component version and permitted store event data at commit.
+//! Persist the exact component version and permitted entitlement event fields at commit.
 use super::*;
 
 pub(super) mod worker;
 
-pub(crate) async fn enqueue(
+#[derive(Clone, Copy)]
+pub(in crate::profile) enum Producer {
+    Store,
+    Administrator,
+}
+
+impl Producer {
+    fn enabled(self) -> Result<bool, Box<dyn Error>> {
+        let name = match self {
+            Self::Store => "PYLOROS_STORE_HOOK_DISPATCH",
+            Self::Administrator => "PYLOROS_ADMIN_ENTITLEMENT_HOOK_DISPATCH",
+        };
+        config::flag_with_default(name, false)
+    }
+}
+
+pub(in crate::profile) struct Entitlement<'a> {
+    pub id: Uuid,
+    pub user: Option<Uuid>,
+    pub product: &'a str,
+    pub plan: Option<&'a str>,
+}
+
+impl Entitlement<'_> {
+    pub(in crate::profile) async fn granted(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        producer: Producer,
+        org: Option<Uuid>,
+        source: &str,
+    ) -> sqlx::Result<bool> {
+        let payload = json!({"entitlement_id":self.id, "product_key":self.product, "plan":self.plan,
+            "organization_id":org,"source":source});
+        enqueue(tx, producer, "entitlement_granted", self.user, payload).await
+    }
+
+    pub(in crate::profile) async fn revoked(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        producer: Producer,
+    ) -> sqlx::Result<bool> {
+        let payload = json!({"entitlement_id":self.id,"product_key":self.product,"plan":self.plan});
+        enqueue(tx, producer, "entitlement_revoked", self.user, payload).await
+    }
+}
+
+async fn enqueue(
     tx: &mut Transaction<'_, Postgres>,
+    producer: Producer,
     event: &str,
     user: Option<Uuid>,
     payload: Value,
@@ -12,7 +59,8 @@ pub(crate) async fn enqueue(
     if !registration::pending_hook(tx, event).await? {
         return Ok(true);
     }
-    if !config::flag_with_default("PYLOROS_STORE_HOOK_DISPATCH", false)
+    if !producer
+        .enabled()
         .map_err(|e| sqlx::Error::Configuration(e.to_string().into()))?
     {
         return Ok(false);

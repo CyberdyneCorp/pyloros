@@ -1,6 +1,7 @@
 //! Issue or reactivate a product entitlement for one owner.
 use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem, request_json::fields};
+use wasm_hooks::delivery::{Entitlement, Producer};
 mod input;
 
 struct Grant {
@@ -94,14 +95,24 @@ async fn write(
         return Ok(e);
     }
     let (row, created) = save(&mut tx, &g, actor).await?;
-    if hooks && registration::pending_hook(&mut tx, "entitlement_granted").await? {
+    let id: Uuid = row.try_get("id")?;
+    let entitlement = Entitlement {
+        id,
+        user: g.user,
+        product: &g.product,
+        plan: g.plan.as_deref(),
+    };
+    if hooks
+        && !entitlement
+            .granted(&mut tx, Producer::Administrator, g.org, "admin")
+            .await?
+    {
         return Ok(problem(
             StatusCode::SERVICE_UNAVAILABLE,
             "Entitlement grant hook dispatcher unavailable",
         ));
     }
     let item = item(&row, &Labels::new(), &Labels::new())?;
-    let id: Uuid = row.try_get("id")?;
     let metadata = json!({
         "user_id": g.user, "organization_id": g.org, "product_key": g.product,
         "plan": g.plan, "created": created

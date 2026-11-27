@@ -291,7 +291,7 @@ Each change records its previous and new digest in the administrator audit log.
 Repeating a completed change returns the current selection. The hook's existing
 enabled flag, event, privacy settings and source are preserved.
 
-### Deliver store entitlement hooks
+### Deliver entitlement hooks
 
 Apply [the delivery queue migration](migrations/003_hook_deliveries.sql) after the
 binding migration. On the Rust deployment that owns billing mutations, enable
@@ -303,3 +303,11 @@ entitlement transaction. Delivery uses the version selected at that time and the
 hook's timeout. A missing binding keeps the billing event retryable. A worker
 outage after commit retains the queued work. The operator console shows successful
 output, guest failures and timeouts in the existing execution history.
+
+Administrator grants and withdrawals use the same worker and queue. Enable
+`PYLOROS_ADMIN_ENTITLEMENT_HOOK_DISPATCH=true` on the deployment serving those
+writes, with `HOOKS_ENABLED=true`. The store and administrator switches can be
+rolled out independently. For an organization grant the event carries its
+organization ID and a null user ID. Renewing a grant or repeating a withdrawal
+delivers an event for each committed administrator action. The audit record,
+entitlement change and queued deliveries commit together.

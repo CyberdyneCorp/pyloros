@@ -1,0 +1,1 @@
+The administrator audit, change in access and version-pinned queue records share a transaction. Grant events carry the entitlement, product, optional plan, grant source and organization. Revocation events carry the entitlement, product and optional plan. Both include the subject user when the grant has a personal owner. The administrator identity belongs in the audit record.

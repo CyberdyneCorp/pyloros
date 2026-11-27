@@ -1,5 +1,6 @@
 //! Apply a store grant while the caller holds the account lock.
 use super::*;
+use wasm_hooks::delivery::{Entitlement, Producer};
 
 pub(super) struct Grant<'a> {
     pub product: &'a str,
@@ -68,11 +69,14 @@ pub(super) async fn apply(
     if !hooks {
         return Ok(true);
     }
-    let payload = json!({
-        "product_key": product, "plan": plan, "entitlement_id": id,
-        "source": source, "organization_id": null
-    });
-    wasm_hooks::delivery::enqueue(tx, "entitlement_granted", Some(user), payload).await
+    Entitlement {
+        id,
+        user: Some(user),
+        product,
+        plan,
+    }
+    .granted(tx, Producer::Store, None, source)
+    .await
 }
 
 pub(super) async fn revoke(
@@ -97,14 +101,13 @@ pub(super) async fn revoke(
     .await?;
     if hooks {
         for (id, user, product, plan) in revoked {
-            if !wasm_hooks::delivery::enqueue(
-                tx,
-                "entitlement_revoked",
+            let entitlement = Entitlement {
+                id,
                 user,
-                json!({"product_key":product,"plan":plan,"entitlement_id":id}),
-            )
-            .await?
-            {
+                product: &product,
+                plan: plan.as_deref(),
+            };
+            if !entitlement.revoked(tx, Producer::Store).await? {
                 return Ok(false);
             }
         }

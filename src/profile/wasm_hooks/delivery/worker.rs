@@ -5,10 +5,10 @@ use tokio::{
     time::{Duration, Instant, sleep, timeout},
 };
 
-pub struct StoreHookWorker(JoinHandle<()>);
-impl StoreHookWorker {
+pub struct EntitlementHookWorker(JoinHandle<()>);
+impl EntitlementHookWorker {
     pub fn start(pool: PgPool) -> Result<Option<Self>, Box<dyn Error>> {
-        if !config::flag_with_default("PYLOROS_STORE_HOOK_DISPATCH", false)?
+        if !(Producer::Store.enabled()? || Producer::Administrator.enabled()?)
             || !config::flag_with_default("HOOKS_ENABLED", true)?
         {
             return Ok(None);
@@ -19,7 +19,7 @@ impl StoreHookWorker {
                     Ok(true) => continue,
                     Ok(false) => sleep(Duration::from_millis(250)).await,
                     Err(error) => {
-                        eprintln!("store hook delivery failed: {error}");
+                        eprintln!("entitlement hook delivery failed: {error}");
                         sleep(Duration::from_secs(2)).await;
                     }
                 }
@@ -27,7 +27,7 @@ impl StoreHookWorker {
         }))))
     }
 }
-impl Drop for StoreHookWorker {
+impl Drop for EntitlementHookWorker {
     fn drop(&mut self) {
         self.0.abort();
     }

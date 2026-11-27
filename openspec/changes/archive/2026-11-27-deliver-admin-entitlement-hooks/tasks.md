@@ -1,0 +1,2 @@
+- [x] Wire both administrator mutations to the version-pinned queue while preserving the independent store rollout.
+- [x] Compare personal and organization events, repeated operations, unbound hooks and atomic audit failure.

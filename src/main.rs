@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .layer(axum::middleware::from_fn(
             pyloros::profile::limit_passkey_body,
         ));
-    let _store_hook_worker = pyloros::profile::StoreHookWorker::start(pool.clone())?;
+    let _entitlement_hook_worker = pyloros::profile::EntitlementHookWorker::start(pool.clone())?;
     let _webhook_worker = pyloros::webhook_worker::Worker::start(pool)?;
     axum::serve(
         listener,

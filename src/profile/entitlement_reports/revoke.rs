@@ -2,6 +2,7 @@
 use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem};
 use axum::extract::Path;
+use wasm_hooks::delivery::{Entitlement, Producer};
 
 pub(super) async fn remove(
     State(state): State<Arc<Profile>>,
@@ -53,22 +54,32 @@ async fn withdraw(
     origin: SessionOrigin<'_>,
     hooks: bool,
 ) -> sqlx::Result<Response> {
-    let row=sqlx::query("SELECT user_id,organization_id,product_key,status,source,extra_metadata::text AS metadata FROM entitlements WHERE id=$1")
+    let row=sqlx::query("SELECT user_id,organization_id,product_key,plan,status,source,extra_metadata::text AS metadata FROM entitlements WHERE id=$1")
         .bind(id).fetch_optional(&mut *tx).await?;
     let Some(row) = row else {
         return Ok(problem(StatusCode::NOT_FOUND, "Entitlement not found"));
     };
     stored_fields(&row)?;
     let metadata = normalized_storage(row.try_get("metadata")?)?;
-    if hooks && registration::pending_hook(&mut tx, "entitlement_revoked").await? {
+    let entitlement = Entitlement {
+        id,
+        user: row.try_get("user_id")?,
+        product: row.try_get("product_key")?,
+        plan: row.try_get("plan")?,
+    };
+    if hooks
+        && !entitlement
+            .revoked(&mut tx, Producer::Administrator)
+            .await?
+    {
         return Ok(problem(
             StatusCode::SERVICE_UNAVAILABLE,
             "Entitlement revocation hook dispatcher unavailable",
         ));
     }
-    let audit = json!({"user_id":row.try_get::<Option<Uuid>,_>("user_id")?,
+    let audit = json!({"user_id":entitlement.user,
         "organization_id":row.try_get::<Option<Uuid>,_>("organization_id")?,
-        "product_key":row.try_get::<String,_>("product_key")?});
+        "product_key":entitlement.product});
     sqlx::query_scalar::<_, Uuid>(
         "UPDATE entitlements SET status='revoked',revoked_at=$2,updated_at=now(),
         extra_metadata=coalesce($3::text::jsonb,extra_metadata) WHERE id=$1 RETURNING id",
