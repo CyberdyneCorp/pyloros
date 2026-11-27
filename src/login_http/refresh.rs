@@ -61,7 +61,7 @@ pub(super) async fn read_token(
     headers: &axum::http::HeaderMap,
     body: axum::body::Body,
 ) -> Result<Option<String>, Box<Response>> {
-    let submitted = input::read(headers, body, input::refresh).await?;
+    let submitted = input::read(headers, body, &["refresh_token"], input::refresh).await?;
     Ok(cookie(headers, "refresh_token")
         .filter(|s| !s.is_empty())
         .map(str::to_owned)

@@ -163,7 +163,14 @@ async fn handle(
         return problem(StatusCode::SERVICE_UNAVAILABLE, "Login signing unavailable");
     };
     let (parts, body) = req.into_parts();
-    let (email, password) = match input::read(&parts.headers, body, input::credentials).await {
+    let (email, password) = match input::read(
+        &parts.headers,
+        body,
+        &["email", "password"],
+        input::credentials,
+    )
+    .await
+    {
         Ok(v) => v,
         Err(r) => return *r,
     };

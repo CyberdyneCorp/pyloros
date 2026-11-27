@@ -18,10 +18,11 @@ pub(super) async fn handle(
         return problem(StatusCode::SERVICE_UNAVAILABLE, "Login signing unavailable");
     };
     let (parts, body) = req.into_parts();
-    let (token, code) = match input::read(&parts.headers, body, input::factor).await {
-        Ok(fields) => fields,
-        Err(response) => return *response,
-    };
+    let (token, code) =
+        match input::read(&parts.headers, body, &["mfa_token", "code"], input::factor).await {
+            Ok(fields) => fields,
+            Err(response) => return *response,
+        };
     let origin = SessionOrigin {
         ip: client_ip(&parts.headers, peer.ip(), login.proxies),
         user_agent: header(&parts.headers, "user-agent"),

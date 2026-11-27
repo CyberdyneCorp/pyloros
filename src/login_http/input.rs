@@ -1,6 +1,5 @@
 use super::mailbox::address;
 use axum::{
-    Json,
     body::{Body, to_bytes},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -107,27 +106,45 @@ fn fields<T>(body: &Value, parse: fn(&Value) -> Inputs<T>) -> Inputs<T> {
 pub(super) async fn read<T>(
     headers: &HeaderMap,
     body: Body,
+    keys: &[&str],
     parse: fn(&Value) -> Inputs<T>,
 ) -> Result<T, Box<Response>> {
     let bytes = to_bytes(body, 2 * 1024 * 1024)
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE.into_response())?;
-    crate::request_json::parse_body(headers, &bytes)
-        .map_err(|e| vec![e])
-        .and_then(|b| fields(&b, parse))
-        .map_err(|issues| {
-            (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(json!({"detail":issues})),
-            )
-                .into_response()
-        })
-        .map_err(Box::new)
+    crate::request_json::fields::validate_fields(headers, &bytes, keys, |body| fields(&body, parse))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn refresh_validation_uses_the_request_encoding_and_exact_json_input() {
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", "application/json".parse().unwrap());
+        let raw = r#"{"refresh_token":123456789012345678901234567890}"#;
+        let bytes = [0xff, 0xfe]
+            .into_iter()
+            .chain(raw.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect::<Vec<_>>();
+        let error = read(&headers, Body::from(bytes), &["refresh_token"], refresh)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = to_bytes(error.into_body(), 2048).await.unwrap();
+        let text = std::str::from_utf8(&body).unwrap();
+        assert!(text.contains(r#""input":123456789012345678901234567890"#));
+        assert!(text.contains(r#""loc":["body","refresh_token"]"#));
+        headers.insert("content-type", "text/plain".parse().unwrap());
+        assert_eq!(
+            read(&headers, Body::from("token"), &["refresh_token"], refresh)
+                .await
+                .unwrap_err()
+                .status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
 
     #[test]
     fn domain_errors_precede_account_lookup() {
@@ -189,9 +206,14 @@ mod tests {
     async fn invalid_json_returns_a_validation_response_to_the_http_handler() {
         let mut headers = HeaderMap::new();
         headers.insert("content-type", "application/json".parse().unwrap());
-        let response = read(&headers, Body::from("{"), credentials)
-            .await
-            .unwrap_err();
+        let response = read(
+            &headers,
+            Body::from("{"),
+            &["email", "password"],
+            credentials,
+        )
+        .await
+        .unwrap_err();
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let body = to_bytes(response.into_body(), 4096).await.unwrap();
         let error: Value = serde_json::from_slice(&body).unwrap();

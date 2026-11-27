@@ -109,7 +109,16 @@ pub(crate) async fn read_fields<T>(
     let bytes = to_bytes(stream, usize::MAX)
         .await
         .map_err(|_| Box::new(internal_error()))?;
-    let raw = document(headers, &bytes)?.ok_or_else(|| Box::new(internal_error()))?;
+    validate_fields(headers, &bytes, keys, validate)
+}
+
+pub(crate) fn validate_fields<T>(
+    headers: &HeaderMap,
+    bytes: &[u8],
+    keys: &[&str],
+    validate: impl FnOnce(Value) -> Result<T, Vec<Value>>,
+) -> Result<T, Box<Response>> {
+    let raw = document(headers, bytes)?.ok_or_else(|| Box::new(internal_error()))?;
     let fields = object_fields(&raw)?;
     validate(project(&raw, &fields, keys)).map_err(|issues| {
         #[derive(Serialize)]
