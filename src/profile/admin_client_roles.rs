@@ -1,8 +1,10 @@
 //! Operator inventory of global roles for an active client.
 use super::*;
+mod creation;
 mod replacement;
 use crate::chain_settings::SnapshotError;
 use axum::extract::Path;
+pub(super) use creation::create;
 pub(super) use replacement::put;
 use serde::Serialize;
 
@@ -107,17 +109,7 @@ async fn catalog(
         tx.commit().await?;
         match chain.group_catalog().await {
             Ok(groups) => groups,
-            Err(SnapshotError::Deadline) => return Ok(internal()),
-            Err(SnapshotError::Unavailable) => {
-                return Ok((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(json!({
-                       "type":"about:blank", "title":"Blockchain backend unavailable", "status":503,
-                       "detail":"the configured chain RPC endpoint is unreachable or timed out"
-                    })),
-                )
-                    .into_response());
-            }
+            Err(error) => return Ok(chain_error(error)),
         }
     } else {
         sqlx::query_as(
@@ -133,6 +125,26 @@ async fn catalog(
             complete_mapping(state.pool.begin().await?, client, target, exists).await
         }
     }
+}
+
+fn chain_error(error: SnapshotError) -> Response {
+    match error {
+        SnapshotError::Deadline => internal(),
+        SnapshotError::Unavailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "type":"about:blank", "title":"Blockchain backend unavailable", "status":503,
+                "detail":"the configured chain RPC endpoint is unreachable or timed out"
+            })),
+        )
+            .into_response(),
+    }
+}
+
+fn global_key(client: &str, name: &str) -> Option<String> {
+    let (token, org) = crate::token_authorization::assignment(name)?;
+    let (owner, key) = token.rsplit_once(':')?;
+    (owner == client && org.is_none()).then(|| key.to_owned())
 }
 
 async fn complete_mapping(
@@ -184,11 +196,9 @@ fn roles(client: &str, groups: Vec<(String, Option<String>, i64)>) -> Vec<Role<'
     let mut roles: Vec<_> = groups
         .into_iter()
         .filter_map(|(name, description, member_count)| {
-            let (token, org) = crate::token_authorization::assignment(&name)?;
-            let (owner, key) = token.rsplit_once(':')?;
-            (owner == client && org.is_none()).then(|| Role {
+            Some(Role {
                 client_id: client,
-                role_key: key.to_owned(),
+                role_key: global_key(client, &name)?,
                 description,
                 member_count,
             })

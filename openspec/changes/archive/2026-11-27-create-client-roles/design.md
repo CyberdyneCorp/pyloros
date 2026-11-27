@@ -1,0 +1,1 @@
+Use the active client row to serialize PostgreSQL catalog changes. Count global roles using the same name parser as inventory. Check duplicates before the catalog limit. Commit the new group, removal of any stale mapping and the operator audit together. Chain IAM remains authoritative when configured and must never fall back to creating a local group.

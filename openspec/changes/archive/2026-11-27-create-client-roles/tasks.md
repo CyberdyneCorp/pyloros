@@ -1,0 +1,2 @@
+- [x] 1. Implement audited PostgreSQL role creation.
+- [x] 2. Validate catalog rules, rollback and mixed-backend visibility.
