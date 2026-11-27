@@ -1,0 +1,3 @@
+- [ ] Encode and compare unsigned create, replacement and deletion calls.
+- [ ] Implement submission, nonce coordination, receipt validation and error mapping.
+- [ ] Wire policy mutations, audit their results and compare the original clients.
