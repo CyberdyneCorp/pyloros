@@ -467,6 +467,10 @@ fn build_routes(
             any(admin_inventory::delete_only).delete(admin_inventory::remove_member),
         )
         .route(
+            "/api/v1/admin/users/{user_id}/nft/retry",
+            any(crate::token_http::post_only).post(admin_inventory::token_retry::retry),
+        )
+        .route(
             "/api/v1/admin/users/{user_id}/nft",
             any(admin_inventory::user_token),
         )

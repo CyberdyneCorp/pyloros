@@ -98,7 +98,7 @@ fn block_result(doc: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn diagnostic(value: &Value) -> String {
+pub(super) fn diagnostic(value: &Value) -> String {
     match value {
         Value::String(s) => {
             let delimiter = if s.contains('\'') && !s.contains('"') {

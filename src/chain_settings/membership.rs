@@ -47,6 +47,10 @@ impl ChainSettings {
 
     pub(crate) async fn membership_source(&self) -> Option<Chain> {
         let state = self.state.read().await;
+        self.runtime_chain(&state)
+    }
+
+    pub(super) fn runtime_chain(&self, state: &super::Configuration) -> Option<Chain> {
         let view = state.view();
         view.is_configured.then(|| Chain {
             identity: view.identity_contract_address,

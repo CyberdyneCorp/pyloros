@@ -29,3 +29,9 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 - **WHEN** a user has a token identifier and the identity provider is configured through deployment settings alone
 - **THEN** obtain the token status from the deployed identity contract
 - **AND** prefer a configured runtime provider when one is available
+
+#### Scenario: Reload the local identity provider
+
+- **WHEN** an operator reapplies blockchain settings while using the local provider
+- **THEN** the new provider starts its token sequence at one
+- **AND** the user token read continues to expose previously stored metadata

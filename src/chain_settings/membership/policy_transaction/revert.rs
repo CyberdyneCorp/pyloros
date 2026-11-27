@@ -7,7 +7,7 @@ pub(super) fn estimate_error(error: ReadError) -> PrepareError {
         return PrepareError::Unavailable;
     };
     let Some(reason) = reason(&doc) else {
-        return PrepareError::Unavailable;
+        return rpc_failure(ReadError::Rpc(doc, representation));
     };
     let data = match doc.get("data") {
         None => quoted_string("no data"),
@@ -101,7 +101,7 @@ mod tests {
         let transport = ReadError::Rpc(json!({"code":-32000,"message":"node busy"}), None);
         assert!(matches!(
             estimate_error(transport),
-            PrepareError::Unavailable
+            PrepareError::Rpc(text) if text == "{'code': -32000, 'message': 'node busy'}"
         ));
         let returned = ReadError::Rpc(
             json!({"code":3,"message":"execution reverted: denied","data":"0x"}),

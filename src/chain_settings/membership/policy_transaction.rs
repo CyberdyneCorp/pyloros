@@ -74,6 +74,7 @@ pub(crate) enum PrepareError {
     ProtectedGroup,
     Catalog(SnapshotError),
     Reverted(String),
+    Rpc(String),
     Unavailable,
     Invalid,
 }
@@ -261,6 +262,15 @@ pub(crate) struct UnsignedIamTransaction<'a> {
     value: TokenId,
 }
 
+fn rpc_failure(error: ReadError) -> PrepareError {
+    match error {
+        ReadError::Rpc(doc, _) => {
+            PrepareError::Rpc(crate::chain_settings::health::diagnostic(&doc))
+        }
+        _ => PrepareError::Unavailable,
+    }
+}
+
 fn quantity(value: &Value) -> Result<TokenId, PrepareError> {
     let hex = value
         .as_str()
@@ -298,12 +308,7 @@ impl Chain {
     }
 
     async fn quantity(&self, method: &str, params: Value) -> Result<TokenId, PrepareError> {
-        quantity(
-            &self
-                .rpc(method, params)
-                .await
-                .map_err(|_| PrepareError::Unavailable)?,
-        )
+        quantity(&self.rpc(method, params).await.map_err(rpc_failure)?)
     }
 
     async fn priority_fee(&self) -> Result<TokenId, PrepareError> {
@@ -313,7 +318,7 @@ impl Chain {
                 let history = self
                     .rpc("eth_feeHistory", json!(["0xa", "pending", [5.0]]))
                     .await
-                    .map_err(|_| PrepareError::Unavailable)?;
+                    .map_err(rpc_failure)?;
                 history_priority_fee(&history)
             }
             Err(_) => Err(PrepareError::Unavailable),
@@ -404,7 +409,7 @@ impl Chain {
         let block = self
             .rpc("eth_getBlockByNumber", json!(["latest", false]))
             .await
-            .map_err(|_| PrepareError::Unavailable)?;
+            .map_err(rpc_failure)?;
         let base = quantity(&block["baseFeePerGas"])?;
         let max_fee_per_gas = base
             .checked_mul(TokenId::from(2))

@@ -28,13 +28,13 @@ fn token_number(raw: &RawValue) -> Option<&RawValue> {
         _ => None,
     }
 }
-pub(super) async fn response(metadata: &str, chain: Option<&Chain>) -> Response {
+pub(super) async fn response(metadata: &str, provider: &TokenProvider) -> Response {
     let Ok(fields) = serde_json::from_str::<HashMap<String, &RawValue>>(metadata) else {
         return internal();
     };
     let id = fields.get("nft_token_id").and_then(|v| token_number(v));
-    let status = if let (Some(chain), Some(id)) = (chain, id) {
-        match chain.identity_status(id.get()).await {
+    let status = if let Some(id) = id {
+        match provider.status(id.get()).await {
             Ok(status) => status,
             Err(error) => return admin_client_roles::chain_error(error),
         }

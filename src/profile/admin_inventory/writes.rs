@@ -88,12 +88,12 @@ fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError) -> Respons
         PrepareError::ProtectedGroup => delete_group::protected(),
         PrepareError::Catalog(error) => admin_client_roles::chain_error(error),
         PrepareError::Invalid => internal(),
-        PrepareError::Unavailable | PrepareError::Reverted(_) if matches!(mutation, IamMutation::CreatePolicy(_)) => internal(),
+        PrepareError::Unavailable | PrepareError::Rpc(_) | PrepareError::Reverted(_) if matches!(mutation, IamMutation::CreatePolicy(_)) => internal(),
         PrepareError::Reverted(detail) => (
             StatusCode::BAD_GATEWAY,
             Json(json!({"status":502, "type":"about:blank", "title":"Chain transaction failed", "detail":detail})),
         ).into_response(),
-        PrepareError::Unavailable => admin_client_roles::chain_error(crate::chain_settings::SnapshotError::Unavailable),
+        PrepareError::Unavailable | PrepareError::Rpc(_) => admin_client_roles::chain_error(crate::chain_settings::SnapshotError::Unavailable),
     }
 }
 

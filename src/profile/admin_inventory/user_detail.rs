@@ -1,7 +1,7 @@
 //! Operator reads used by the user administration panel.
 use super::*;
 use crate::{
-    chain_settings::{Chain, ChainSettings},
+    chain_settings::{Chain, ChainSettings, TokenProvider},
     login_http::problem,
 };
 use axum::extract::Path;
@@ -14,16 +14,23 @@ enum View {
     Assignments,
 }
 
+enum Authority {
+    Token(TokenProvider),
+    Assignments(Option<Chain>),
+}
+
 impl View {
-    async fn authority(&self, settings: &ChainSettings) -> Result<Option<Chain>, sqlx::Error> {
-        let chain = match self {
-            Self::Token => settings.provider().await,
-            Self::Assignments => settings.membership_source().await,
-        };
-        if let Some(provider) = &chain {
-            provider.validate_signer()?;
+    async fn authority(&self, settings: &ChainSettings) -> Result<Authority, sqlx::Error> {
+        match self {
+            Self::Token => settings.token_provider().await.map(Authority::Token),
+            Self::Assignments => {
+                let chain = settings.membership_source().await;
+                if let Some(provider) = &chain {
+                    provider.validate_signer()?;
+                }
+                Ok(Authority::Assignments(chain))
+            }
         }
-        Ok(chain)
     }
 }
 
@@ -57,14 +64,14 @@ async fn read(
         Ok(ctx) => ctx,
         Err(response) => return *response,
     };
-    let Ok(chain) = view.authority(&state.blockchain).await else {
+    let Ok(authority) = view.authority(&state.blockchain).await else {
         return internal();
     };
     let id = match crate::query::path_uuid(path, "user_id") {
         Ok(id) => id,
         Err(issue) => return passkeys::validation(vec![issue]),
     };
-    if let (View::Assignments, Some(chain)) = (&view, &chain) {
+    if let Authority::Assignments(Some(chain)) = &authority {
         return assignments::remote(tx, chain, id)
             .await
             .unwrap_or_else(|_| internal());
@@ -90,14 +97,14 @@ async fn read(
     let Ok(normalized) = admin_organizations::normalized_storage(&metadata) else {
         return internal();
     };
-    match view {
-        View::Token => {
+    match authority {
+        Authority::Token(provider) => {
             if tx.commit().await.is_err() {
                 return internal();
             }
-            token::response(normalized.as_deref().unwrap_or(&metadata), chain.as_ref()).await
+            token::response(normalized.as_deref().unwrap_or(&metadata), &provider).await
         }
-        View::Assignments => assignments::postgres(&mut tx, id)
+        Authority::Assignments(_) => assignments::postgres(&mut tx, id)
             .await
             .map(|doc| Json(doc).into_response())
             .unwrap_or_else(|_| internal()),
@@ -121,14 +128,14 @@ mod tests {
         };
         settings.update(configuration("deployment")).await;
         let deployed = ChainSettings::with_deployment(settings.provider().await.unwrap());
-        assert!(
-            View::Assignments
-                .authority(&deployed)
-                .await
-                .unwrap()
-                .is_none()
-        );
-        assert!(View::Token.authority(&deployed).await.unwrap().is_some());
+        assert!(matches!(
+            View::Assignments.authority(&deployed).await.unwrap(),
+            Authority::Assignments(None)
+        ));
+        assert!(matches!(
+            View::Token.authority(&deployed).await.unwrap(),
+            Authority::Token(TokenProvider::Remote(_))
+        ));
         deployed.update(configuration("runtime")).await;
         deployed
             .update(Update {

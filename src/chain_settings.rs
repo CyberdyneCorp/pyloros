@@ -1,8 +1,10 @@
 //! Mutable chain configuration and its credential-free operator view.
 mod health;
+mod identity_tokens;
 mod membership;
 use data_encoding::HEXLOWER_PERMISSIVE;
 pub(crate) use health::Monitor;
+pub(crate) use identity_tokens::TokenProvider;
 use k256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
 pub(crate) use membership::{
     Chain, Inventory, SnapshotError,
@@ -32,6 +34,7 @@ pub struct Update {
 
 #[derive(Default)]
 struct Configuration {
+    local_tokens: std::sync::Arc<tokio::sync::Mutex<Vec<u8>>>,
     values: Update,
     signer_address: Option<String>,
 }
@@ -80,6 +83,7 @@ impl ChainSettings {
         if let Some(address) = signer {
             state.signer_address = address;
         }
+        state.local_tokens = Default::default();
         let current = &mut state.values;
         merge(&mut current.enabled, patch.enabled);
         merge(&mut current.rpc_url, patch.rpc_url);
