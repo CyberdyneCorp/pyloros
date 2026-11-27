@@ -2,8 +2,8 @@
 use super::creation::NewOrganization;
 use super::*;
 use crate::request_json::fields;
+use crate::request_json::fields::invalid;
 use indexmap::IndexMap;
-use serde::Serialize;
 use serde_json::value::RawValue;
 
 const TEXT_FIELDS: &[&str] = &[
@@ -162,24 +162,6 @@ fn text_patch(model: &mut admin_fields::Fields<'_>) -> serde_json::Map<String, V
 }
 
 type Issue<'a> = (Value, &'a RawValue);
-
-fn invalid(errors: Vec<Issue<'_>>) -> Box<Response> {
-    if errors
-        .iter()
-        .any(|(_, input)| !fields::finite_error_input(input))
-    {
-        return Box::new(internal());
-    }
-    #[derive(Serialize)]
-    struct Errors<'a> {
-        detail: Vec<fields::FieldIssue<'a>>,
-    }
-    let detail = errors
-        .into_iter()
-        .map(|(issue, input)| fields::field_issue(issue, input))
-        .collect();
-    Box::new((StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { detail })).into_response())
-}
 
 fn metadata<'a>(
     raw: Option<&'a RawValue>,

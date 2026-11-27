@@ -301,6 +301,7 @@ mod tests {
             passkeys: passkeys::Inventory::new(None, 10),
             oidc_enabled: false,
             provisioning: provisioning::Settings::configured().unwrap(),
+            wallet_challenges: wallet_challenge::issue::Settings::configured().unwrap(),
             registration: registration::Settings::configured().unwrap(),
             erasure: erasure::Settings::configured().unwrap(),
             account_mail: crate::email_delivery::ConfirmationMailer::mock(),

@@ -13,6 +13,61 @@ use serde::Serialize;
 use serde_json::{Value, json, value::RawValue};
 use std::collections::HashMap;
 
+// Preserve normalized digits beyond i128 for field validation and storage range checks.
+pub(crate) fn integer_text(raw: &RawValue) -> Result<String, (&'static str, &'static str)> {
+    let text = raw.get();
+    let size_error = (
+        "int_parsing_size",
+        "Unable to parse input string as an integer, exceeded maximum size",
+    );
+    let digits = match text.as_bytes()[0] {
+        b'"' => crate::query::integer(&serde_json::from_str::<String>(text).expect("JSON string"))?,
+        b't' => return Ok("1".into()),
+        b'f' => return Ok("0".into()),
+        b'-' | b'0'..=b'9' if text.contains(['.', 'e', 'E']) => {
+            let n = text.parse::<f64>().map_err(|_| size_error)?;
+            if n.abs() >= -(i64::MIN as f64) {
+                return Err(size_error);
+            }
+            if n.fract() != 0.0 {
+                return Err((
+                    "int_from_float",
+                    "Input should be a valid integer, got a number with a fractional part",
+                ));
+            }
+            return Ok((n as i64).to_string());
+        }
+        b'-' | b'0'..=b'9' => text.to_owned(),
+        _ => return Err(("int_type", "Input should be a valid integer")),
+    };
+    let magnitude = digits
+        .trim_start_matches(['+', '-'])
+        .trim_start_matches('0');
+    if magnitude.is_empty() {
+        return Ok("0".into());
+    }
+    if digits.starts_with('-') {
+        Ok(format!("-{magnitude}"))
+    } else {
+        Ok(magnitude.into())
+    }
+}
+
+pub(crate) fn invalid(errors: Vec<(Value, &RawValue)>) -> Box<Response> {
+    if errors.iter().any(|(_, input)| !finite_error_input(input)) {
+        return Box::new(internal_error());
+    }
+    #[derive(Serialize)]
+    struct Errors<'a> {
+        detail: Vec<FieldIssue<'a>>,
+    }
+    let detail = errors
+        .into_iter()
+        .map(|(issue, input)| field_issue(issue, input))
+        .collect();
+    Box::new((StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { detail })).into_response())
+}
+
 pub(crate) fn document(
     headers: &HeaderMap,
     bytes: &[u8],

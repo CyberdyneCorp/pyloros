@@ -1,0 +1,1 @@
+Use a separate source quota for challenge creation. Generate the nonce from OS randomness. Derive the signed timestamps and database expiration from one microsecond-resolution clock reading. Keep the original wallet spelling in the signing message and the lowercased address in storage.

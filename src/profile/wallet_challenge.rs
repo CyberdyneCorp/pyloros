@@ -1,4 +1,5 @@
 //! Public status of a wallet sign-in challenge.
+pub(super) mod issue;
 use super::*;
 use crate::login_http::problem;
 use axum::extract::Path;

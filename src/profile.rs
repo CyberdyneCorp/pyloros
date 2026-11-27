@@ -247,6 +247,7 @@ struct Profile {
     oidc_enabled: bool,
     provisioning: provisioning::Settings,
     registration: registration::Settings,
+    wallet_challenges: wallet_challenge::issue::Settings,
     erasure: erasure::Settings,
     account_mail: crate::email_delivery::ConfirmationMailer,
     reset_quota: crate::login_throttle::LoginThrottle,
@@ -349,6 +350,7 @@ fn build_routes(
         oidc_enabled: config::flag("OIDC_ENABLED")?,
         provisioning: provisioning::Settings::configured()?,
         registration: registration::Settings::configured()?,
+        wallet_challenges: wallet_challenge::issue::Settings::configured()?,
         erasure: erasure::Settings::configured()?,
         account_mail: crate::email_delivery::ConfirmationMailer::configured()?,
         reset_quota: crate::login_throttle::LoginThrottle::with_window(
@@ -703,6 +705,12 @@ fn build_routes(
         .route(
             "/api/v1/auth/password/reset-request",
             any(password_reset::request),
+        )
+        .route(
+            "/api/v1/auth/wallet/challenge",
+            any(crate::token_http::post_only)
+                .post(wallet_challenge::issue::create)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
             "/api/v1/auth/wallet/challenge/{challenge_id}",

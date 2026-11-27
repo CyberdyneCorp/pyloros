@@ -1,0 +1,2 @@
+- [x] Implement issuance, validation, source throttling and persistence.
+- [x] Compare message bytes, client behavior, stored data, errors and quota across both backends.
