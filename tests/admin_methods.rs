@@ -135,6 +135,7 @@ async fn delegated_reads_require_service_bearer_credentials() {
         "permissions?client_id=another",
         "roles?client_id=another",
         "roles/reader/permissions",
+        "users/invalid/roles",
     ] {
         for (name, value) in [
             (header::COOKIE, "access_token=user-session"),

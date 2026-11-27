@@ -1,0 +1,2 @@
+- [x] Implement service-client lookup and organization membership filtering.
+- [x] Verify provider changes, REST responses and existing clients.

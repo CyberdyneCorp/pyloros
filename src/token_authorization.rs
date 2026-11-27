@@ -101,7 +101,9 @@ async fn role_buckets(
     let Some(names) = names else {
         return Ok(None);
     };
-    project_groups(tx, user, &names).await.map(Some)
+    project_groups(&mut **tx, user, &names, None)
+        .await
+        .map(Some)
 }
 
 async fn postgres_groups(
@@ -136,10 +138,22 @@ pub(crate) async fn stored_groups(
     .await
 }
 
-async fn project_groups(
-    tx: &mut Transaction<'_, Postgres>,
+pub(crate) async fn client_assignments<'e>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
+    user: Uuid,
+    client: &str,
+    groups: &[String],
+) -> Result<Assignments, sqlx::Error> {
+    project_groups(executor, user, groups, Some(client))
+        .await
+        .map(assignments)
+}
+
+async fn project_groups<'e>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
     user: Uuid,
     names: &[String],
+    owner: Option<&str>,
 ) -> Result<Buckets, sqlx::Error> {
     let refs: Vec<_> = names.iter().filter_map(|name| assignment(name)).collect();
     let mut active = BTreeSet::new();
@@ -149,15 +163,23 @@ async fn project_groups(
              WHERE m.user_id=$1 AND o.is_active",
         )
         .bind(user)
-        .fetch_all(&mut **tx)
+        .fetch_all(executor)
         .await?;
         active.extend(memberships);
     }
     let mut roles = Buckets::new();
     for (token, org) in refs {
-        if org.is_none_or(|id| active.contains(&id)) {
-            roles.entry(org).or_default().insert(token);
+        if org.is_some_and(|id| !active.contains(&id)) {
+            continue;
         }
+        let role = match owner {
+            Some(client) => match token.rsplit_once(':') {
+                Some((owner, key)) if owner == client => key.to_owned(),
+                _ => continue,
+            },
+            None => token,
+        };
+        roles.entry(org).or_default().insert(role);
     }
     Ok(roles)
 }
@@ -235,13 +257,23 @@ mod tests {
             format!("rp:app:owner@{disabled}"),
             format!("rp:app:owner@{other}"),
         ];
-        let roles = assignments(project_groups(&mut tx, user, &groups).await?);
+        let roles = assignments(project_groups(&mut *tx, user, &groups, None).await?);
         assert_eq!(roles.global, ["app:reader"]);
         assert_eq!(
             roles.organizations,
             BTreeMap::from([(member.to_string(), vec!["app:owner".into()])])
         );
-        assert!(project_groups(&mut tx, user, &[]).await?.is_empty());
+        assert!(project_groups(&mut *tx, user, &[], None).await?.is_empty());
+        let mut mixed = groups;
+        mixed.extend([format!("rp:other:staff@{member}"), "rp:other:staff".into()]);
+        let scoped = client_assignments(&mut *tx, user, "app", &mixed).await?;
+        assert_eq!(scoped.global, ["reader"]);
+        assert_eq!(
+            scoped.organizations,
+            BTreeMap::from([(member.to_string(), vec!["owner".into()])])
+        );
+        let absent = client_assignments(&mut *tx, user, "missing", &mixed).await?;
+        assert!(absent.global.is_empty() && absent.organizations.is_empty());
         Ok(())
     }
 }

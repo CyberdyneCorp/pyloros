@@ -1,4 +1,4 @@
-//! Operator view of stored user role assignments.
+//! Operator and service-client views of a user’s role assignments.
 use super::*;
 use std::collections::BTreeMap;
 
@@ -15,42 +15,93 @@ pub(in crate::profile) async fn list_user(
         Ok(operator) => operator,
         Err(error) => return *error,
     };
-    let Ok(chain) = authority(&state).await else {
+    read(&state, tx, &raw, None).await
+}
+
+pub(in crate::profile) async fn delegated_user(
+    State(state): State<Arc<Profile>>,
+    method: Method,
+    headers: HeaderMap,
+    Path(raw): Path<String>,
+) -> Response {
+    if method != Method::GET {
+        return crate::browser_http::method_not_allowed().await;
+    }
+    let client = match delegated::client(&state, &headers).await {
+        Ok(client) => client,
+        Err(error) => return *error,
+    };
+    let Ok(tx) = state.pool.begin().await else {
         return internal();
     };
-    let user = match crate::query::path_uuid(&raw, "user_id") {
+    read(&state, tx, &raw, Some(&client)).await
+}
+
+async fn read(
+    state: &Profile,
+    tx: Transaction<'_, Postgres>,
+    raw: &str,
+    client: Option<&str>,
+) -> Response {
+    let Ok(chain) = authority(state).await else {
+        return internal();
+    };
+    let user = match crate::query::path_uuid(raw, "user_id") {
         Ok(id) => id,
         Err(issue) => return passkeys::validation(vec![issue]),
     };
-    inventory(tx, chain, user)
+    inventory(&state.pool, tx, chain, user, client)
         .await
         .unwrap_or_else(|_| internal())
 }
 
 async fn inventory(
+    pool: &PgPool,
     mut tx: Transaction<'_, Postgres>,
     chain: Option<crate::chain_settings::Chain>,
     user: Uuid,
+    client: Option<&str>,
 ) -> Result<Response, sqlx::Error> {
-    let names = if let Some(chain) = chain {
+    if let Some(chain) = chain {
         let token = sqlx::query_scalar::<_, Option<i32>>(
             "SELECT (SELECT chain_token_id FROM iam_identities WHERE user_id=u.id) FROM users u WHERE u.id=$1",
         ).bind(user).fetch_optional(&mut *tx).await?;
         tx.commit().await?;
-        match token {
+        let names = match token {
             Some(id) => match chain.membership_names(id).await {
                 Ok(names) => Some(names),
                 Err(error) => return Ok(chain_error(error)),
             },
             None => None,
-        }
-    } else {
-        crate::token_authorization::stored_groups(&mut tx, user).await?
+        };
+        return response(pool, user, client, names).await;
+    }
+    let names = crate::token_authorization::stored_groups(&mut tx, user).await?;
+    response(&mut *tx, user, client, names).await
+}
+
+async fn response<'e>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
+    user: Uuid,
+    client: Option<&str>,
+    names: Option<Vec<String>>,
+) -> Result<Response, sqlx::Error> {
+    let Some(names) = names else {
+        return Ok(crate::login_http::problem(
+            StatusCode::NOT_FOUND,
+            "User not found",
+        ));
     };
-    Ok(match names {
-        Some(names) => Json(project(user, names)).into_response(),
-        None => crate::login_http::problem(StatusCode::NOT_FOUND, "User not found"),
-    })
+    let Some(client) = client else {
+        return Ok(Json(project(user, names)).into_response());
+    };
+    let roles =
+        crate::token_authorization::client_assignments(executor, user, client, &names).await?;
+    let mut doc = json!({"user_id":user,"roles":roles.global});
+    if !roles.organizations.is_empty() {
+        doc["org_roles"] = json!(roles.organizations);
+    }
+    Ok(Json(doc).into_response())
 }
 
 #[derive(Serialize, PartialEq, Eq, PartialOrd, Ord)]
