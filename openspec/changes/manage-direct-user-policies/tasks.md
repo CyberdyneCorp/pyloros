@@ -1,0 +1,3 @@
+- [ ] Implement audited PostgreSQL direct policy attachment and detachment.
+- [ ] Compare decisions, client-visible assignments, audit rollback and mixed-writer overlaps.
+- [ ] Implement and verify chain-backed changes including confirmed outcomes.
