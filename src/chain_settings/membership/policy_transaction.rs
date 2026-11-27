@@ -1,6 +1,7 @@
 //! Encode IAM contract calls and prepare unsigned EIP-1559 transactions.
 use super::*;
 use serde::Deserialize;
+mod arguments;
 mod revert;
 
 sol! {
@@ -76,6 +77,7 @@ pub(crate) enum PrepareError {
     Catalog(SnapshotError),
     Reverted(String),
     Rpc(String),
+    Argument(String),
     Unavailable,
     Invalid,
 }
@@ -342,13 +344,21 @@ impl Chain {
 
     pub(crate) async fn prepare_token_status(
         &self,
-        token: TokenId,
+        token: &str,
         status: u8,
     ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+        let id = TokenId::from_str_radix(token, 10).map_err(|_| {
+            arguments::incompatible_first(
+                "setStatus",
+                &["uint256", "uint8"],
+                "int,int",
+                &[token, &status.to_string()],
+            )
+        })?;
         self.prepare_contract(
             self.identity.as_deref(),
             setStatusCall {
-                tokenId: token,
+                tokenId: id,
                 status,
             }
             .abi_encode(),

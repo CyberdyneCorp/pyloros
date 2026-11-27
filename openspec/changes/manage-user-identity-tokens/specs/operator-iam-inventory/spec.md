@@ -52,3 +52,9 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 
 - **WHEN** an operator requests a status change for an integer token identifier absent from the local provider
 - **THEN** report an unsuccessful provider outcome and audit the original integer identifier at full precision
+
+#### Scenario: Invalid mint recipient
+
+- **WHEN** a deployed mint retry encounters a malformed hexadecimal recipient before transaction preparation
+- **THEN** return the argument failure as the mint outcome and audit it
+- **AND** for a full-length address with an invalid checksum, a pending nonce lookup failure takes precedence over the checksum error

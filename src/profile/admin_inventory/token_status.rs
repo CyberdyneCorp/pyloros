@@ -72,14 +72,13 @@ async fn change(
             }
         }
         TokenProvider::Remote(chain, writes) => {
-            let Ok(id) = alloy_primitives::U256::from_str_radix(token, 10) else {
-                return Ok(Outcome::Failed(invalid_chain_id(token, status)));
-            };
             let _write = writes.lock().await;
-            match chain.prepare_token_status(id, status).await {
-                Err(PrepareError::Rpc(text) | PrepareError::Reverted(text)) => {
-                    Ok(Outcome::Failed(text))
-                }
+            match chain.prepare_token_status(token, status).await {
+                Err(
+                    PrepareError::Argument(text)
+                    | PrepareError::Rpc(text)
+                    | PrepareError::Reverted(text),
+                ) => Ok(Outcome::Failed(text)),
                 _ => Err(Box::new(problem(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "Blockchain transaction submission unavailable",
@@ -87,23 +86,6 @@ async fn change(
             }
         }
     }
-}
-
-fn invalid_chain_id(token: &str, status: u8) -> String {
-    format!(
-        "
-ABI Not Found!
-Found 1 element(s) named `setStatus` that accept 2 argument(s).
-The provided arguments are not valid.
-Provided argument types: (int,int)
-Provided keyword argument types: {{}}
-
-Tried to find a matching ABI element named `setStatus`, but encountered the following problems:
-Signature: setStatus(uint256,uint8), type: function
-Argument 1 value `{token}` is not compatible with type `uint256`.
-Argument 2 value `{status}` is valid.
-"
-    )
 }
 
 #[derive(Serialize)]

@@ -44,10 +44,12 @@ async fn mint(provider: TokenProvider, wallet: &str, key: &str) -> Result<Outcom
         }
         TokenProvider::Remote(chain, writes) => {
             let _write = writes.lock().await;
-            match chain.prepare_identity_creation(wallet, key, "").await {
-                Err(PrepareError::Rpc(detail) | PrepareError::Reverted(detail)) => {
-                    Ok(Outcome::failed(detail))
-                }
+            match chain.prepare_mint_retry(wallet, key).await {
+                Err(
+                    PrepareError::Argument(detail)
+                    | PrepareError::Rpc(detail)
+                    | PrepareError::Reverted(detail),
+                ) => Ok(Outcome::failed(detail)),
                 _ => Err(Box::new(problem(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "Blockchain transaction submission unavailable",

@@ -87,7 +87,7 @@ fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError) -> Respons
         PrepareError::MissingPolicy(id) => missing(id),
         PrepareError::ProtectedGroup => delete_group::protected(),
         PrepareError::Catalog(error) => admin_client_roles::chain_error(error),
-        PrepareError::Invalid => internal(),
+        PrepareError::Invalid | PrepareError::Argument(_) => internal(),
         PrepareError::Unavailable | PrepareError::Rpc(_) | PrepareError::Reverted(_) if matches!(mutation, IamMutation::CreatePolicy(_)) => internal(),
         PrepareError::Reverted(detail) => (
             StatusCode::BAD_GATEWAY,
