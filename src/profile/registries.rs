@@ -47,6 +47,85 @@ pub(super) fn configured_scopes() -> Result<BTreeMap<String, String>, Box<dyn Er
     Ok(scopes)
 }
 
+pub(super) async fn catalog(
+    state: &Profile,
+) -> Result<&crate::discovery::ScopeRegistry, Box<dyn Error>> {
+    state
+        .client_scopes
+        .get_or_try_init(|| async {
+            let seconds =
+                crate::token_runtime::number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)?.try_into()?;
+            Ok(crate::discovery::ScopeRegistry::start(
+                state.pool.clone(),
+                state.builtin_scopes.clone(),
+                None,
+                std::time::Duration::from_secs(seconds),
+            )
+            .await)
+        })
+        .await
+}
+
+pub(super) async fn deactivate(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> Response {
+    let Some(id) = administrator::identity(&state, &headers) else {
+        return unauthorized();
+    };
+    let Ok(registry) = catalog(&state).await else {
+        return internal();
+    };
+    let (tx, email) = match administrator::session(&state, &id).await {
+        Ok(session) => session,
+        Err(response) => return *response,
+    };
+    if state.builtin_scopes.contains_key(&name) {
+        let name = crate::browser_prompt::quoted_string(&name);
+        return problem(
+            StatusCode::CONFLICT,
+            &format!("built-in scope {name} is read-only"),
+        );
+    }
+    let origin = crate::grant_response::SessionOrigin {
+        ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
+        user_agent: crate::token_http::header(&headers, "user-agent"),
+    };
+    delete_managed(tx, registry, &name, (id.user, email.as_deref()), origin)
+        .await
+        .unwrap_or_else(|_| internal())
+}
+
+async fn delete_managed(
+    mut tx: Transaction<'static, Postgres>,
+    registry: &crate::discovery::ScopeRegistry,
+    name: &str,
+    actor: (Uuid, Option<&str>),
+    origin: crate::grant_response::SessionOrigin<'_>,
+) -> Result<Response, sqlx::Error> {
+    let result = sqlx::query("UPDATE oauth_scopes SET updated_at=CASE WHEN active THEN now() ELSE updated_at END, active=false WHERE name=$1")
+        .bind(name).execute(&mut *tx).await?;
+    if result.rows_affected() == 0 {
+        return Ok(problem(
+            StatusCode::NOT_FOUND,
+            &format!("not found: {name}"),
+        ));
+    }
+    crate::admin_audit::append(
+        &mut tx,
+        "oauth_scope.delete",
+        Some(actor),
+        ("oauth_scope", name),
+        json!({}),
+        origin,
+    )
+    .await?;
+    registry.commit(tx).await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 pub(super) async fn list_scopes(
     State(state): State<Arc<Profile>>,
     method: Method,

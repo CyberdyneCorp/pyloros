@@ -179,7 +179,7 @@ pub(super) async fn apply(
     let Some(scopes) = state.client_scopes.get() else {
         return Ok(internal());
     };
-    if let Err(msg) = validate(&m, &scopes.borrow()) {
+    if let Err(msg) = validate(&m, &scopes.catalog.borrow()) {
         return Ok(problem(StatusCode::BAD_REQUEST, &msg));
     }
     let client_id = format!("cyb_{}", crate::client_auth::opaque::<12>());

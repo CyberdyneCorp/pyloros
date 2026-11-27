@@ -140,53 +140,109 @@ impl Provider {
     }
 
     pub async fn refresh_scopes(&mut self, pool: sqlx::PgPool, interval: Duration) {
-        if interval.is_zero() {
-            return;
-        }
         let base = self.scopes.borrow().clone();
-        self.scopes = watch_scopes(pool, base, interval).await;
+        let registry = ScopeRegistry::start(pool, base, None, interval).await;
+        self.scopes = registry.catalog;
     }
 }
+
 pub(crate) type ScopeCatalog = tokio::sync::watch::Receiver<BTreeMap<String, String>>;
+type ScopeMap = BTreeMap<String, String>;
+type Projection = (ScopeMap, tokio::sync::watch::Sender<ScopeMap>);
 
-pub(crate) async fn watch_scopes(
-    pool: sqlx::PgPool,
-    base: BTreeMap<String, String>,
-    interval: Duration,
-) -> ScopeCatalog {
-    let (updates, snapshot) = tokio::sync::watch::channel(base.clone());
-    if interval.is_zero() {
-        return snapshot;
-    }
-    load_scopes(&pool, &base, &updates).await;
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = updates.closed() => break,
-                _ = tokio::time::sleep(interval) => load_scopes(&pool, &base, &updates).await,
-            }
-        }
-    });
-    snapshot
+pub(crate) struct ScopeRegistry {
+    pub catalog: ScopeCatalog,
+    publisher: Arc<ScopePublisher>,
 }
 
-async fn load_scopes(
-    pool: &sqlx::PgPool,
-    base: &BTreeMap<String, String>,
-    updates: &tokio::sync::watch::Sender<BTreeMap<String, String>>,
-) {
-    let read = sqlx::query_as::<_, (String, String)>(
-        "SELECT name,coalesce(description,'') FROM oauth_scopes WHERE active",
-    )
-    .fetch_all(pool);
-    match tokio::time::timeout(Duration::from_secs(3), read).await {
-        Ok(Ok(rows)) => {
+struct ScopePublisher {
+    projections: Vec<Projection>,
+    publication: tokio::sync::Mutex<()>,
+}
+
+fn projection(base: ScopeMap) -> (Projection, ScopeCatalog) {
+    let (sender, receiver) = tokio::sync::watch::channel(base.clone());
+    ((base, sender), receiver)
+}
+
+impl ScopeRegistry {
+    pub(crate) async fn start(
+        pool: sqlx::PgPool,
+        base: ScopeMap,
+        provider: Option<&mut Provider>,
+        interval: Duration,
+    ) -> Self {
+        let (admin, catalog) = projection(base);
+        let mut projections = vec![admin];
+        if let Some(provider) = provider {
+            let base = provider.scopes.borrow().clone();
+            let (discovery, receiver) = projection(base);
+            provider.scopes = receiver;
+            projections.push(discovery);
+        }
+        let publisher = Arc::new(ScopePublisher {
+            projections,
+            publication: Default::default(),
+        });
+        if !interval.is_zero() {
+            publisher.refresh(&pool).await;
+            let worker = publisher.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = worker.projections[0].1.closed() => break,
+                        _ = tokio::time::sleep(interval) => worker.refresh(&pool).await,
+                    }
+                }
+            });
+        }
+        Self { catalog, publisher }
+    }
+
+    pub(crate) async fn commit(
+        &self,
+        mut tx: sqlx::Transaction<'static, sqlx::Postgres>,
+    ) -> Result<(), sqlx::Error> {
+        let publisher = self.publisher.clone();
+        tokio::spawn(async move {
+            let _guard = publisher.publication.lock().await;
+            let rows = ScopePublisher::rows(&mut tx).await?;
+            tx.commit().await?;
+            publisher.publish(&rows);
+            Ok(())
+        })
+        .await
+        .map_err(|err| sqlx::Error::Protocol(err.to_string()))?
+    }
+}
+
+impl ScopePublisher {
+    async fn rows(conn: &mut sqlx::PgConnection) -> Result<Vec<(String, String)>, sqlx::Error> {
+        sqlx::query_as("SELECT name,coalesce(description,'') FROM oauth_scopes WHERE active")
+            .fetch_all(conn)
+            .await
+    }
+
+    fn publish(&self, rows: &[(String, String)]) {
+        for (base, updates) in &self.projections {
             let mut effective = base.clone();
-            effective.extend(rows);
+            effective.extend(rows.iter().cloned());
             updates.send_replace(effective);
         }
-        Ok(Err(error)) => eprintln!("Scope catalog refresh failed: {error}"),
-        Err(_) => eprintln!("Scope catalog refresh timed out"),
+    }
+
+    async fn refresh(&self, pool: &sqlx::PgPool) {
+        let load = async {
+            let mut conn = pool.acquire().await?;
+            let _guard = self.publication.lock().await;
+            self.publish(&Self::rows(&mut conn).await?);
+            Ok::<(), sqlx::Error>(())
+        };
+        match tokio::time::timeout(Duration::from_secs(3), load).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => eprintln!("Scope catalog refresh failed: {error}"),
+            Err(_) => eprintln!("Scope catalog refresh timed out"),
+        }
     }
 }
 
@@ -218,4 +274,40 @@ pub fn routes(provider: Option<Provider>) -> Router {
         .route("/.well-known/oauth-authorization-server", get(metadata))
         .route("/.well-known/jwks.json", get(keys))
         .with_state(provider.map(Arc::new))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn local_scope_publication_follows_commit_with_polling_disabled() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let registry =
+            ScopeRegistry::start(pool.clone(), BTreeMap::new(), None, Duration::ZERO).await;
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("CREATE TEMP TABLE oauth_scopes (name text, description text, active boolean, UNIQUE(name) DEFERRABLE INITIALLY DEFERRED)")
+            .execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO oauth_scopes VALUES ('reports','Reports',true)")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        registry.commit(tx).await.unwrap();
+        assert_eq!(registry.catalog.borrow().get("reports").unwrap(), "Reports");
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query(
+            "INSERT INTO oauth_scopes VALUES ('reports','Changed',true),('other','Other',true)",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert!(registry.commit(tx).await.is_err());
+        assert_eq!(registry.catalog.borrow().len(), 1);
+        assert_eq!(registry.catalog.borrow().get("reports").unwrap(), "Reports");
+    }
 }

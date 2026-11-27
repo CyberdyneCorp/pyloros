@@ -235,7 +235,7 @@ struct Profile {
     patch_resources: tokio::sync::OnceCell<
         tokio::sync::watch::Receiver<Arc<crate::token_runtime::ResourceRegistry>>,
     >,
-    client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeCatalog>,
+    client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeRegistry>,
     admin_enabled: bool,
     passkeys: passkeys::Inventory,
     oidc_enabled: bool,
@@ -268,9 +268,23 @@ pub async fn routes_with_admin_registry(
     production: bool,
     interval: std::time::Duration,
 ) -> Result<Router, Box<dyn Error>> {
+    routes_with_scope_registry(pool, production, interval, None).await
+}
+
+pub async fn routes_with_scope_registry(
+    pool: PgPool,
+    production: bool,
+    interval: std::time::Duration,
+    provider: Option<&mut crate::discovery::Provider>,
+) -> Result<Router, Box<dyn Error>> {
     let builtin_scopes = registries::configured_scopes()?;
-    let catalog =
-        crate::discovery::watch_scopes(pool.clone(), builtin_scopes.clone(), interval).await;
+    let catalog = crate::discovery::ScopeRegistry::start(
+        pool.clone(),
+        builtin_scopes.clone(),
+        provider,
+        interval,
+    )
+    .await;
     build_routes(
         pool,
         production,
@@ -283,7 +297,7 @@ fn build_routes(
     pool: PgPool,
     production: bool,
     builtin_scopes: std::collections::BTreeMap<String, String>,
-    client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeCatalog>,
+    client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeRegistry>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
         builtin_scopes,
@@ -320,7 +334,7 @@ fn build_routes(
         .route("/api/v1/admin/oauth/scopes", any(registries::list_scopes))
         .route(
             "/api/v1/admin/oauth/scopes/{name}",
-            any(registries::get_scope),
+            axum::routing::delete(registries::deactivate).fallback(registries::get_scope),
         )
         .route(
             "/api/v1/admin/oauth/clients/{client_id}/rotate-secret",

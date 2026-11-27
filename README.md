@@ -41,7 +41,7 @@ For an existing PostgreSQL instance, set `DATABASE_URL` and use `just run`. Set 
 
 The three well-known endpoints serve OpenID Connect discovery, OAuth authorization-server metadata, and a public JWKS. They default to disabled. To publish metadata for an existing issuer, set `OIDC_ENABLED=true`, `OIDC_ISSUER`, and `JWT_PUBLIC_KEY_PATH` (an RSA public key in SPKI PEM format). An inline `JWT_PUBLIC_KEY` also works. The default key ID is the public JWK thumbprint; set `JWT_KEY_ID` when matching an existing signing key ID.
 
-Set `OIDC_SCOPES` to the issuer's space-separated base scope catalog. Discovery adds active scopes from PostgreSQL at startup and every 30 seconds. Set `OAUTH_REGISTRY_REFRESH_SECONDS` to change the interval or use zero to serve only the configured base catalog. Failed reads retain the previous scope set. Set `OAUTH_DCR_ENABLED` and `OAUTH_DEVICE_GRANT_ENABLED` to match the issuer.
+Set `OIDC_SCOPES` to the issuer's space-separated base scope catalog. Discovery adds active scopes from PostgreSQL at startup and every 30 seconds. Set `OAUTH_REGISTRY_REFRESH_SECONDS` to change the interval or use zero to disable periodic reads while still publishing local administrative writes. Failed reads retain the previous scope set. Set `OAUTH_DCR_ENABLED` and `OAUTH_DEVICE_GRANT_ENABLED` to match the issuer.
 
 ## Current user profile
 
@@ -80,6 +80,8 @@ The consent bundle is a local UTF-8 JSON object with a `template` string (MiniJi
 Administrators can inspect OAuth applications with `GET /api/v1/admin/oauth/clients` and `GET /api/v1/admin/oauth/clients/{client_id}`. The collection accepts `page`, `page_size` (up to 200), and `active_only`. These reads accept a first-party session from the admin console or CLI and check current admin access on each request. Set `ADMIN_API_ENABLED=false` to disable administrative access. Operators can deactivate an application with `DELETE /api/v1/admin/oauth/clients/{client_id}`. The client stays visible in the inventory, and its deactivation and operator audit entry commit together.
 
 Administrators can list OAuth scopes with `GET /api/v1/admin/oauth/scopes` and inspect one with `GET /api/v1/admin/oauth/scopes/{name}`. The list sorts by scope name and includes inactive entries unless `active_only=true`. Both endpoints read managed entries directly from PostgreSQL. To match a migrating deployment’s built-in catalog, supply its additional names in `PYLOROS_RESOURCE_SCOPE_CATALOG` and its descriptions in the shared consent bundle.
+
+Use `DELETE /api/v1/admin/oauth/scopes/{name}` to deactivate a managed scope. Existing client grants retain it. Once the change and its audit entry commit, the writer stops advertising the scope and accepting it for new clients. Other replicas update on their configured refresh interval. Built-in scopes are read-only.
 
 Operators can create confidential or public applications with `POST /api/v1/admin/oauth/clients`. A successful registration returns the client identifier and a secret once, and commits the registration and operator audit entry together. The administrative API uses the issuer’s standard scopes, the deployment’s `PYLOROS_RESOURCE_SCOPE_CATALOG` and active PostgreSQL scope entries. Configure the complete application scope catalog during migration. Service client registration also works with OIDC disabled.
 

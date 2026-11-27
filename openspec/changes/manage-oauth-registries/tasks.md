@@ -1,6 +1,7 @@
 - [x] Capture reference HTTP outcomes for all three registries.
 - [x] Implement administrative scope list and detail reads, including inactive entries and built-in descriptions.
-- [ ] Implement audited scope mutations, including built-in scope protections.
+- [x] Implement audited scope deactivation, built-in protection and local post-commit publication.
+- [ ] Implement audited scope creation and partial updates.
 - [ ] Implement protected-resource reads and audited mutations with scope validation.
 - [ ] Implement web-origin reads and audited mutations with redirect and origin validation.
 - [ ] Verify immediate post-commit policy on the writer, cross-replica refresh, rollback, concurrency and existing consumers.

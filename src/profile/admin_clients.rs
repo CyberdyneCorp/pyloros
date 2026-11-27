@@ -119,24 +119,10 @@ async fn handle(state: &Profile, headers: &HeaderMap, op: Operation<'_>) -> Resp
     let Some(id) = administrator::identity(state, headers) else {
         return unauthorized();
     };
-    if matches!(op, Operation::Create(_, _) | Operation::Patch(..))
-        && state.client_scopes.get().is_none()
+    if matches!(op, Operation::Create(..) | Operation::Patch(..))
+        && registries::catalog(state).await.is_err()
     {
-        let Ok(seconds) = crate::token_runtime::number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)
-            .and_then(|n| Ok(u64::try_from(n)?))
-        else {
-            return internal();
-        };
-        state
-            .client_scopes
-            .get_or_init(|| {
-                crate::discovery::watch_scopes(
-                    state.pool.clone(),
-                    state.builtin_scopes.clone(),
-                    std::time::Duration::from_secs(seconds),
-                )
-            })
-            .await;
+        return internal();
     }
     if matches!(op, Operation::Patch(..))
         && state.patch_resources.get().is_none()

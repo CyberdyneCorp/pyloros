@@ -123,7 +123,7 @@ fn validate(
             .client_scopes
             .get()
             .ok_or("Scope catalog unavailable")?;
-        creation::validate_scopes(&strings(&new["allowed_scopes"]), &scopes.borrow())?;
+        creation::validate_scopes(&strings(&new["allowed_scopes"]), &scopes.catalog.borrow())?;
     }
     let grants = strings(&new["grant_types"]);
     if patch.get("grant_types").is_some_and(|g| !g.is_null()) {

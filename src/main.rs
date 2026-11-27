@@ -19,20 +19,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let seconds: u64 = env::var("OAUTH_REGISTRY_REFRESH_SECONDS")
         .unwrap_or_else(|_| "30".into())
         .parse()?;
-    if let Some(issuer) = &mut provider {
-        issuer
-            .refresh_scopes(pool.clone(), Duration::from_secs(seconds))
-            .await;
-    }
-    let token =
-        pyloros::token_http::routes(provider.as_ref(), pool.clone(), environment == "production")
-            .await?;
-    let profile = pyloros::profile::routes_with_admin_registry(
+    let profile = pyloros::profile::routes_with_scope_registry(
         pool.clone(),
         environment == "production",
         Duration::from_secs(seconds),
+        provider.as_mut(),
     )
     .await?;
+    let token =
+        pyloros::token_http::routes(provider.as_ref(), pool.clone(), environment == "production")
+            .await?;
     let login_methods = pyloros::login_methods::routes(&environment)?;
     let login = pyloros::login_http::routes_with_external(
         pool.clone(),

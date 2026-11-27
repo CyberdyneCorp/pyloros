@@ -1,4 +1,4 @@
-//! Append OAuth client administration events to the shared audit chain.
+//! Append OAuth administration events to the shared audit chain.
 use crate::grant_response::SessionOrigin;
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -30,6 +30,17 @@ pub(crate) async fn append_client_action(
     meta: Value,
     origin: SessionOrigin<'_>,
 ) -> Result<(), sqlx::Error> {
+    append(tx, action, actor, ("oauth_client", target), meta, origin).await
+}
+
+pub(crate) async fn append(
+    tx: &mut Transaction<'_, Postgres>,
+    action: &str,
+    actor: Option<(Uuid, Option<&str>)>,
+    (target_type, target): (&str, &str),
+    meta: Value,
+    origin: SessionOrigin<'_>,
+) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT INTO audit_chain_head (id,head_hash) VALUES (1,repeat('0',64)) ON CONFLICT(id) DO NOTHING")
         .execute(&mut **tx).await?;
     let previous = sqlx::query_scalar::<_, String>(
@@ -44,12 +55,12 @@ pub(crate) async fn append_client_action(
     let actor_email = actor.and_then(|(_, email)| email);
     let digest = canonical_digest(
         json!({"action":action,"actor_email":actor_email,"actor_user_id":actor_id,
-        "target_id":target,"target_type":"oauth_client","id":id,"metadata":meta,"ip_address":ip,"user_agent":origin.user_agent,
+        "target_id":target,"target_type":target_type,"id":id,"metadata":meta,"ip_address":ip,"user_agent":origin.user_agent,
         "prev_hash":previous,"created_at":now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()}),
     );
     sqlx::query(
         "INSERT INTO admin_action_logs (id,action,target_type,target_id,extra_metadata,ip_address,user_agent,created_at,prev_hash,row_hash,actor_user_id,actor_email)
-         VALUES ($1,$2,'oauth_client',$3,$4,$5::text::inet,$6,$7,$8,$9,$10,$11)",
+         VALUES ($1,$2,$12,$3,$4,$5::text::inet,$6,$7,$8,$9,$10,$11)",
     )
     .bind(id)
     .bind(action)
@@ -62,6 +73,7 @@ pub(crate) async fn append_client_action(
     .bind(&digest)
     .bind(actor_id)
     .bind(actor_email)
+    .bind(target_type)
     .execute(&mut **tx)
     .await?;
     sqlx::query("UPDATE audit_chain_head SET head_hash=$1 WHERE id=1")
