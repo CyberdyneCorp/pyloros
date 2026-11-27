@@ -126,6 +126,7 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
 }
 
 struct Profile {
+    scheme: crate::passwords::PasswordScheme,
     factor: Option<crate::enrolled_factor::FactorVerifier>,
     mfa_issuer: String,
     cookies: crate::session_cookies::SessionCookies,
@@ -139,6 +140,9 @@ struct Profile {
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        scheme: env::var("PASSWORD_SCHEME")
+            .unwrap_or_else(|_| "argon2".into())
+            .parse()?,
         factor: env::var("MASTER_KEY")
             .ok()
             .map(|key| crate::enrolled_factor::FactorVerifier::new(&key))
@@ -159,6 +163,8 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         .route("/api/v1/auth/mfa/status", any(enrollment::handle))
         .route("/api/v1/auth/mfa/totp/setup", any(totp::setup))
         .route("/api/v1/auth/mfa/totp/enable", any(totp::enable))
+        .route("/api/v1/auth/mfa/totp/recovery-codes", any(totp::rotate))
+        .route("/api/v1/auth/mfa/totp/disable", any(totp::disable))
         .route("/api/v1/auth/logout-all", any(logout_all::handle))
         .route("/api/v1/users/me/entitlements", any(entitlements))
         .with_state(Arc::new(state)))

@@ -1,4 +1,5 @@
 //! Provision and confirm a first-party account's authenticator.
+mod manage;
 use super::*;
 use crate::{
     enrolled_factor::FactorVerifier,
@@ -26,6 +27,7 @@ type ResultResponse = Result<Response, Box<dyn Error + Send + Sync>>;
 enum Action {
     Setup,
     Enable,
+    Manage(manage::Operation),
 }
 
 pub(super) async fn setup(
@@ -43,6 +45,28 @@ pub(super) async fn enable(
     handle(&state, peer, req, Action::Enable).await
 }
 
+pub(super) async fn rotate(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
+) -> Response {
+    handle(&state, peer, req, Action::Manage(manage::Operation::Rotate)).await
+}
+
+pub(super) async fn disable(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
+) -> Response {
+    handle(
+        &state,
+        peer,
+        req,
+        Action::Manage(manage::Operation::Disable),
+    )
+    .await
+}
+
 async fn handle(state: &Profile, peer: SocketAddr, req: Request, action: Action) -> Response {
     if req.method() != Method::POST {
         let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
@@ -52,7 +76,7 @@ async fn handle(state: &Profile, peer: SocketAddr, req: Request, action: Action)
         return response;
     }
     let (parts, body) = req.into_parts();
-    let input = if matches!(action, Action::Enable) {
+    let input = if !matches!(action, Action::Setup) {
         let Ok(bytes) = to_bytes(body, 2 * 1024 * 1024).await else {
             return StatusCode::PAYLOAD_TOO_LARGE.into_response();
         };
@@ -73,6 +97,18 @@ async fn handle(state: &Profile, peer: SocketAddr, req: Request, action: Action)
         ip: client_ip(&parts.headers, peer.ip(), state.proxies),
         user_agent: value(&parts.headers, "user-agent"),
     };
+    if let Action::Manage(operation) = action {
+        return manage::apply(
+            state,
+            id,
+            input.unwrap_or(Value::Null),
+            operation,
+            origin,
+            value(&parts.headers, "x-request-id"),
+        )
+        .await
+        .unwrap_or_else(|_| internal());
+    }
     apply(
         state,
         id,
@@ -150,7 +186,7 @@ async fn apply(
         let codes = replace_codes(&mut tx, id.user).await?;
         write_activity(
             &mut *tx,
-            AuditActivity::Enroll(None),
+            AuditActivity::Authenticator("mfa_enroll", None),
             AuditSubject {
                 user: Some(id.user),
                 email,
@@ -249,7 +285,7 @@ async fn refuse(
     tx.rollback().await?;
     if write_activity(
         pool,
-        AuditActivity::Enroll(Some(reason)),
+        AuditActivity::Authenticator("mfa_enroll", Some(reason)),
         AuditSubject {
             user: Some(user),
             email: None,
