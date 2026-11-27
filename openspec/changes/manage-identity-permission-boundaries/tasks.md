@@ -1,3 +1,6 @@
-- [ ] Implement PostgreSQL boundary management and atomic auditing.
-- [ ] Verify access decisions, user detail, existing clients and concurrent edits.
-- [ ] Verify chain-backed identity resolution, failure handling and confirmed changes.
+- [x] Implement PostgreSQL boundary management and atomic auditing.
+- [x] Support identity lookup so operators can manage boundaries through the existing dashboard.
+- [x] Verify access decisions, user detail, existing clients and concurrent edits.
+- [x] Verify chain catalog lookup, missing targets, provider outages and switching back to PostgreSQL.
+- [ ] Resolve the rollout behavior of overlapping writes across providers of the REST API.
+- [ ] Verify confirmed chain changes for a provider capable of enumerating identities.

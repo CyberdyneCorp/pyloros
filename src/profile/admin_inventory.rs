@@ -8,6 +8,7 @@ mod create_group;
 mod delete_group;
 mod group_policies;
 pub(super) use delete_group::delete_group;
+pub(super) mod boundary;
 mod group_members;
 mod user_detail;
 mod user_identity;

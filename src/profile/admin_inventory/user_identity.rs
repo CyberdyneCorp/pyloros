@@ -69,6 +69,38 @@ pub(super) async fn chain_token(
     u32::try_from(token).map_err(|_| Box::new(internal()))
 }
 
+pub(super) enum Lookup {
+    User(Uuid),
+    Identity(Uuid),
+}
+
+pub(super) async fn details(
+    tx: &mut Transaction<'_, Postgres>,
+    lookup: Lookup,
+) -> Result<Option<(Uuid, Value)>, sqlx::Error> {
+    let mut query=sqlx::QueryBuilder::<Postgres>::new(
+        "SELECT id,jsonb_build_object('id',id,'chain_token_id',chain_token_id,'user_id',user_id,
+         'owner_address',owner_address,'public_key',public_key,'email',email,'metadata_uri',metadata_uri),
+         created_at,status,transfer_mode FROM iam_identities WHERE "
+    );
+    match lookup {
+        Lookup::User(user) => query.push("user_id=").push_bind(user),
+        Lookup::Identity(id) => query.push("id=").push_bind(id),
+    };
+    let row = query
+        .build_query_as::<(Uuid, Value, DateTime<Utc>, String, String)>()
+        .fetch_optional(&mut **tx)
+        .await?;
+    let Some((id, mut record, created, status, mode)) = row else {
+        return Ok(None);
+    };
+    validate_identity(&status, &mode)?;
+    record["status"] = json!(status);
+    record["transfer_mode"] = json!(mode);
+    record["created_at"] = json!(timestamp(created));
+    Ok(Some((id, record)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

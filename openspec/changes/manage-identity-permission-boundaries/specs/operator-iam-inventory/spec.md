@@ -18,3 +18,12 @@ An authorized operator SHALL be able to set, replace and clear the policy that b
 
 - **WHEN** a boundary change cannot be audited
 - **THEN** the previously committed boundary continues to govern access
+
+### Requirement: Look up a boundary subject
+
+An authorized operator SHALL be able to retrieve a single IAM identity from the selected provider by its identity identifier.
+
+#### Scenario: Identity exists
+
+- **WHEN** an operator selects an existing identity
+- **THEN** return its identity details, including the associated user when present

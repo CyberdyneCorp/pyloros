@@ -81,6 +81,8 @@ fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError) -> Respons
     match error {
         PrepareError::MissingGroup(_) | PrepareError::MissingPolicy(_)
             if matches!(mutation, IamMutation::GroupPolicy { attach: false, .. }) => internal(),
+        PrepareError::MissingIdentity(_) if matches!(mutation,IamMutation::Boundary{policy:None,..})=>internal(),
+        PrepareError::MissingIdentity(id)=>crate::login_http::problem(StatusCode::NOT_FOUND,&id.to_string()),
         PrepareError::MissingGroup(id) => delete_group::missing(id),
         PrepareError::MissingPolicy(id) => missing(id),
         PrepareError::ProtectedGroup => delete_group::protected(),

@@ -470,6 +470,17 @@ fn build_routes(
             "/api/v1/admin/users/{user_id}/policies/{policy_id}",
             any(admin_inventory::delete_only).delete(admin_inventory::detach_user_policy),
         )
+        .route(
+            "/api/v1/admin/identities/{identity_id}",
+            any(admin_inventory::boundary::lookup),
+        )
+        .route(
+            "/api/v1/admin/identities/{identity_id}/boundary",
+            any(crate::token_http::post_only)
+                .post(admin_inventory::boundary::set)
+                .delete(admin_inventory::boundary::clear)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route("/api/v1/admin/roles", any(admin_inventory::roles))
         .route(
             "/api/v1/admin/groups",

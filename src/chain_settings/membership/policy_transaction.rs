@@ -25,6 +25,8 @@ sol! {
     function deletePolicy(uint256 id);
     function attach(uint256 identityId,uint256 policyId);
     function detach(uint256 identityId,uint256 policyId);
+    function setBoundary(uint256 identityId,uint256 policyId);
+    function clearBoundary(uint256 identityId);
     function attachGroupPolicy(uint256 groupId,uint256 policyId);
     function detachGroupPolicy(uint256 groupId,uint256 policyId);
     function addMember(uint256 groupId,uint256 identityId);
@@ -38,6 +40,10 @@ fn empty_if_null<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Er
 }
 
 pub(crate) enum IamMutation<'a> {
+    Boundary {
+        identity: Uuid,
+        policy: Option<Uuid>,
+    },
     CreatePolicy(&'a Value),
     ReplacePolicy(Uuid, &'a Value),
     DeletePolicy(Uuid),
@@ -61,6 +67,7 @@ pub(crate) enum IamMutation<'a> {
 
 pub(crate) enum PrepareError {
     MissingPolicy(Uuid),
+    MissingIdentity(Uuid),
     MissingGroup(Uuid),
     ProtectedGroup,
     Catalog(SnapshotError),
@@ -133,6 +140,22 @@ impl IamMutation<'_> {
                     statements,
                 }
                 .abi_encode())
+            }
+            Self::Boundary { identity, policy } => {
+                let snapshot = chain.snapshot().await.map_err(PrepareError::Catalog)?;
+                let token = snapshot
+                    .identities
+                    .into_iter()
+                    .find(|id| chain_uuid("identity", *id) == *identity)
+                    .ok_or(PrepareError::MissingIdentity(*identity))?;
+                match policy {
+                    Some(id) => Ok(setBoundaryCall {
+                        identityId: token,
+                        policyId: chain.required_policy(*id).await?.id,
+                    }
+                    .abi_encode()),
+                    None => Ok(clearBoundaryCall { identityId: token }.abi_encode()),
+                }
             }
             Self::UserPolicy {
                 identity,

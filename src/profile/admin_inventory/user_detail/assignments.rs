@@ -31,18 +31,11 @@ pub(super) async fn postgres(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
 ) -> Result<Value, sqlx::Error> {
-    let row=sqlx::query_as::<_,(Uuid,Value,DateTime<Utc>,String,String)>(
-        "SELECT id,jsonb_build_object('id',id,'chain_token_id',chain_token_id,'user_id',user_id,
-            'owner_address',owner_address,'public_key',public_key,'email',email,'metadata_uri',metadata_uri),
-            created_at,status,transfer_mode FROM iam_identities WHERE user_id=$1"
-    ).bind(user).fetch_optional(&mut **tx).await?;
-    let Some((id, mut identity, created, status, mode)) = row else {
+    let Some((id, identity)) =
+        user_identity::details(tx, user_identity::Lookup::User(user)).await?
+    else {
         return Ok(empty());
     };
-    user_identity::validate_identity(&status, &mode)?;
-    identity["status"] = json!(status);
-    identity["transfer_mode"] = json!(mode);
-    identity["created_at"] = json!(timestamp(created));
     let mut doc = empty();
     doc["identity"] = identity;
     doc["groups"]=json!(dated(sqlx::query_as(
