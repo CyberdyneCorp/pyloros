@@ -1,6 +1,7 @@
 ## Delivery
 
 - [x] Resolve active clients and validate registered callbacks, including native loopback listeners.
-- [ ] Implement hosted login return, freshness checks and authenticated grant issuance.
+- [x] Decide when hosted login or fresh authentication is required and construct the return URL.
+- [ ] Validate authenticated grants and connect the browser authorization endpoint.
 - [ ] Implement consent tickets, approval and denial with the existing browser workflow.
 - [ ] Verify browser journeys and cross-service redemption through the HTTP endpoints.
