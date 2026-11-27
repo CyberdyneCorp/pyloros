@@ -12,13 +12,16 @@ use std::panic::AssertUnwindSafe;
 pub(crate) struct UnhandledError;
 
 pub(crate) fn unhandled_error() -> Response {
-    use axum::{Extension, Json, http::StatusCode, response::IntoResponse};
+    use axum::{
+        Extension,
+        http::{StatusCode, header},
+        response::IntoResponse,
+    };
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Extension(UnhandledError),
-        Json(
-            serde_json::json!({"type":"about:blank","title":"Internal Server Error","status":500}),
-        ),
+        [(header::CONTENT_TYPE, "application/json")],
+        r#"{"type":"about:blank","title":"Internal Server Error","status":500}"#,
     )
         .into_response()
 }
@@ -74,6 +77,19 @@ mod tests {
 
     async fn unexpected_panic() -> StatusCode {
         panic!("test handler failure")
+    }
+
+    #[tokio::test]
+    async fn unhandled_failure_preserves_the_generic_wire_document() {
+        let response = unhandled_error();
+        assert_eq!(response.headers()["content-type"], "application/json");
+        let body = axum::body::to_bytes(response.into_body(), 256)
+            .await
+            .unwrap();
+        assert_eq!(
+            body.as_ref(),
+            br#"{"type":"about:blank","title":"Internal Server Error","status":500}"#
+        );
     }
 
     #[tokio::test]

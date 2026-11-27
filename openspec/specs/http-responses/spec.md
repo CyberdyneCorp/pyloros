@@ -22,6 +22,7 @@ The HTTP server SHALL send framing, content sniffing, referrer, permissions and 
 
 - **WHEN** an unhandled failure produces the generic internal-error document
 - **THEN** omit the browser security policy headers
+- **AND** serialize its compact JSON fields in the order `type`, `title`, `status`
 
 ### Requirement: Deployment transport policy
 The service SHALL send Strict-Transport-Security with a one-year lifetime, subdomains and preload on handled responses when running in production or when either secure-cookie setting is enabled. An unhandled internal failure SHALL omit this header.
