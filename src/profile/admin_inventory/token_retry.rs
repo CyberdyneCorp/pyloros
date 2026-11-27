@@ -42,7 +42,8 @@ async fn mint(provider: TokenProvider, wallet: &str, key: &str) -> Result<Outcom
                 error: None,
             })
         }
-        TokenProvider::Remote(chain) => {
+        TokenProvider::Remote(chain, writes) => {
+            let _write = writes.lock().await;
             match chain.prepare_identity_creation(wallet, key, "").await {
                 Err(PrepareError::Rpc(detail) | PrepareError::Reverted(detail)) => {
                     Ok(Outcome::failed(detail))
@@ -90,25 +91,22 @@ async fn store(
     origin: SessionOrigin<'_>,
 ) -> Result<Response, sqlx::Error> {
     let row = sqlx::query_as::<_, (Option<String>, Option<String>, String)>(
-        "SELECT default_wallet_address,public_key,extra_metadata::text FROM users WHERE id=$1 FOR UPDATE"
-    ).bind(id).fetch_optional(&mut *tx).await?;
+        "SELECT default_wallet_address,public_key,extra_metadata::text FROM users WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
     let Some((wallet, key, metadata)) = row else {
         return Ok(problem(StatusCode::NOT_FOUND, "User not found"));
     };
-    let normalized = admin_organizations::normalized_storage(&metadata)?;
+    admin_organizations::normalized_storage(&metadata)?;
     let outcome = match (wallet.as_deref(), key.as_deref()) {
         (Some(wallet), Some(key)) if !wallet.is_empty() && !key.is_empty() => {
             let outcome = match mint(provider, wallet, key).await {
                 Ok(result) => result,
                 Err(response) => return Ok(response),
             };
-            save_metadata(
-                &mut tx,
-                id,
-                normalized.as_deref().unwrap_or(&metadata),
-                &outcome,
-            )
-            .await?;
+            save_metadata(&mut tx, id, &outcome).await?;
             outcome
         }
         _ => Outcome::failed("user has no wallet/keypair".into()),
@@ -129,9 +127,15 @@ async fn store(
 async fn save_metadata(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
-    metadata: &str,
     outcome: &Outcome,
 ) -> Result<(), sqlx::Error> {
+    // Acquire the row after the provider call so concurrent retries can both make progress.
+    let metadata: String =
+        sqlx::query_scalar("SELECT extra_metadata::text FROM users WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut **tx)
+            .await?;
+    let normalized = admin_organizations::normalized_storage(&metadata)?;
     let patch = if outcome.success {
         json!({"nft_status":outcome.nft_status,"nft_token_id":outcome.token_id,"nft_tx_hash":outcome.tx_hash})
     } else {
@@ -142,7 +146,7 @@ async fn save_metadata(
         WHERE id=$1 AND extra_metadata IS DISTINCT FROM (($2::text::jsonb - 'nft_error') || $3)",
     )
     .bind(id)
-    .bind(metadata)
+    .bind(normalized.as_deref().unwrap_or(&metadata))
     .bind(patch)
     .execute(&mut **tx)
     .await?;

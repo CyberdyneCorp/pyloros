@@ -134,7 +134,7 @@ mod tests {
         ));
         assert!(matches!(
             View::Token.authority(&deployed).await.unwrap(),
-            Authority::Token(TokenProvider::Remote(_))
+            Authority::Token(TokenProvider::Remote(..))
         ));
         deployed.update(configuration("runtime")).await;
         deployed

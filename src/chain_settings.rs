@@ -34,6 +34,7 @@ pub struct Update {
 
 #[derive(Default)]
 struct Configuration {
+    token_writes: std::sync::Arc<tokio::sync::Mutex<()>>,
     local_tokens: std::sync::Arc<tokio::sync::Mutex<Vec<u8>>>,
     values: Update,
     signer_address: Option<String>,
@@ -84,6 +85,7 @@ impl ChainSettings {
             state.signer_address = address;
         }
         state.local_tokens = Default::default();
+        state.token_writes = Default::default();
         let current = &mut state.values;
         merge(&mut current.enabled, patch.enabled);
         merge(&mut current.rpc_url, patch.rpc_url);
