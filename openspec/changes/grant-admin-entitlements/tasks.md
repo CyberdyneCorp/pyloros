@@ -1,0 +1,5 @@
+- [x] Implement administrative creation and reactivation with expiry and audit.
+- [x] Verify owner and product validation, retained grant identity, persisted access and error responses against the reference.
+- [x] Verify the original browser and CLI and concurrent writes.
+- [ ] Deliver the post-commit grant event to an active WebAssembly hook.
+- [ ] Resolve and verify the HTTP response when the database rejects a deferred commit.

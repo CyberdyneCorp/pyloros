@@ -3,12 +3,13 @@ use super::*;
 use axum::extract::RawQuery;
 use sqlx::{Row, postgres::PgRow};
 use std::collections::HashMap;
+mod grant;
 mod revoke;
 mod stats;
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
-        .route("/api/v1/admin/entitlements", any(list))
+        .route("/api/v1/admin/entitlements", any(list).post(grant::create))
         .route(
             "/api/v1/admin/entitlements/stats",
             any(stats::read).delete(revoke::stats_path),

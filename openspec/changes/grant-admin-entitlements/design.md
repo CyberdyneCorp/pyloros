@@ -1,0 +1,1 @@
+Resolve one owner and the product before selecting by owner, product and nullable plan. Refresh the matching grant in place to retain its identity and billing reference. Report ambiguous stored matches as a server error. Keep post-commit hook delivery as a separate migration gate.

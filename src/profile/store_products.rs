@@ -213,7 +213,10 @@ fn origin<'a>(state: &Profile, headers: &'a HeaderMap, peer: SocketAddr) -> Sess
     }
 }
 
-async fn grantable(tx: &mut Transaction<'_, Postgres>, product: &str) -> sqlx::Result<bool> {
+pub(super) async fn grantable(
+    tx: &mut Transaction<'_, Postgres>,
+    product: &str,
+) -> sqlx::Result<bool> {
     let client = sqlx::query_scalar("SELECT active AND registration_source IS DISTINCT FROM 'dynamic' FROM oauth_clients WHERE client_id=$1").bind(product).fetch_optional(&mut **tx).await?;
     if let Some(eligible) = client {
         return Ok(eligible);

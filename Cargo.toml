@@ -55,6 +55,8 @@ bip39 = { version = "2.2", features = ["chinese-simplified", "chinese-traditiona
 bip32 = { version = "0.5", default-features = false, features = ["secp256k1", "alloc"] }
 alloy-primitives = { version = "1", default-features = false, features = ["serde"] }
 alloy-sol-types = { version = "1", default-features = false }
+speedate = "0.18"
+strum = "0.28"
 
 [target.'cfg(unix)'.dependencies]
 dns-lookup = "4"
