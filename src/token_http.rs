@@ -1,4 +1,5 @@
 //! OAuth token endpoint for service and authorization-code grants.
+mod device;
 mod refresh;
 mod service;
 use crate::{
@@ -37,15 +38,18 @@ pub async fn routes(
             .map(Arc::new),
         None => None,
     };
+    let proxies = crate::token_runtime::number("TRUSTED_PROXY_COUNT", 0)?.try_into()?;
+    let device = device::routes(provider, pool.clone(), proxies)?;
     let state = Endpoint {
         service: service::Issuer::configured(pool, production)?,
         code: code.clone(),
         oidc: provider.is_some(),
-        proxies: crate::token_runtime::number("TRUSTED_PROXY_COUNT", 0)?.try_into()?,
+        proxies,
     };
     let token = Router::new()
         .route("/api/v1/auth/oauth2/token", post(exchange))
-        .with_state(Arc::new(state));
+        .with_state(Arc::new(state))
+        .merge(device);
     if let Some(runtime) = code {
         return Ok(token
             .merge(

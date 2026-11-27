@@ -107,6 +107,14 @@ impl Provider {
         })
     }
 
+    pub(crate) fn device_authorization_enabled(&self) -> bool {
+        self.metadata.get("device_authorization_endpoint").is_some()
+    }
+
+    pub(crate) fn issuer(&self) -> &str {
+        self.metadata["issuer"].as_str().expect("configured issuer")
+    }
+
     pub(crate) fn signing_identity(&self, key: &RsaPublicKey) -> Result<(&str, &str), ConfigError> {
         let jwk = &self.keys["keys"][0];
         if jwk["n"] != URL_SAFE_NO_PAD.encode(key.n().to_bytes_be())
@@ -115,7 +123,7 @@ impl Provider {
             return Err("private signing key does not match discovery public key".into());
         }
         Ok((
-            self.metadata["issuer"].as_str().expect("configured issuer"),
+            self.issuer(),
             jwk["kid"].as_str().expect("configured key identifier"),
         ))
     }

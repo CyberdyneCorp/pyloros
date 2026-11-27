@@ -134,6 +134,7 @@ pub(crate) struct AuditSubject {
 }
 
 pub(crate) enum AuditActivity<'a> {
+    DeviceStart(&'a str, Option<&'static str>, Value),
     Revoke {
         client: &'a str,
         reason: Option<&'static str>,
@@ -217,6 +218,15 @@ pub(crate) async fn write_activity<'e>(
         _ => None,
     };
     let (class, activity, protocol, client, outcome, reason, details) = match activity {
+        AuditActivity::DeviceStart(client, reason, details) => (
+            "authorization",
+            "device_authorize",
+            None,
+            client,
+            outcome(reason.is_some()),
+            reason,
+            details,
+        ),
         AuditActivity::Revoke {
             client,
             reason,
