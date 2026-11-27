@@ -65,6 +65,16 @@ async fn role_buckets(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
 ) -> Result<Option<Buckets>, sqlx::Error> {
+    let Some(names) = postgres_groups(tx, user).await? else {
+        return Ok(None);
+    };
+    project_groups(tx, user, &names).await.map(Some)
+}
+
+async fn postgres_groups(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+) -> Result<Option<Vec<String>>, sqlx::Error> {
     let mut lookup = tx.begin().await?;
     let names = sqlx::query_scalar::<_, Vec<String>>(
         "SELECT ARRAY(SELECT g.name FROM iam_group_members m JOIN iam_groups g ON g.id=m.group_id
@@ -74,16 +84,23 @@ async fn role_buckets(
     .bind(user)
     .fetch_one(&mut *lookup)
     .await;
-    let names = match names {
+    match names {
         Ok(names) => {
             lookup.commit().await?;
-            names
+            Ok(Some(names))
         }
         Err(_) => {
             lookup.rollback().await?;
-            return Ok(None);
+            Ok(None)
         }
-    };
+    }
+}
+
+async fn project_groups(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    names: &[String],
+) -> Result<Buckets, sqlx::Error> {
     let refs: Vec<_> = names.iter().filter_map(|name| assignment(name)).collect();
     let mut active = BTreeSet::new();
     if refs.iter().any(|(_, org)| org.is_some()) {
@@ -102,7 +119,7 @@ async fn role_buckets(
             roles.entry(org).or_default().insert(token);
         }
     }
-    Ok(Some(roles))
+    Ok(roles)
 }
 
 async fn permissions(
@@ -137,4 +154,54 @@ async fn permissions(
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn provider_groups_are_restricted_to_active_memberships() -> sqlx::Result<()> {
+        let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = pool.begin().await?;
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE organizations(id uuid, is_active boolean);
+            CREATE TEMP TABLE user_organizations(user_id uuid, organization_id uuid);",
+        )
+        .execute(&mut *tx)
+        .await?;
+        let user = Uuid::new_v4();
+        let member = Uuid::new_v4();
+        let disabled = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        sqlx::query("INSERT INTO organizations VALUES ($1,true),($2,false),($3,true)")
+            .bind(member)
+            .bind(disabled)
+            .bind(other)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO user_organizations VALUES ($1,$2),($1,$3),($4,$5)")
+            .bind(user)
+            .bind(member)
+            .bind(disabled)
+            .bind(Uuid::new_v4())
+            .bind(other)
+            .execute(&mut *tx)
+            .await?;
+        let groups = vec![
+            "rp:app:reader".into(),
+            format!("rp:app:owner@{member}"),
+            format!("rp:app:owner@{disabled}"),
+            format!("rp:app:owner@{other}"),
+        ];
+        let roles = assignments(project_groups(&mut tx, user, &groups).await?);
+        assert_eq!(roles.global, ["app:reader"]);
+        assert_eq!(
+            roles.organizations,
+            BTreeMap::from([(member.to_string(), vec!["app:owner".into()])])
+        );
+        assert!(project_groups(&mut tx, user, &[]).await?.is_empty());
+        Ok(())
+    }
 }
