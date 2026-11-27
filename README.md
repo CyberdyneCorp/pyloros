@@ -239,6 +239,13 @@ Administrators can send `{"code":"print(context)"}` to
 executing it. A completed check returns `valid` and `error`. Certain compiler
 failures, including a duplicate parameter, return HTTP 500.
 
+Use `POST /api/v1/admin/hooks` to save a definition. Supply `name`,
+`event_type` and `code`. Use `PUT /api/v1/admin/hooks/{hook_id}` to edit
+individual fields. Omitting a field or sending null on edit preserves its value.
+Changing source clears the selected WebAssembly component when migration 004
+is installed. Select a component built for the new source before dispatch.
+The operator audit record and the definition commit in the same transaction.
+
 Build both release binaries with `just build-release`. Deploy the matching
 `pyloros-hook-worker` alongside the backend, or set
 `PYLOROS_HOOK_WORKER` to its path. The HTTP handler accepts JSON envelopes up to 64 MiB, including

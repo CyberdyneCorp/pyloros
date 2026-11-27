@@ -1,0 +1,1 @@
+Use one field validator for create and edit, including requests with an invalid path identifier. Check syntax in the isolated worker. Use a single PostgreSQL transaction for definition changes and the administrator audit record. Existing bindings follow the source-change migration. Audit records include changed field names and exclude source text.

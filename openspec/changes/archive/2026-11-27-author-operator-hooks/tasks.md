@@ -1,0 +1,3 @@
+- [x] Validate authoring fields and combine path and body issues.
+- [x] Implement audited creation and editing through the v1 routes.
+- [x] Verify stored state, rollback, unchanged clients and mixed-writer behavior.

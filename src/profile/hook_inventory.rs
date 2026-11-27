@@ -1,5 +1,7 @@
 //! Read stored hook definitions and execution history for the administrator console.
 use super::*;
+mod author;
+mod input;
 mod removal;
 use axum::extract::{Path, RawQuery};
 use sqlx::{Row, postgres::PgRow};
@@ -7,14 +9,14 @@ use std::collections::HashMap;
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
-        .route("/api/v1/admin/hooks", any(list))
+        .route("/api/v1/admin/hooks", any(list).post(author::create))
         .route(
             "/api/v1/admin/hooks/validate",
-            any(wasm_hooks::validate_source),
+            any(wasm_hooks::validate_source).put(author::update_reserved),
         )
         .route(
             "/api/v1/admin/hooks/{hook_id}",
-            any(detail).delete(removal::remove),
+            any(detail).put(author::update).delete(removal::remove),
         )
         .route("/api/v1/admin/hooks/{hook_id}/executions", any(history))
 }
