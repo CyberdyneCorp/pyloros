@@ -50,13 +50,15 @@ pub(crate) fn effective_admin(
     require_verified: bool,
     allowed: &[String],
 ) -> bool {
-    stored
-        || ((!require_verified || verified)
-            && email.is_some_and(|value| {
-                let email = value.to_lowercase();
-                !email.is_empty()
-                    && allowed
-                        .iter()
-                        .any(|entry| entry.trim().to_lowercase() == email)
-            }))
+    stored || ((!require_verified || verified) && bootstrap_admin(email, allowed))
+}
+
+pub(crate) fn bootstrap_admin(email: Option<&str>, allowed: &[String]) -> bool {
+    email.is_some_and(|value| {
+        let email = value.to_lowercase();
+        !email.is_empty()
+            && allowed
+                .iter()
+                .any(|entry| entry.trim().to_lowercase() == email)
+    })
 }

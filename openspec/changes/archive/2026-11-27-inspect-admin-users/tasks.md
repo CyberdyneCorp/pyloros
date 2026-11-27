@@ -1,0 +1,3 @@
+- [x] Implement collection and detail reads.
+- [x] Compare filters, response fields, authorization and errors against the reference.
+- [x] Exercise the existing CLI and browser directory.

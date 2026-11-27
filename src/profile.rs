@@ -2,6 +2,7 @@
 mod admin_clients;
 mod admin_fields;
 mod admin_sessions;
+mod admin_users;
 mod administrator;
 mod auth_policy;
 mod edit;
@@ -360,6 +361,8 @@ fn build_routes(
             "/api/v1/admin/settings/auth-policy",
             any(auth_policy::get).put(auth_policy::update),
         )
+        .route("/api/v1/admin/users", any(admin_users::list))
+        .route("/api/v1/admin/users/{user_id}", any(admin_users::detail))
         .route("/api/v1/admin/sessions", any(admin_sessions::list))
         .route(
             "/api/v1/admin/sessions/{session_id}",

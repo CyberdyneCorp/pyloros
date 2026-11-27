@@ -32,11 +32,15 @@ pub(crate) fn integer(raw: &str) -> Result<String, (&'static str, &'static str)>
 }
 
 pub(crate) fn active_only(value: Option<&str>) -> Result<bool, serde_json::Value> {
-    match value.map(str::to_ascii_lowercase).as_deref() {
-        None | Some("0" | "false" | "no" | "off" | "n" | "f") => Ok(false),
-        Some("1" | "true" | "yes" | "on" | "y" | "t") => Ok(true),
+    boolean("active_only", value.unwrap_or("false"))
+}
+
+pub(crate) fn boolean(name: &str, value: &str) -> Result<bool, serde_json::Value> {
+    match value.to_ascii_lowercase().as_str() {
+        "0" | "false" | "no" | "off" | "n" | "f" => Ok(false),
+        "1" | "true" | "yes" | "on" | "y" | "t" => Ok(true),
         _ => Err(
-            serde_json::json!({"type":"bool_parsing","loc":["query","active_only"],"msg":"Input should be a valid boolean, unable to interpret input","input":value}),
+            serde_json::json!({"type":"bool_parsing","loc":["query",name],"msg":"Input should be a valid boolean, unable to interpret input","input":value}),
         ),
     }
 }
