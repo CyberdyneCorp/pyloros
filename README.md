@@ -110,6 +110,8 @@ For password-bound TOTP challenges, the shared frontend can submit the authentic
 
 Services authenticate at `POST /api/v1/auth/oauth2/token` with `grant_type=client_credentials` using HTTP Basic or form credentials. The grant uses the client's configured token lifetime, scope and audience policy, and supports secret rotation. It remains available when OIDC browser sign-in is disabled.
 
+A resource server can authenticate with a service bearer and post a token to `/api/v1/auth/introspect`. Introspection checks the submitted token’s current revocation state and resolves user membership, entitlements, roles and permissions from PostgreSQL. A service can also read its live registration at `GET /api/v1/clients/me`.
+
 OAuth clients can submit a token to `POST /api/v1/auth/oauth2/revoke` using HTTP Basic or form credentials. Revoking a client-owned access or service token records its identifier. Revoking a client-owned refresh token ends its session and refresh family. Both backends enforce the shared PostgreSQL records when access-token revocation enforcement is enabled.
 
 Browser sessions rotate at `POST /api/v1/auth/refresh` using a refresh cookie or JSON token. Rotation preserves the login’s authentication time and methods and reloads account claims. Set `REFRESH_REUSE_GRACE_SECONDS` (default 10, range 0–60) to tolerate another tab presenting a recently rotated token. Reuse outside that interval revokes the session and its remaining refresh tokens.

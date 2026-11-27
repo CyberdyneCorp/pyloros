@@ -5,6 +5,8 @@ pub(crate) use config::identity as signing_identity;
 mod end_session;
 mod federated;
 mod input;
+mod introspect;
+mod service_identity;
 pub(crate) use input::email_field;
 mod logout;
 mod mfa;
@@ -60,6 +62,7 @@ pub(crate) struct Login {
     proxies: usize,
     cli_quota: LoginThrottle,
     revoke_quota: LoginThrottle,
+    enforce_revocation: bool,
     throttle: LoginThrottle,
     poll_quota: LoginThrottle,
     mfa_quota: LoginThrottle,
@@ -91,6 +94,8 @@ fn with_state(login: Option<Arc<Login>>) -> Result<Router, Box<dyn Error>> {
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/logout", end_session)
         .route("/api/v1/auth/oauth2/revoke", any(revoke::handle))
+        .route("/api/v1/auth/introspect", any(introspect::handle))
+        .route("/api/v1/clients/me", any(service_identity::handle))
         .route("/api/v1/auth/passkeys/login/verify", any(passkey::handle))
         .route(
             "/api/v1/auth/cli/exchange",
@@ -108,6 +113,14 @@ pub(crate) fn problem(status: StatusCode, title: &str) -> Response {
     (
         status,
         Json(json!({"type":"about:blank","title":title,"status":status.as_u16(),"detail":title})),
+    )
+        .into_response()
+}
+
+fn internal_error() -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({"type":"about:blank","title":"Internal Server Error","status":500})),
     )
         .into_response()
 }

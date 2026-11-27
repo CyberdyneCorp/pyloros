@@ -1,4 +1,5 @@
 - [x] Capture reference caller authentication, field validation, active and inactive responses and deployment switches.
-- [ ] Implement service caller authentication and live service-token introspection.
-- [ ] Implement user-token introspection and compare current membership, authorization, entitlement and session state with the reference.
-- [ ] Verify both backend directions, revocation enforcement and supported IAM configurations against the compatibility ledger.
+- [x] Implement service caller authentication and live service-token introspection.
+- [x] Implement user-token introspection and compare current membership, authorization, entitlement and session state with the reference.
+- [x] Compare PostgreSQL IAM and both backend directions with RS256 and HS256, client revocation enforcement on and off, live role changes, scoped permissions, membership removal and entitlement removal.
+- [ ] Compare chain-backed IAM responses after the chain reader is implemented.

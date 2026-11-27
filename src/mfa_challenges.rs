@@ -137,6 +137,7 @@ impl ChallengeVerifier {
     fn new(issuer: &str, alg: Algorithm, key: DecodingKey) -> Self {
         let mut validation = Validation::new(alg);
         validation.set_issuer(&[issuer]);
+        validation.set_required_spec_claims(&["iss", "exp"]);
         validation.leeway = 0;
         validation.validate_nbf = true;
         validation.validate_aud = false;

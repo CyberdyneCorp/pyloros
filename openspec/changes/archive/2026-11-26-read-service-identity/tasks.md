@@ -1,0 +1,2 @@
+- [x] Implement client identity lookup and share bearer authentication with introspection.
+- [x] Compare the endpoint on both implementations with live registration edits, both issuers, and revocation enforcement on and off.

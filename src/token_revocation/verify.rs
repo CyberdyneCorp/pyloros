@@ -18,7 +18,7 @@ impl ChallengeVerifier {
             }
             Err(_) => return Err(TokenError::Invalid),
         };
-        classify(&claims)
+        VerifiedToken::from_verified_claims(&claims)
     }
 }
 
@@ -29,65 +29,67 @@ fn uuid(claims: &Value, name: &str) -> Result<Uuid, TokenError> {
         .ok_or(TokenError::Invalid)
 }
 
-fn classify(claims: &Value) -> Result<VerifiedToken, TokenError> {
-    let kind = claims["type"].as_str();
-    let client = claims["client_id"].as_str();
-    match kind {
-        None if claims["type"].is_null()
-            && claims["aud"].as_str().is_some_and(|s| !s.is_empty()) =>
-        {
-            uuid(claims, "sub")?;
-            Err(TokenError::Unsupported)
-        }
-        Some("mfa") => {
-            uuid(claims, "sub")?;
-            Err(TokenError::Unsupported)
-        }
-        Some("consent") => {
-            uuid(claims, "sub")?;
-            if ["client_id", "resource", "scope", "authz"]
-                .iter()
-                .all(|field| claims.get(field).is_some())
+impl VerifiedToken {
+    pub(crate) fn from_verified_claims(claims: &Value) -> Result<Self, TokenError> {
+        let kind = claims["type"].as_str();
+        let client = claims["client_id"].as_str();
+        match kind {
+            None if claims["type"].is_null()
+                && claims["aud"].as_str().is_some_and(|s| !s.is_empty()) =>
             {
+                uuid(claims, "sub")?;
                 Err(TokenError::Unsupported)
-            } else {
-                Err(TokenError::Invalid)
             }
-        }
-        Some("refresh") => Ok(VerifiedToken::Refresh {
-            id: uuid(claims, "jti")?,
-            session: uuid(claims, "sid")?,
-            user: uuid(claims, "sub")?,
-        }),
-        Some("access" | "service") => {
-            let id = uuid(claims, "jti")?;
-            let expires = claims["exp"]
-                .as_i64()
-                .and_then(|t| DateTime::from_timestamp(t, 0))
-                .ok_or(TokenError::Invalid)?;
-            if kind == Some("access") {
-                if !claims["sid"].is_null() {
-                    uuid(claims, "sid")?;
+            Some("mfa") => {
+                uuid(claims, "sub")?;
+                Err(TokenError::Unsupported)
+            }
+            Some("consent") => {
+                uuid(claims, "sub")?;
+                if ["client_id", "resource", "scope", "authz"]
+                    .iter()
+                    .all(|field| claims.get(field).is_some())
+                {
+                    Err(TokenError::Unsupported)
+                } else {
+                    Err(TokenError::Invalid)
                 }
-                Ok(VerifiedToken::Access {
-                    id,
-                    expires,
-                    user: uuid(claims, "sub")?,
-                    client: client.map(str::to_owned),
-                })
-            } else {
-                let client = client
-                    .filter(|s| !s.is_empty())
-                    .ok_or(TokenError::Invalid)?;
-                claims["iat"].as_i64().ok_or(TokenError::Invalid)?;
-                Ok(VerifiedToken::Service {
-                    id,
-                    expires,
-                    client: client.to_owned(),
-                })
             }
+            Some("refresh") => Ok(VerifiedToken::Refresh {
+                id: uuid(claims, "jti")?,
+                session: uuid(claims, "sid")?,
+                user: uuid(claims, "sub")?,
+            }),
+            Some("access" | "service") => {
+                let id = uuid(claims, "jti")?;
+                let expires = claims["exp"]
+                    .as_i64()
+                    .and_then(|t| DateTime::from_timestamp(t, 0))
+                    .ok_or(TokenError::Invalid)?;
+                if kind == Some("access") {
+                    if !claims["sid"].is_null() {
+                        uuid(claims, "sid")?;
+                    }
+                    Ok(VerifiedToken::Access {
+                        id,
+                        expires,
+                        user: uuid(claims, "sub")?,
+                        client: client.map(str::to_owned),
+                    })
+                } else {
+                    let client = client
+                        .filter(|s| !s.is_empty())
+                        .ok_or(TokenError::Invalid)?;
+                    claims["iat"].as_i64().ok_or(TokenError::Invalid)?;
+                    Ok(VerifiedToken::Service {
+                        id,
+                        expires,
+                        client: client.to_owned(),
+                    })
+                }
+            }
+            _ => Err(TokenError::Invalid),
         }
-        _ => Err(TokenError::Invalid),
     }
 }
 
@@ -135,6 +137,9 @@ mod tests {
         }
         assert!(matches!(read(&claims), Err(TokenError::Unsupported)));
         claims["type"] = json!("access");
+        let mut missing_issuer = claims.clone();
+        missing_issuer.as_object_mut().unwrap().remove("iss");
+        assert!(matches!(read(&missing_issuer), Err(TokenError::Invalid)));
         let other = SigningIdentity::hmac("issuer".into(), b"another-key").unwrap();
         assert!(matches!(
             verifier.token_for_revocation(&other.sign(&claims).unwrap()),

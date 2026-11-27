@@ -1,0 +1,1 @@
+Share the caller-authentication logic with introspection. Read the name and allowed audiences from the live registration. Read the granted scopes and expiration from the verified credential. Preserve the distinction between unrestricted audiences and an empty audience list.
