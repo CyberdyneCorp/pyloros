@@ -17,32 +17,7 @@ pub(super) struct Metadata {
     pub trusted: bool,
 }
 
-struct Fields<'a> {
-    body: &'a Map<String, Value>,
-    issues: Vec<Value>,
-}
 impl Fields<'_> {
-    fn string(&mut self, key: &str, limit: Option<usize>, required: bool) -> Option<String> {
-        let Some(v) = self.body.get(key) else {
-            if required {
-                self.issues.push(json!({"type":"missing","loc":["body",key],"msg":"Field required","input":self.body}));
-            }
-            return None;
-        };
-        if v.is_null() && !required {
-            return None;
-        }
-        let Some(s) = v.as_str() else {
-            self.issues.push(json!({"type":"string_type","loc":["body",key],"msg":"Input should be a valid string","input":v}));
-            return None;
-        };
-        if required && s.is_empty() {
-            self.issues.push(json!({"type":"string_too_short","loc":["body",key],"msg":"String should have at least 1 character","input":v,"ctx":{"min_length":"1"}}));
-        } else if let Some(max) = limit.filter(|n| s.chars().count() > *n) {
-            self.issues.push(json!({"type":"string_too_long","loc":["body",key],"msg":format!("String should have at most {max} characters"),"input":v,"ctx":{"max_length":max.to_string()}}));
-        }
-        Some(s.to_owned())
-    }
     fn list(&mut self, key: &str, nullable: bool) -> Option<BTreeSet<String>> {
         let v = self.body.get(key)?;
         if nullable && v.is_null() {
@@ -101,38 +76,6 @@ impl Fields<'_> {
         self.issues.push(json!({"type":"literal_error","loc":["body","client_type"],"msg":"Input should be 'confidential' or 'public'","input":value,"ctx":{"expected":"'confidential' or 'public'"}}));
         String::new()
     }
-    fn boolean(&mut self, key: &str) -> bool {
-        let Some(v) = self.body.get(key) else {
-            return false;
-        };
-        if let Some(b) = v.as_bool() {
-            return b;
-        }
-        let mut kind = "bool_type";
-        let mut msg = "Input should be a valid boolean";
-        if let Some(n) = v.as_f64() {
-            if n == 0.0 || n == 1.0 {
-                return n == 1.0;
-            }
-            if n.fract() == 0.0 {
-                kind = "bool_parsing";
-                msg = "Input should be a valid boolean, unable to interpret input";
-            }
-        }
-        if let Some(s) = v.as_str() {
-            match s.to_ascii_lowercase().as_str() {
-                "1" | "true" | "on" | "yes" | "y" | "t" => return true,
-                "0" | "false" | "off" | "no" | "n" | "f" => return false,
-                _ => {
-                    kind = "bool_parsing";
-                    msg = "Input should be a valid boolean, unable to interpret input";
-                }
-            }
-        }
-        self.issues
-            .push(json!({"type":kind,"loc":["body",key],"msg":msg,"input":v}));
-        false
-    }
 }
 
 pub(super) fn patch_fields(body: &Value) -> Result<Map<String, Value>, Vec<Value>> {
@@ -179,19 +122,6 @@ pub(super) fn patch_fields(body: &Value) -> Result<Map<String, Value>, Vec<Value
     }
 }
 
-fn object(body: &Value) -> Result<&Map<String, Value>, Vec<Value>> {
-    if body.is_null() {
-        return Err(vec![
-            json!({"type":"missing","loc":["body"],"msg":"Field required","input":null}),
-        ]);
-    }
-    let Some(map) = body.as_object() else {
-        return Err(vec![
-            json!({"type":"model_attributes_type","loc":["body"],"msg":"Input should be a valid dictionary or object to extract fields from","input":body}),
-        ]);
-    };
-    Ok(map)
-}
 impl Metadata {
     pub fn parse(body: Value) -> Result<Self, Vec<Value>> {
         let map = object(&body)?;

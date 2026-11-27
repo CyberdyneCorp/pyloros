@@ -33,3 +33,15 @@ The issuer SHALL support authenticated administrative reads, creation, partial u
 
 - **WHEN** the operator audit insert fails
 - **THEN** the scope row and the catalog served by discovery retain their previous state.
+
+#### Scenario: Submit duplicate scope registrations
+
+- **WHEN** a scope already exists before validation
+- **THEN** return HTTP 409 and preserve its registration.
+- **WHEN** two requests pass the existence check before either inserts the same name
+- **THEN** one returns HTTP 201 and the other returns HTTP 500, and exactly one registration and creation audit entry commit.
+
+#### Scenario: Partially update a managed scope
+
+- **WHEN** an operator provides a subset of the editable fields
+- **THEN** preserve values for omitted or null fields and record the supplied editable fields, including explicit nulls, in the audit entry.

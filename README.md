@@ -81,6 +81,8 @@ Administrators can inspect OAuth applications with `GET /api/v1/admin/oauth/clie
 
 Administrators can list OAuth scopes with `GET /api/v1/admin/oauth/scopes` and inspect one with `GET /api/v1/admin/oauth/scopes/{name}`. The list sorts by scope name and includes inactive entries unless `active_only=true`. Both endpoints read managed entries directly from PostgreSQL. To match a migrating deployment’s built-in catalog, supply its additional names in `PYLOROS_RESOURCE_SCOPE_CATALOG` and its descriptions in the shared consent bundle.
 
+Use `POST /api/v1/admin/oauth/scopes` with a name and description to register a scope. Use `PATCH /api/v1/admin/oauth/scopes/{name}` to edit its description or active flag. Omitted and null fields preserve their stored values. A successful write commits the operator audit entry before publishing the catalog to discovery and client registration.
+
 Use `DELETE /api/v1/admin/oauth/scopes/{name}` to deactivate a managed scope. Existing client grants retain it. Once the change and its audit entry commit, the writer stops advertising the scope and accepting it for new clients. Other replicas update on their configured refresh interval. Built-in scopes are read-only.
 
 Operators can create confidential or public applications with `POST /api/v1/admin/oauth/clients`. A successful registration returns the client identifier and a secret once, and commits the registration and operator audit entry together. The administrative API uses the issuer’s standard scopes, the deployment’s `PYLOROS_RESOURCE_SCOPE_CATALOG` and active PostgreSQL scope entries. Configure the complete application scope catalog during migration. Service client registration also works with OIDC disabled.

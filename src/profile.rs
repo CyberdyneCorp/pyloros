@@ -1,5 +1,6 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
 mod admin_clients;
+mod admin_fields;
 mod administrator;
 mod edit;
 mod email_verification;
@@ -331,10 +332,15 @@ fn build_routes(
         production,
     };
     Ok(Router::new()
-        .route("/api/v1/admin/oauth/scopes", any(registries::list_scopes))
+        .route(
+            "/api/v1/admin/oauth/scopes",
+            axum::routing::post(registries::create).fallback(registries::list_scopes),
+        )
         .route(
             "/api/v1/admin/oauth/scopes/{name}",
-            axum::routing::delete(registries::deactivate).fallback(registries::get_scope),
+            axum::routing::delete(registries::deactivate)
+                .patch(registries::update)
+                .fallback(registries::get_scope),
         )
         .route(
             "/api/v1/admin/oauth/clients/{client_id}/rotate-secret",

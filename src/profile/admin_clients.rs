@@ -3,7 +3,7 @@ pub(super) mod creation;
 mod metadata;
 mod page;
 mod update;
-use crate::request_json;
+use super::admin_fields::{Fields, body, object};
 pub(super) use update::update;
 mod rotation;
 use super::*;
@@ -23,28 +23,6 @@ const COLUMNS: &str = "id,client_id,name,description,allowed_scopes,allowed_audi
     access_token_audience,trusted,registration_source,active,created_by_user_id,
     created_at,updated_at,last_used_at";
 
-fn body(headers: &HeaderMap, bytes: &[u8]) -> Result<Option<Value>, Box<Response>> {
-    if !bytes.is_empty() && !request_json::is_json(headers) {
-        return Ok(None);
-    }
-    let text = request_json::encoding::text(bytes).map_err(|_| {
-        Box::new(problem(
-            StatusCode::BAD_REQUEST,
-            "There was an error parsing the body",
-        ))
-    })?;
-    request_json::parse_body(headers, text.as_bytes())
-        .map(Some)
-        .map_err(|issue| {
-            Box::new(
-                (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    Json(json!({"detail":[issue]})),
-                )
-                    .into_response(),
-            )
-        })
-}
 pub(super) async fn create(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
