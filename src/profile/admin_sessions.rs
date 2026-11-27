@@ -58,7 +58,7 @@ pub(super) async fn list(
     if method != Method::GET {
         return crate::browser_http::method_not_allowed().await;
     }
-    let (mut tx, _, _) = match operator(&state, &headers).await {
+    let (mut tx, _, _) = match administrator::operator(&state, &headers).await {
         Ok(context) => context,
         Err(r) => return *r,
     };
@@ -123,16 +123,6 @@ fn document(row: PgRow) -> Result<Value, sqlx::Error> {
     }))
 }
 
-async fn operator(
-    state: &Profile,
-    headers: &HeaderMap,
-) -> Result<(Transaction<'static, Postgres>, Uuid, Option<String>), Box<Response>> {
-    let identity =
-        administrator::identity(state, headers).ok_or_else(|| Box::new(unauthorized()))?;
-    let (tx, email) = administrator::session(state, &identity).await?;
-    Ok((tx, identity.user, email))
-}
-
 pub(super) async fn revoke(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -147,7 +137,7 @@ pub(super) async fn revoke(
             .insert(header::ALLOW, "DELETE".parse().unwrap());
         return response;
     }
-    let (tx, admin, email) = match operator(&state, &headers).await {
+    let (tx, admin, email) = match administrator::operator(&state, &headers).await {
         Ok(context) => context,
         Err(r) => return *r,
     };

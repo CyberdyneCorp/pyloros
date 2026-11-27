@@ -48,3 +48,12 @@ pub(super) async fn session(
     }
     Ok((tx, email))
 }
+
+pub(super) async fn operator(
+    state: &Profile,
+    headers: &HeaderMap,
+) -> Result<(Transaction<'static, Postgres>, Uuid, Option<String>), Box<Response>> {
+    let identity = identity(state, headers).ok_or_else(|| Box::new(unauthorized()))?;
+    let (tx, email) = session(state, &identity).await?;
+    Ok((tx, identity.user, email))
+}

@@ -1,0 +1,3 @@
+- [x] Implement and compare administrative reads, validation and audited updates.
+- [x] Verify delivery gates, rollback and cross-backend password sign-in.
+- [x] Exercise the existing console and CLI.

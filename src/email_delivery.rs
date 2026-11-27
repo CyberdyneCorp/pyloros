@@ -78,6 +78,20 @@ impl ConfirmationMailer {
         Ok(Self { provider })
     }
 
+    pub(crate) fn supports_confirmation_policy(&self) -> bool {
+        match &self.provider {
+            Provider::Smtp { base, .. } => base.is_some(),
+            Provider::Mock(_) => {
+                let dev = env::var("APP_ENV").map_or(true, |value| value == "dev");
+                dev && (setting("ACCOUNT_LINKS_BASE_URL").is_some()
+                    || setting("OIDC_LOGIN_URL")
+                        .or_else(|| setting("OAUTH_POST_LOGIN_URL"))
+                        .and_then(|value| Url::parse(&value).ok())
+                        .is_some_and(|url| url.has_host()))
+            }
+        }
+    }
+
     pub async fn send(&self, email: ConfirmationEmail) -> Result<(), MailError> {
         match &self.provider {
             Provider::Mock(outbox) => {
