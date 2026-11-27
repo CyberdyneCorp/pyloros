@@ -1,0 +1,3 @@
+- [ ] Implement PostgreSQL boundary management and atomic auditing.
+- [ ] Verify access decisions, user detail, existing clients and concurrent edits.
+- [ ] Verify chain-backed identity resolution, failure handling and confirmed changes.
