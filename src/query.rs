@@ -40,3 +40,31 @@ pub(crate) fn active_only(value: Option<&str>) -> Result<bool, serde_json::Value
         ),
     }
 }
+
+fn uuid_reason(path: &str, error: uuid::Error) -> String {
+    if path.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return format!(
+            "invalid length: expected length 32 for simple format, found {}",
+            path.len()
+        );
+    }
+    let message = error.to_string();
+    if message.starts_with("invalid character:")
+        && let Some((prefix, offset)) = message.rsplit_once(" at ")
+        && let Ok(index) = offset.parse::<usize>()
+    {
+        return format!("{prefix} at {}", index + 1);
+    }
+    message
+}
+
+pub(crate) fn path_uuid(path: &str, field: &str) -> Result<uuid::Uuid, serde_json::Value> {
+    uuid::Uuid::parse_str(path).map_err(|error| {
+        let reason = uuid_reason(path, error);
+        serde_json::json!({
+            "type":"uuid_parsing", "loc":["path",field],
+            "msg":format!("Input should be a valid UUID, {reason}"),
+            "input":path, "ctx":{"error":reason}
+        })
+    })
+}

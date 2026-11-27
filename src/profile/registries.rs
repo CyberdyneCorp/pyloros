@@ -1,4 +1,4 @@
-//! Administrative OAuth scope registry.
+//! Administrative OAuth policy registries.
 use super::*;
 use crate::login_http::problem;
 use axum::extract::{Path, RawQuery};
@@ -67,6 +67,7 @@ pub(super) async fn catalog(
 }
 
 mod mutation;
+mod resources;
 pub(super) use mutation::{create, deactivate, update};
 
 pub(super) async fn list_scopes(
@@ -75,11 +76,11 @@ pub(super) async fn list_scopes(
     headers: HeaderMap,
     RawQuery(query): RawQuery,
 ) -> Response {
-    scope_read(
+    read(
         &state,
         method,
         &headers,
-        ScopeRead::List(query.as_deref().unwrap_or("")),
+        Inventory::Scopes(query.as_deref().unwrap_or("")),
     )
     .await
 }
@@ -89,18 +90,30 @@ pub(super) async fn get_scope(
     headers: HeaderMap,
     Path(name): Path<String>,
 ) -> Response {
-    scope_read(&state, method, &headers, ScopeRead::One(&name)).await
+    read(&state, method, &headers, Inventory::Scope(&name)).await
 }
-enum ScopeRead<'a> {
-    List(&'a str),
-    One(&'a str),
-}
-async fn scope_read(
-    state: &Profile,
+pub(super) async fn list_resources(
+    State(state): State<Arc<Profile>>,
     method: Method,
-    headers: &HeaderMap,
-    op: ScopeRead<'_>,
+    headers: HeaderMap,
 ) -> Response {
+    read(&state, method, &headers, Inventory::Resources).await
+}
+pub(super) async fn get_resource(
+    State(state): State<Arc<Profile>>,
+    method: Method,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    read(&state, method, &headers, Inventory::Resource(&id)).await
+}
+enum Inventory<'a> {
+    Scopes(&'a str),
+    Scope(&'a str),
+    Resources,
+    Resource(&'a str),
+}
+async fn read(state: &Profile, method: Method, headers: &HeaderMap, op: Inventory<'_>) -> Response {
     if method != Method::GET {
         let mut r = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
         r.headers_mut()
@@ -115,8 +128,10 @@ async fn scope_read(
         Err(r) => return *r,
     };
     match op {
-        ScopeRead::One(name) => get(&mut tx, &state.builtin_scopes, name).await,
-        ScopeRead::List(query) => list(&mut tx, &state.builtin_scopes, query).await,
+        Inventory::Resources => resources::list(&mut tx, &state.configured_resources).await,
+        Inventory::Resource(id) => resources::get(&mut tx, id).await,
+        Inventory::Scope(name) => get(&mut tx, &state.builtin_scopes, name).await,
+        Inventory::Scopes(query) => list(&mut tx, &state.builtin_scopes, query).await,
     }
     .unwrap_or_else(|_| internal())
 }

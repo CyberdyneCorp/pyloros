@@ -42,23 +42,6 @@ fn input(path: &str, body: Value) -> Result<(Uuid, String), Vec<Value>> {
     }
 }
 
-fn uuid_reason(path: &str, error: uuid::Error) -> String {
-    if path.bytes().all(|c| c.is_ascii_hexdigit()) {
-        return format!(
-            "invalid length: expected length 32 for simple format, found {}",
-            path.len()
-        );
-    }
-    let message = error.to_string();
-    if message.starts_with("invalid character:")
-        && let Some((prefix, offset)) = message.rsplit_once(" at ")
-        && let Ok(index) = offset.parse::<usize>()
-    {
-        return format!("{prefix} at {}", index + 1);
-    }
-    message
-}
-
 pub(super) async fn save(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
@@ -81,14 +64,7 @@ pub(super) async fn save(
 }
 
 pub(super) fn key_id(path: &str) -> Result<Uuid, Value> {
-    Uuid::parse_str(path).map_err(|error| {
-        let reason = uuid_reason(path, error);
-        json!({
-            "type":"uuid_parsing", "loc":["path","passkey_id"],
-            "msg":format!("Input should be a valid UUID, {reason}"),
-            "input":path, "ctx":{"error":reason}
-        })
-    })
+    crate::query::path_uuid(path, "passkey_id")
 }
 
 #[cfg(test)]

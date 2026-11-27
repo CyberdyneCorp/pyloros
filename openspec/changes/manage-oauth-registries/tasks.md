@@ -2,6 +2,8 @@
 - [x] Implement administrative scope list and detail reads, including inactive entries and built-in descriptions.
 - [x] Implement audited scope deactivation, built-in protection and local post-commit publication.
 - [x] Implement audited scope creation and partial updates.
-- [ ] Implement protected-resource reads and audited mutations with scope validation.
+- [x] Implement administrative protected-resource list and detail reads.
+- [ ] Implement audited protected-resource mutations with scope validation.
 - [ ] Implement web-origin reads and audited mutations with redirect and origin validation.
 - [ ] Verify immediate post-commit policy on the writer, cross-replica refresh, rollback, concurrency and existing consumers.
+- [ ] Publish previously committed protected-resource changes to dynamic client registration on a local scope write, including when polling is disabled.

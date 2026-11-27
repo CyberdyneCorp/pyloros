@@ -256,6 +256,7 @@ mod tests {
             .unwrap();
         let state = Profile {
             builtin_scopes: Default::default(),
+            configured_resources: Default::default(),
             patch_resources: Default::default(),
             client_scopes: Default::default(),
             admin_enabled: true,

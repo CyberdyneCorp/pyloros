@@ -26,7 +26,7 @@ pub(in crate::profile) async fn update(
 
 pub(super) async fn init_resources(state: &Profile) -> Result<(), Box<dyn Error>> {
     let seconds = crate::token_runtime::number("OAUTH_REGISTRY_REFRESH_SECONDS", 30)?.try_into()?;
-    let base = ResourceRegistry::from_env()?;
+    let base = state.configured_resources.clone();
     state
         .patch_resources
         .get_or_init(|| resource_registry(state.pool.clone(), base, seconds))

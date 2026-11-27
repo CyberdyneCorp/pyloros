@@ -45,3 +45,23 @@ The issuer SHALL support authenticated administrative reads, creation, partial u
 
 - **WHEN** an operator provides a subset of the editable fields
 - **THEN** preserve values for omitted or null fields and record the supplied editable fields, including explicit nulls, in the audit entry.
+
+#### Scenario: Inspect deployment and managed protected resources
+
+- **WHEN** the deployment configuration and a managed row define the same resource URI
+- **THEN** the administrative list includes both sources, with the configured entry first, and the managed entry remains addressable by UUID even when inactive.
+
+#### Scenario: Publish a protected-resource change on the writing replica
+
+- **WHEN** the resource audience changes
+- **THEN** newly issued access tokens for that resource carry the updated audience.
+- **WHEN** deactivation commits with polling disabled
+- **THEN** dynamic registration applies the updated scope ceiling immediately and refresh of a grant bound to that resource returns `invalid_grant`.
+- **WHEN** the operator audit insert fails
+- **THEN** the resource and its effective token and registration policies retain their prior state.
+
+#### Scenario: Publish previously committed registry changes
+
+- **GIVEN** another writer has registered a protected resource since this replica last refreshed its policy
+- **WHEN** a local administrative scope mutation commits with polling disabled
+- **THEN** dynamic client registration on this replica uses the current protected-resource scope ceiling before the next request.
