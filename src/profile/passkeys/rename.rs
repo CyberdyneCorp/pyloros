@@ -1,20 +1,12 @@
 use super::*;
 use crate::request_json::{parse_body, token_field};
-use axum::extract::Path;
 
-pub(in crate::profile) async fn handle(
-    State(state): State<Arc<Profile>>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    Path(path): Path<String>,
+pub(super) async fn handle(
+    state: &Profile,
+    peer: SocketAddr,
+    path: String,
     req: Request,
 ) -> Response {
-    if req.method() != Method::PATCH {
-        let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
-        response
-            .headers_mut()
-            .insert(header::ALLOW, header::HeaderValue::from_static("PATCH"));
-        return response;
-    }
     let (parts, body) = req.into_parts();
     let Ok(bytes) = axum::body::to_bytes(body, 2 * 1024 * 1024).await else {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
@@ -24,7 +16,7 @@ pub(in crate::profile) async fn handle(
         Err(issue) => return validation(vec![issue]),
     };
     run(
-        &state,
+        state,
         &parts.headers,
         peer.ip(),
         Operation::Rename(input(&path, body)),
@@ -33,14 +25,7 @@ pub(in crate::profile) async fn handle(
 }
 
 fn input(path: &str, body: Value) -> Result<(Uuid, String), Vec<Value>> {
-    let id = Uuid::parse_str(path).map_err(|error| {
-        let reason = uuid_reason(path, error);
-        json!({
-            "type":"uuid_parsing", "loc":["path","passkey_id"],
-            "msg":format!("Input should be a valid UUID, {reason}"),
-            "input":path, "ctx":{"error":reason}
-        })
-    });
+    let id = key_id(path);
     let name = token_field(body, "name", 1, 64).and_then(|raw| {
         let trimmed = raw.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c));
         if trimmed.is_empty() {
@@ -93,6 +78,17 @@ pub(super) async fn save(
     .await?
     .map(record)
     .transpose()
+}
+
+pub(super) fn key_id(path: &str) -> Result<Uuid, Value> {
+    Uuid::parse_str(path).map_err(|error| {
+        let reason = uuid_reason(path, error);
+        json!({
+            "type":"uuid_parsing", "loc":["path","passkey_id"],
+            "msg":format!("Input should be a valid UUID, {reason}"),
+            "input":path, "ctx":{"error":reason}
+        })
+    })
 }
 
 #[cfg(test)]

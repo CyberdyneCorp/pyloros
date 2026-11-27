@@ -59,6 +59,9 @@ Set `JWT_ALGORITHM=RS256` and supply `JWT_PRIVATE_KEY_PATH` or an inline `JWT_PR
 
 With passkeys enabled, `GET /api/v1/auth/passkeys` lists the current account’s active credentials for `PASSKEYS_RP_ID` in creation order. A live first-party session is required. The response contains display metadata and uses `Cache-Control: no-store`. Set `PASSKEYS_RATE_LIMIT_PER_MIN` to a value from 1 to 100 (default 10) to limit requests per operation and source IP on each process. `PATCH /api/v1/auth/passkeys/{passkey_id}` accepts a JSON `name` of one to 64 characters, trims surrounding whitespace and returns the updated metadata. Cookie-authenticated writes require the CSRF header.
 
+`DELETE /api/v1/auth/passkeys/{passkey_id}` requires recent authentication. A successful removal returns HTTP 204 and records a credential audit event. When the selected passkey is the account’s last one for its relying party, removal requires a verified password account, a linked Google or Microsoft identity, or a wallet identity. Concurrent removals are serialized per account.
+
+
 With OIDC enabled, `GET` and form `POST /api/v1/auth/oauth2/logout` end the browser session and clear its cookies. A registered return URI can be selected with a client ID or signed ID-token hint. A refused redirect still ends the session. Set `PYLOROS_SIGNED_OUT_HTML_PATH` to the shared, private signed-out HTML artifact for the same page on both deployments. The default is a minimal confirmation page.
 
 With OIDC enabled, `GET /api/v1/auth/oauth2/userinfo` accepts a bearer user access token and reads the current active account from PostgreSQL. It returns the subject plus available email, verification status, name and picture. This compatibility endpoint returns those fields for client-bound user tokens independently of their scopes. `ENFORCE_TOKEN_REVOCATION` applies to UserInfo.

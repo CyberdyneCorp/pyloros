@@ -1,5 +1,8 @@
-pub(super) mod rename;
+mod rename;
+mod revoke;
 use super::*;
+use crate::grant_response::SessionOrigin;
+use crate::token_http::header as header_value;
 use crate::{
     login_http::problem,
     login_throttle::{LoginThrottle, RateLimited},
@@ -11,6 +14,7 @@ pub(super) struct Inventory {
     rp: Option<String>,
     quota: LoginThrottle,
     rename_quota: LoginThrottle,
+    revoke_quota: LoginThrottle,
 }
 
 impl Inventory {
@@ -29,6 +33,7 @@ impl Inventory {
             rp,
             quota: LoginThrottle::new(limit),
             rename_quota: LoginThrottle::new(limit),
+            revoke_quota: LoginThrottle::new(limit),
         }
     }
 }
@@ -45,8 +50,36 @@ pub(super) async fn list(
     run(&state, &headers, peer.ip(), Operation::List).await
 }
 
+pub(super) async fn modify(
+    State(state): State<Arc<Profile>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    axum::extract::Path(path): axum::extract::Path<String>,
+    req: Request,
+) -> Response {
+    match *req.method() {
+        Method::DELETE => {
+            run(
+                &state,
+                req.headers(),
+                peer.ip(),
+                Operation::Revoke(rename::key_id(&path)),
+            )
+            .await
+        }
+        Method::PATCH => rename::handle(&state, peer, path, req).await,
+        _ => {
+            let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+            response
+                .headers_mut()
+                .insert(header::ALLOW, header::HeaderValue::from_static("PATCH"));
+            response
+        }
+    }
+}
+
 enum Operation {
     List,
+    Revoke(Result<Uuid, Value>),
     Rename(Result<(Uuid, String), Vec<Value>>),
 }
 
@@ -73,7 +106,11 @@ async fn run(
     let result = inventory(
         state,
         &id,
-        client_ip(headers, peer, state.proxies),
+        SessionOrigin {
+            ip: client_ip(headers, peer, state.proxies),
+            user_agent: header_value(headers, "user-agent"),
+        },
+        header_value(headers, "x-request-id"),
         operation,
     )
     .await;
@@ -88,7 +125,8 @@ async fn run(
 async fn inventory(
     state: &Profile,
     id: &Identity,
-    source: Option<std::net::IpAddr>,
+    origin: SessionOrigin<'_>,
+    request_id: Option<&str>,
     operation: Operation,
 ) -> Result<Response, sqlx::Error> {
     let mut tx = state.pool.begin().await?;
@@ -106,13 +144,24 @@ async fn inventory(
     };
     let quota = match &operation {
         Operation::List => &state.passkeys.quota,
+        Operation::Revoke(_) => &state.passkeys.revoke_quota,
         Operation::Rename(_) => &state.passkeys.rename_quota,
     };
-    if !quota.allow(source) {
+    if !quota.allow(origin.ip) {
         return Ok(RateLimited.into_response());
     }
     if let Operation::Rename(Err(issues)) = operation {
         return Ok(validation(issues));
+    }
+    if let Operation::Revoke(Err(issue)) = operation {
+        return Ok(validation(vec![issue]));
+    }
+    if matches!(operation, Operation::Revoke(_)) {
+        // Acquire the account lock before inspecting sessions or alternative credentials.
+        sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+            .bind(id.user)
+            .execute(&mut *tx)
+            .await?;
     }
     let live=sqlx::query_scalar::<_,i32>(
         "SELECT 1 FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=$1 AND s.id=$2
@@ -124,6 +173,9 @@ async fn inventory(
             StatusCode::UNAUTHORIZED,
             "Invalid passkey ceremony or authentication proof",
         ));
+    }
+    if let Operation::Revoke(Ok(key)) = operation {
+        return revoke::apply(tx, id, rp, key, origin, request_id).await;
     }
     if let Operation::Rename(Ok((key, name))) = operation {
         let record = match rename::save(&mut tx, id.user, rp, key, name).await {

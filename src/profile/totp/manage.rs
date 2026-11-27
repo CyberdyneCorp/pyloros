@@ -41,22 +41,6 @@ fn parse(body: Value) -> Result<Proof, Vec<Value>> {
     Err(issues)
 }
 
-async fn recent(tx: &mut Tx<'_>, id: &Identity) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT EXISTS (
-            SELECT FROM sessions s WHERE s.id=$1 AND s.user_id=$2
-            AND s.revoked_at IS NULL AND s.expires_at > statement_timestamp()
-            AND ((s.auth_time BETWEEN statement_timestamp()-interval '5 minutes' AND statement_timestamp()
-                  AND regexp_split_to_array(s.amr, '[[:space:]]+') @> ARRAY['mfa']
-                  AND regexp_split_to_array(s.amr, '[[:space:]]+') && ARRAY['pwd','fed','pop','swk'])
-                 OR EXISTS (
-                     SELECT FROM passkey_reauthentication r JOIN passkeys p ON p.id=r.credential_id
-                     WHERE r.session_id=s.id AND r.user_id=s.user_id AND p.user_id=s.user_id
-                     AND p.revoked_at IS NULL AND r.verified_at >= statement_timestamp()-interval '5 minutes'
-                 )))",
-    ).bind(id.sid).bind(id.user).fetch_one(&mut **tx).await
-}
-
 async fn verify_password(
     mut tx: Tx<'_>,
     scheme: crate::passwords::PasswordScheme,
@@ -110,7 +94,7 @@ pub(super) async fn apply(
         Some((true, Some(seed), stored, email, org)) => {
             let reason = if stored.is_some() && !(verified && stored == hash) {
                 Some("bad_password")
-            } else if stored.is_none() && !recent(&mut tx, &id).await? {
+            } else if stored.is_none() && !recent(&mut tx, &id, true).await? {
                 Some("password_not_set")
             } else {
                 let Some(factor) = state.factor.as_ref() else {
@@ -222,12 +206,12 @@ mod tests {
         .execute(&mut *tx)
         .await
         .unwrap();
-        assert!(recent(&mut tx, &id).await.unwrap());
+        assert!(recent(&mut tx, &id, true).await.unwrap());
         sqlx::query("UPDATE sessions SET amr='fed'")
             .execute(&mut *tx)
             .await
             .unwrap();
-        assert!(!recent(&mut tx, &id).await.unwrap());
+        assert!(!recent(&mut tx, &id, true).await.unwrap());
         sqlx::query("INSERT INTO passkeys VALUES ($1,$2,null)")
             .bind(id.jti)
             .bind(id.user)
@@ -241,7 +225,7 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
-        assert!(recent(&mut tx, &id).await.unwrap());
+        assert!(recent(&mut tx, &id, true).await.unwrap());
         for (field, reset) in [
             ("expires_at=now()", "expires_at=now()+interval '1 day'"),
             ("revoked_at=now()", "revoked_at=null"),
@@ -250,7 +234,7 @@ mod tests {
                 .execute(&mut *tx)
                 .await
                 .unwrap();
-            assert!(!recent(&mut tx, &id).await.unwrap());
+            assert!(!recent(&mut tx, &id, true).await.unwrap());
             sqlx::query(&format!("UPDATE sessions SET {reset}"))
                 .execute(&mut *tx)
                 .await
@@ -260,6 +244,6 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
-        assert!(!recent(&mut tx, &id).await.unwrap());
+        assert!(!recent(&mut tx, &id, true).await.unwrap());
     }
 }

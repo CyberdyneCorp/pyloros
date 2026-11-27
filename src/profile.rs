@@ -195,6 +195,26 @@ async fn revoked(tx: &mut Transaction<'_, Postgres>, id: &Identity) -> Result<bo
         .bind(id.user).bind(id.iat).bind(id.jti).bind(id.sid).fetch_one(&mut **tx).await
 }
 
+async fn recent(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &Identity,
+    require_mfa: bool,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT FROM sessions s WHERE s.id=$1 AND s.user_id=$2
+            AND s.revoked_at IS NULL AND s.expires_at > statement_timestamp()
+            AND ((s.auth_time BETWEEN statement_timestamp()-interval '5 minutes' AND statement_timestamp()
+                  AND (NOT $3 OR regexp_split_to_array(s.amr, '[[:space:]]+') @> ARRAY['mfa'])
+                  AND regexp_split_to_array(s.amr, '[[:space:]]+') && ARRAY['pwd','fed','pop','swk'])
+                 OR EXISTS (
+                     SELECT FROM passkey_reauthentication r JOIN passkeys p ON p.id=r.credential_id
+                     WHERE r.session_id=s.id AND r.user_id=s.user_id AND p.user_id=s.user_id
+                     AND p.revoked_at IS NULL AND r.verified_at >= statement_timestamp()-interval '5 minutes'
+                 )))",
+    ).bind(id.sid).bind(id.user).bind(require_mfa).fetch_one(&mut **tx).await
+}
+
 fn timestamp(created: DateTime<Utc>) -> String {
     let precision = if created.timestamp_subsec_micros() == 0 {
         SecondsFormat::Secs
@@ -253,10 +273,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/userinfo", any(userinfo::handle))
         .route("/api/v1/auth/passkeys", any(passkeys::list))
-        .route(
-            "/api/v1/auth/passkeys/{passkey_id}",
-            any(passkeys::rename::handle),
-        )
+        .route("/api/v1/auth/passkeys/{passkey_id}", any(passkeys::modify))
         .route("/api/v1/auth/register", any(registration::handle))
         .route("/api/v1/users/me", any(current))
         .route("/api/v1/auth/verify-email", any(email_verification::handle))

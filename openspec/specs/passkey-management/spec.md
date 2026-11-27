@@ -1,4 +1,9 @@
-## ADDED Requirements
+# passkey-management Specification
+
+## Purpose
+Let signed-in users list, rename and revoke their own passkeys while preserving a way to sign in.
+
+## Requirements
 
 ### Requirement: Manage the account's active passkeys
 The service SHALL restrict inventory operations to a first-party credential with a live session owned by the active account.
@@ -14,3 +19,7 @@ The service SHALL restrict inventory operations to a first-party credential with
 #### Scenario: Rename an active credential
 - **WHEN** an eligible account submits a name of one to 64 characters that contains visible text after trimming whitespace
 - **THEN** save the trimmed display name and return the updated metadata. Return HTTP 404 for a missing, revoked, foreign-account or other relying-party credential.
+
+#### Scenario: Simultaneous removal of the last credentials
+- **WHEN** two requests try to revoke the only remaining sign-in credentials for one account
+- **THEN** serialize recovery checks so at least one method remains, and commit a successful revocation and its audit record together.
