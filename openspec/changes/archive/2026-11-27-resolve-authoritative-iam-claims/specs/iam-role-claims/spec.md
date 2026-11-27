@@ -9,6 +9,11 @@ The service SHALL derive user role claims from groups reported by the active IAM
 - **WHEN** the active backend returns an empty membership and a secondary store retains a role
 - **THEN** the service emits empty role assignments for the user
 
+#### Scenario: Catalog contains a member without an exported identity
+
+- **WHEN** a group names the linked token but the authority exports no identity for that token
+- **THEN** it confers no role on the user
+
 #### Scenario: Authority is unavailable
 
 - **WHEN** a role lookup fails during first-party token issuance
@@ -66,3 +71,22 @@ The service SHALL allow an authenticated administrator to check whether the sele
 
 - **WHEN** the provider answers successfully after an earlier RPC error
 - **THEN** the next health read reports available and clears the error
+
+### Requirement: Operator chain settings updates
+
+The service SHALL accept partial updates from an authenticated administrator and report the resulting signer address. The audit record SHALL contain sorted names of submitted settings and secret fields. Credentials SHALL stay out of the audit record and the success response.
+
+#### Scenario: Mnemonic and raw key submitted together
+
+- **WHEN** the submitted mnemonic is valid
+- **THEN** the signer is derived from the Ethereum account at the requested index, with index zero as the default
+
+#### Scenario: Invalid mnemonic
+
+- **WHEN** mnemonic derivation fails
+- **THEN** the service responds with HTTP 400, preserves the prior configuration and writes no settings-change audit event
+
+#### Scenario: Unspecified and null fields
+
+- **WHEN** an operator supplies a partial update
+- **THEN** omitted and null values retain their previous settings

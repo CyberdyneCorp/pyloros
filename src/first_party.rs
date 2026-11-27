@@ -101,7 +101,7 @@ impl GrantSessionIssuer {
             claims["auth_time"] = json!(at.timestamp());
             claims["amr"] = json!(methods);
         }
-        if let Some(roles) = profile_roles(tx, user).await? {
+        if let Some(roles) = profile_roles(&self.blockchain, tx, user).await? {
             claims["roles"] = json!(roles.global);
             claims["org_roles"] = json!(roles.organizations);
         }

@@ -1,0 +1,97 @@
+# iam-role-claims Specification
+
+## Purpose
+Use the configured IAM authority to resolve user roles and give administrators a way to inspect, update and check the chain provider.
+
+## Requirements
+
+### Requirement: Authoritative membership for role claims
+
+The service SHALL derive user role claims from groups reported by the active IAM backend and restrict organization roles to active memberships.
+
+#### Scenario: Conflicting membership sources
+
+- **WHEN** the active backend returns an empty membership and a secondary store retains a role
+- **THEN** the service emits empty role assignments for the user
+
+#### Scenario: Catalog contains a member without an exported identity
+
+- **WHEN** a group names the linked token but the authority exports no identity for that token
+- **THEN** it confers no role on the user
+
+#### Scenario: Authority is unavailable
+
+- **WHEN** a role lookup fails during first-party token issuance
+- **THEN** the issued token omits its role claims
+
+#### Scenario: Organization membership removed
+
+- **WHEN** a group identifies an organization role and the user no longer has active membership there
+- **THEN** the role is excluded from the user's assignments
+
+#### Scenario: A session outlives a provider switch
+
+- **WHEN** the configured authority changes after a user signs in
+- **THEN** profile reads, token introspection, and refreshed credentials use the authority selected at the time of the operation
+
+#### Scenario: Failed lookup during delegated issuance
+
+- **WHEN** the active authority cannot resolve membership during authorization-code redemption or refresh
+- **THEN** credentials omit unresolved role and derived permission claims, and introspection omits those claims while reporting the valid token as active
+
+#### Scenario: Failed lookup during a profile read
+
+- **WHEN** an authenticated user requests their profile during an IAM lookup failure
+- **THEN** the profile returns null for both global and organization roles
+
+#### Scenario: The authority recovers
+
+- **WHEN** a subsequent lookup succeeds and reports no memberships
+- **THEN** role-bearing responses return empty global and organization assignments for the user
+
+### Requirement: Administrative visibility of the chain configuration
+
+The service SHALL allow a current administrator to inspect the process-local chain configuration. A read SHALL report the enablement flag, endpoint, contract addresses, signer address, key presence and configuration completeness. Signing credentials SHALL remain private.
+
+#### Scenario: Fresh process
+
+- **WHEN** an administrator reads the chain settings before a runtime update
+- **THEN** the configuration is disabled with no key or addresses set
+
+#### Scenario: Replaced signer
+
+- **WHEN** an operator replaces the signing key with a nonempty unparseable key
+- **THEN** subsequent settings reads report key presence and a null signer address
+
+### Requirement: Administrator chain health read
+
+The service SHALL allow an authenticated administrator to check whether the selected chain provider can answer a block-number request. The response SHALL report enablement, availability, endpoint, identity contract address and any provider error. A configured runtime provider takes precedence over the deployment provider. The check SHALL complete within five seconds of starting the RPC operation.
+
+#### Scenario: No configured provider
+
+- **WHEN** no chain provider is configured
+- **THEN** the check reports disabled and unavailable with null endpoint and contract address
+
+#### Scenario: Recovery
+
+- **WHEN** the provider answers successfully after an earlier RPC error
+- **THEN** the next health read reports available and clears the error
+
+### Requirement: Operator chain settings updates
+
+The service SHALL accept partial updates from an authenticated administrator and report the resulting signer address. The audit record SHALL contain sorted names of submitted settings and secret fields. Credentials SHALL stay out of the audit record and the success response.
+
+#### Scenario: Mnemonic and raw key submitted together
+
+- **WHEN** the submitted mnemonic is valid
+- **THEN** the signer is derived from the Ethereum account at the requested index, with index zero as the default
+
+#### Scenario: Invalid mnemonic
+
+- **WHEN** mnemonic derivation fails
+- **THEN** the service responds with HTTP 400, preserves the prior configuration and writes no settings-change audit event
+
+#### Scenario: Unspecified and null fields
+
+- **WHEN** an operator supplies a partial update
+- **THEN** omitted and null values retain their previous settings

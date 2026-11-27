@@ -56,7 +56,8 @@ impl GrantSessionIssuer {
         let mut claims = self
             .access_claims(tx, claimed, &policy, now, settings.access_lifetime)
             .await?;
-        let auth = token_authorization::resolve(
+        let auth = token_authorization::resolve_with(
+            &self.blockchain,
             tx,
             claimed.grant.user_id,
             &claimed.grant.client_id,
@@ -157,9 +158,10 @@ impl GrantSessionIssuer {
             if let Some(aud) = audience {
                 claims["aud"] = json!(aud);
             }
-            token_authorization::resolve(tx, record.user, client, audience).await?
+            token_authorization::resolve_with(&self.blockchain, tx, record.user, client, audience)
+                .await?
         } else {
-            token_authorization::profile_roles(tx, record.user)
+            token_authorization::profile_roles(&self.blockchain, tx, record.user)
                 .await?
                 .map(|roles| AuthorizationClaims {
                     roles,

@@ -19,12 +19,10 @@ pub(crate) struct Monitor {
 
 impl Monitor {
     pub(crate) fn configured() -> Result<Self, Box<dyn Error>> {
-        let timeout =
-            env::var("BLOCKCHAIN_RPC_TIMEOUT_S").map_or(Ok(10.0), |v| v.parse::<f64>())?;
         Ok(Self {
             client: Client::builder().build()?,
             fallback: deployment_target(crate::config::flag("BLOCKCHAIN_ENABLED")?),
-            timeout: Duration::try_from_secs_f64(timeout)?.min(Duration::from_secs(5)),
+            timeout: super::rpc_timeout()?.min(Duration::from_secs(5)),
         })
     }
 

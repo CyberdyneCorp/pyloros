@@ -34,7 +34,7 @@ pub(crate) fn ethereum_address(uncompressed: &[u8]) -> String {
     checksummed(&digest[12..])
 }
 
-fn checksummed(bytes: &[u8]) -> String {
+pub(crate) fn checksummed(bytes: &[u8]) -> String {
     let lower = HEXLOWER.encode(bytes);
     let hash = Keccak256::digest(lower.as_bytes());
     let mut address = String::with_capacity(42);
