@@ -55,7 +55,11 @@ enum Outcome {
     Failed(String),
 }
 
-async fn change(provider: TokenProvider, token: &str, status: u8) -> Result<Outcome, Response> {
+async fn change(
+    provider: TokenProvider,
+    token: &str,
+    status: u8,
+) -> Result<Outcome, Box<Response>> {
     match provider {
         TokenProvider::Local(tokens) => {
             let index = token.parse::<usize>().ok().and_then(|id| id.checked_sub(1));
@@ -76,10 +80,10 @@ async fn change(provider: TokenProvider, token: &str, status: u8) -> Result<Outc
                 Err(PrepareError::Rpc(text) | PrepareError::Reverted(text)) => {
                     Ok(Outcome::Failed(text))
                 }
-                _ => Err(problem(
+                _ => Err(Box::new(problem(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "Blockchain transaction submission unavailable",
-                )),
+                ))),
             }
         }
     }
@@ -152,7 +156,7 @@ async fn store(
             (Some(hash), None)
         }
         Ok(Outcome::Failed(detail)) => (None, Some(detail)),
-        Err(response) => return Ok(response),
+        Err(response) => return Ok(*response),
     };
     let audit = StatusAudit {
         new_status: status,

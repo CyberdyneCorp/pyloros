@@ -28,7 +28,7 @@ impl Outcome {
     }
 }
 
-async fn mint(provider: TokenProvider, wallet: &str, key: &str) -> Result<Outcome, Response> {
+async fn mint(provider: TokenProvider, wallet: &str, key: &str) -> Result<Outcome, Box<Response>> {
     match provider {
         TokenProvider::Local(tokens) => {
             let mut tokens = tokens.lock().await;
@@ -48,10 +48,10 @@ async fn mint(provider: TokenProvider, wallet: &str, key: &str) -> Result<Outcom
                 Err(PrepareError::Rpc(detail) | PrepareError::Reverted(detail)) => {
                     Ok(Outcome::failed(detail))
                 }
-                _ => Err(problem(
+                _ => Err(Box::new(problem(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "Blockchain transaction submission unavailable",
-                )),
+                ))),
             }
         }
     }
@@ -104,7 +104,7 @@ async fn store(
         (Some(wallet), Some(key)) if !wallet.is_empty() && !key.is_empty() => {
             let outcome = match mint(provider, wallet, key).await {
                 Ok(result) => result,
-                Err(response) => return Ok(response),
+                Err(response) => return Ok(*response),
             };
             save_metadata(
                 &mut tx,
