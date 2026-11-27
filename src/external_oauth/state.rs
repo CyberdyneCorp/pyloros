@@ -58,6 +58,10 @@ impl ReturnInstructions {
 }
 
 impl Pending {
+    pub(super) fn provider(&self) -> &str {
+        &self.provider
+    }
+
     /// Inspect state before calling the provider. No connection is held during the exchange.
     pub async fn inspect(
         pool: &PgPool,

@@ -1,5 +1,6 @@
 //! External identity provider authorization and shared callback state.
 pub mod account;
+pub mod cli_return;
 mod input;
 pub mod provider;
 pub mod state;

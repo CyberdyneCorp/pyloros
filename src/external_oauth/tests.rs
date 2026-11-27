@@ -154,3 +154,48 @@ async fn concurrent_callback_transactions_have_one_winner() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn cli_return_commits_a_short_lived_digest_with_the_callback_claim() {
+    use state::{Pending, ReturnInstructions};
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    sqlx::raw_sql("CREATE TEMP TABLE oauth_states(id uuid PRIMARY KEY,provider text,return_mode text,frontend_redirect text,expires_at timestamptz,cli_port int,code_challenge text,consumed_at timestamptz);
+        CREATE TEMP TABLE cli_login_codes(id uuid,code_hash text,user_id uuid,provider text,code_challenge text,authenticated_at timestamptz,expires_at timestamptz);").execute(&pool).await.unwrap();
+    let instructions = ReturnInstructions {
+        return_mode: "cli".into(),
+        frontend_redirect: None,
+        cli_port: Some(4555),
+        code_challenge: Some("a".repeat(43)),
+    };
+    let id = instructions.issue(&pool, "microsoft", 600).await.unwrap();
+    let pending = Pending::inspect(&pool, &id.to_string(), "microsoft")
+        .await
+        .unwrap()
+        .unwrap();
+    let user = Uuid::new_v4();
+    let now = chrono::Utc::now();
+    for commit in [false, true] {
+        let mut tx = pool.begin().await.unwrap();
+        assert!(pending.claim(&mut tx).await.unwrap());
+        let target = cli_return::issue(&mut tx, &pending, user, now)
+            .await
+            .unwrap();
+        let code = target
+            .strip_prefix("http://127.0.0.1:4555/callback?code=")
+            .unwrap();
+        assert_eq!(code.len(), 43);
+        let matches=sqlx::query_scalar::<_,bool>("SELECT code_hash=$1 AND user_id=$2 AND code_challenge=$3 AND provider='microsoft' AND expires_at-authenticated_at=interval '60 seconds' FROM cli_login_codes")
+            .bind(crate::authorization_codes::digest(code)).bind(user).bind(&instructions.code_challenge).fetch_all(&mut *tx).await.unwrap();
+        assert_eq!(matches, [true]);
+        if commit {
+            tx.commit().await.unwrap()
+        } else {
+            tx.rollback().await.unwrap()
+        }
+    }
+}
