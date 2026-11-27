@@ -1,5 +1,6 @@
 //! Mutable chain configuration and its credential-free operator view.
 mod health;
+mod membership;
 use data_encoding::HEXLOWER_PERMISSIVE;
 pub(crate) use health::Monitor;
 use k256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
@@ -9,6 +10,7 @@ use zeroize::Zeroizing;
 
 #[derive(Default)]
 pub struct ChainSettings {
+    rpc_timeout: Option<std::time::Duration>,
     state: RwLock<Configuration>,
     pub(crate) admin_updates: tokio::sync::Mutex<()>,
 }
@@ -42,6 +44,13 @@ pub struct View {
 }
 
 impl ChainSettings {
+    pub(crate) fn configured() -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            rpc_timeout: Some(rpc_timeout()?),
+            ..Default::default()
+        })
+    }
+
     pub async fn view(&self) -> View {
         self.state.read().await.view()
     }
@@ -74,6 +83,12 @@ impl ChainSettings {
         );
         state.view()
     }
+}
+
+fn rpc_timeout() -> Result<std::time::Duration, Box<dyn std::error::Error>> {
+    let seconds =
+        std::env::var("BLOCKCHAIN_RPC_TIMEOUT_S").map_or(Ok(10.0), |v| v.parse::<f64>())?;
+    Ok(std::time::Duration::try_from_secs_f64(seconds)?)
 }
 
 fn merge<T>(current: &mut Option<T>, value: Option<T>) {

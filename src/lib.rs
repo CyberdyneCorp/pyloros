@@ -68,6 +68,7 @@ pub async fn application(
     interval: Duration,
 ) -> Result<Router, Box<dyn std::error::Error>> {
     let production = environment == "production";
+    let blockchain = std::sync::Arc::new(chain_settings::ChainSettings::configured()?);
     let mut provider = discovery::Provider::from_env()?;
     let (browser, cors_origins, redirects) = browser_policy::BrowserPolicy::configured()?;
     let (profile, resources) = profile::routes_with_policy(
@@ -76,12 +77,19 @@ pub async fn application(
         interval,
         provider.as_mut(),
         Some(browser),
+        blockchain.clone(),
     )
     .await?;
-    let token =
-        token_http::routes_with_resources(provider.as_ref(), pool.clone(), production, resources)
-            .await?;
-    let login = login_http::routes_with_redirects(pool.clone(), &environment, redirects)?;
+    let token = token_http::routes_with_resources(
+        provider.as_ref(),
+        pool.clone(),
+        production,
+        resources,
+        blockchain.clone(),
+    )
+    .await?;
+    let login =
+        login_http::routes_with_redirects(pool.clone(), &environment, redirects, blockchain)?;
     let methods = login_methods::routes(&environment)?;
     let app = router(environment, pool.clone())
         .merge(profile)

@@ -1,4 +1,5 @@
-//! Resolve token claims for grants using PostgreSQL IAM.
+//! Resolve token claims for grants using the selected IAM provider.
+use crate::chain_settings::ChainSettings;
 use crate::id_tokens::{Assignments, AuthorizationClaims};
 use sqlx::{Acquire, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,7 +45,17 @@ pub async fn resolve(
     client: &str,
     audience: Option<&str>,
 ) -> Result<Option<AuthorizationClaims>, sqlx::Error> {
-    let Some(roles) = role_buckets(tx, user).await? else {
+    resolve_with(&ChainSettings::default(), tx, user, client, audience).await
+}
+
+pub(crate) async fn resolve_with(
+    settings: &ChainSettings,
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    client: &str,
+    audience: Option<&str>,
+) -> Result<Option<AuthorizationClaims>, sqlx::Error> {
+    let Some(roles) = role_buckets(settings, tx, user).await? else {
         return Ok(None);
     };
     let permissions = permissions(tx, &roles, client, audience).await?;
@@ -55,17 +66,23 @@ pub async fn resolve(
 }
 
 pub(crate) async fn profile_roles(
+    settings: &ChainSettings,
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
 ) -> Result<Option<Assignments>, sqlx::Error> {
-    Ok(role_buckets(tx, user).await?.map(assignments))
+    Ok(role_buckets(settings, tx, user).await?.map(assignments))
 }
 
 async fn role_buckets(
+    settings: &ChainSettings,
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
 ) -> Result<Option<Buckets>, sqlx::Error> {
-    let Some(names) = postgres_groups(tx, user).await? else {
+    let names = match settings.membership_source().await {
+        Some(chain) => chain.groups_for(tx, user).await?,
+        None => postgres_groups(tx, user).await?,
+    };
+    let Some(names) = names else {
         return Ok(None);
     };
     project_groups(tx, user, &names).await.map(Some)

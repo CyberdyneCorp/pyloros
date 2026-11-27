@@ -93,8 +93,12 @@ pub(crate) fn routes_with_redirects(
     pool: PgPool,
     environment: &str,
     allowed: crate::browser_policy::OriginCatalog,
+    blockchain: Arc<crate::chain_settings::ChainSettings>,
 ) -> Result<Router, Box<dyn Error>> {
-    let login = Login::configured(pool.clone(), environment == "production")?.map(Arc::new);
+    let login = Login::configured(pool.clone(), environment == "production")?.map(|mut login| {
+        login.issuer.blockchain = blockchain;
+        Arc::new(login)
+    });
     Ok(
         with_state(login.clone())?.merge(crate::external_oauth::with_redirects(
             pool,

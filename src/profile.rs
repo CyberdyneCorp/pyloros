@@ -232,7 +232,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 
 struct Profile {
     chain_health: crate::chain_settings::Monitor,
-    blockchain: crate::chain_settings::ChainSettings,
+    blockchain: Arc<crate::chain_settings::ChainSettings>,
     configured_origins: Vec<Value>,
     configured_resources: crate::token_runtime::ResourceRegistry,
     builtin_scopes: std::collections::BTreeMap<String, String>,
@@ -263,6 +263,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         production,
         registries::configured_scopes()?,
         Default::default(),
+        Default::default(),
     )
 }
 
@@ -280,11 +281,16 @@ pub async fn routes_with_scope_registry(
     interval: std::time::Duration,
     provider: Option<&mut crate::discovery::Provider>,
 ) -> Result<Router, Box<dyn Error>> {
-    Ok(
-        routes_with_policy(pool, production, interval, provider, None)
-            .await?
-            .0,
+    Ok(routes_with_policy(
+        pool,
+        production,
+        interval,
+        provider,
+        None,
+        Default::default(),
     )
+    .await?
+    .0)
 }
 
 pub(crate) async fn routes_with_policy(
@@ -293,6 +299,7 @@ pub(crate) async fn routes_with_policy(
     interval: std::time::Duration,
     provider: Option<&mut crate::discovery::Provider>,
     browser: Option<crate::browser_policy::BrowserPolicy>,
+    blockchain: Arc<crate::chain_settings::ChainSettings>,
 ) -> Result<(Router, crate::token_runtime::ResourceCatalog), Box<dyn Error>> {
     let builtin_scopes = registries::configured_scopes()?;
     let resources = crate::token_http::configured_resources(provider.as_deref())?;
@@ -314,6 +321,7 @@ pub(crate) async fn routes_with_policy(
         production,
         builtin_scopes,
         tokio::sync::OnceCell::new_with(Some(catalog)),
+        blockchain,
     )?;
     Ok((router, resources))
 }
@@ -323,10 +331,11 @@ fn build_routes(
     production: bool,
     builtin_scopes: std::collections::BTreeMap<String, String>,
     client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeRegistry>,
+    blockchain: Arc<crate::chain_settings::ChainSettings>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
         chain_health: crate::chain_settings::Monitor::configured()?,
-        blockchain: Default::default(),
+        blockchain,
         configured_origins: registries::origins::configured()?,
         configured_resources: crate::token_runtime::ResourceRegistry::from_env()?,
         builtin_scopes,
@@ -610,7 +619,7 @@ async fn project(
         &state.admins
     ));
     let roles = if with_roles {
-        token_authorization::profile_roles(tx, user).await?
+        token_authorization::profile_roles(&state.blockchain, tx, user).await?
     } else {
         None
     };

@@ -48,6 +48,7 @@ tempfile = "3"
 unicode_names2 = "3"
 bip39 = { version = "2.2", features = ["chinese-simplified", "chinese-traditional", "czech", "french", "italian", "japanese", "korean", "spanish", "zeroize"] }
 bip32 = { version = "0.5", default-features = false, features = ["secp256k1", "alloc"] }
+alloy-sol-types = { version = "1", default-features = false }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

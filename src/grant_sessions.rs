@@ -21,6 +21,7 @@ pub(crate) struct SessionRecord<'a> {
 }
 
 pub struct GrantSessionIssuer {
+    pub(crate) blockchain: std::sync::Arc<crate::chain_settings::ChainSettings>,
     signing: std::sync::Arc<SigningIdentity>,
     id_issuer: Option<String>,
     refresh_lifetime: TimeDelta,
@@ -61,6 +62,7 @@ impl GrantSessionIssuer {
             return Err(SessionError::InvalidLifetime);
         }
         Ok(Self {
+            blockchain: Default::default(),
             signing: std::sync::Arc::new(signing),
             id_issuer: None,
             refresh_lifetime,
@@ -69,6 +71,7 @@ impl GrantSessionIssuer {
 
     pub(crate) fn for_id_issuer(&self, issuer: &str) -> Self {
         Self {
+            blockchain: self.blockchain.clone(),
             signing: self.signing.clone(),
             id_issuer: Some(issuer.to_owned()),
             refresh_lifetime: self.refresh_lifetime,

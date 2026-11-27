@@ -9,6 +9,11 @@ The service SHALL derive user role claims from groups reported by the active IAM
 - **WHEN** the active backend returns an empty membership and a secondary store retains a role
 - **THEN** the service emits empty role assignments for the user
 
+#### Scenario: Catalog contains a member without an exported identity
+
+- **WHEN** a group names the linked token but the authority exports no identity for that token
+- **THEN** it confers no role on the user
+
 #### Scenario: Authority is unavailable
 
 - **WHEN** a role lookup fails during first-party token issuance

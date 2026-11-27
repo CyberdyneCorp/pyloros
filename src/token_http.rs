@@ -46,7 +46,7 @@ pub async fn routes(
     } else {
         tokio::sync::watch::channel(Arc::new(configured)).1
     };
-    routes_with_resources(provider, pool, production, resources).await
+    routes_with_resources(provider, pool, production, resources, Default::default()).await
 }
 
 pub(crate) async fn routes_with_resources(
@@ -54,12 +54,16 @@ pub(crate) async fn routes_with_resources(
     pool: PgPool,
     production: bool,
     resources: crate::token_runtime::ResourceCatalog,
+    blockchain: Arc<crate::chain_settings::ChainSettings>,
 ) -> Result<Router, Box<dyn Error>> {
     let register = provider.is_some_and(Provider::dynamic_registration_enabled);
     let code = match provider {
         Some(provider) => Runtime::load(provider, pool.clone(), production, resources.clone())
             .await?
-            .map(Arc::new),
+            .map(|mut runtime| {
+                runtime.signer.blockchain = blockchain;
+                Arc::new(runtime)
+            }),
         None => None,
     };
     let proxies = crate::token_runtime::number("TRUSTED_PROXY_COUNT", 0)?.try_into()?;

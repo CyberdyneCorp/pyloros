@@ -125,9 +125,18 @@ impl Login {
         }
         if let Some(client) = client {
             body["client_id"] = json!(client);
-            let auth = token_authorization::resolve(&mut tx, user, client, audience).await?;
+            let auth = token_authorization::resolve_with(
+                &self.issuer.blockchain,
+                &mut tx,
+                user,
+                client,
+                audience,
+            )
+            .await?;
             crate::access_tokens::authorization_fields(&mut body, auth.as_ref());
-        } else if let Some(roles) = token_authorization::profile_roles(&mut tx, user).await? {
+        } else if let Some(roles) =
+            token_authorization::profile_roles(&self.issuer.blockchain, &mut tx, user).await?
+        {
             body["roles"] = json!(roles.global);
             body["org_roles"] = json!(roles.organizations);
         }
