@@ -77,7 +77,9 @@ fn seconds(name: &str, default: &str) -> Result<Duration, Box<dyn Error>> {
 pub struct Worker(JoinHandle<()>);
 impl Worker {
     pub fn start(pool: PgPool) -> Result<Option<Self>, Box<dyn Error>> {
-        if !crate::config::flag_with_default("WEBHOOKS_ENABLED", true)? {
+        if !crate::config::flag_with_default("WEBHOOKS_ENABLED", true)?
+            || !crate::config::flag_with_default("PYLOROS_WEBHOOK_WORKER_ENABLED", true)?
+        {
             return Ok(None);
         }
         let settings = Settings::configured()?;

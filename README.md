@@ -81,7 +81,7 @@ For subscription updates, configure an authenticated Google Pub/Sub push subscri
 
 ## Outbound webhooks
 
-Each service replica runs a PostgreSQL outbox worker when `WEBHOOKS_ENABLED=true` (the default). Replicas lease queued deliveries before sending them. Receivers can deduplicate retries by the stable `webhook-id` header. The worker signs the stored body with the subscription key and includes both signatures during key rotation. Configure the same `MASTER_KEY` on all replicas.
+By default, each service replica runs a PostgreSQL outbox worker when webhooks are enabled. Set `PYLOROS_WEBHOOK_WORKER_ENABLED=false` on a canary to leave delivery to the current owner. Keep `WEBHOOKS_ENABLED=true` so the canary continues to enqueue events. To transfer ownership, stop the old worker and start a worker-enabled replica against the same PostgreSQL database. Replicas lease queued deliveries before sending them. Receivers can deduplicate retries by the stable `webhook-id` header. The worker signs the stored body with the subscription key and includes both signatures during key rotation. Configure the same `MASTER_KEY` on all replicas.
 
 By default each replica claims up to 50 deliveries per batch, runs eight sends concurrently, allows ten seconds per request and polls every two seconds when the batch is smaller than the limit. Set `WEBHOOKS_BATCH_SIZE`, `WEBHOOKS_MAX_CONCURRENCY`, `WEBHOOKS_REQUEST_TIMEOUT_SECONDS` and `WEBHOOKS_POLL_INTERVAL_SECONDS` to tune these values. The worker pins HTTPS connections to checked public addresses. For local receiver testing, `WEBHOOKS_ALLOW_INSECURE_HTTP=true` permits HTTP and local addresses in development.
 

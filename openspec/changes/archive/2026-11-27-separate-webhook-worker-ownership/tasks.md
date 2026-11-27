@@ -1,0 +1,2 @@
+- [x] Implement and test the worker startup policy.
+- [x] Verify queue handoff and rollback with a real receiver and shared PostgreSQL.
