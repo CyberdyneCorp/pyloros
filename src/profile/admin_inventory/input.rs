@@ -227,7 +227,8 @@ fn validate_statements(policy: &Value) -> Result<(), Box<Response>> {
             .expect("validated conditions")
         {
             let operator = &condition["operator"];
-            if serde_json::from_value::<statements::Operator>(operator.clone()).is_err() {
+            if serde_json::from_value::<crate::iam_evaluation::Operator>(operator.clone()).is_err()
+            {
                 return Err(invalid(
                     operator.as_str().expect("validated operator"),
                     "ConditionOperator",

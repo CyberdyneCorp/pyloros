@@ -1,4 +1,8 @@
-//! Target matching for IAM policy statements.
+//! Request matching for IAM policy statements.
+
+mod conditions;
+pub use conditions::Condition;
+pub(crate) use conditions::Operator;
 
 /// Match a request against both target lists of a statement. An empty list
 /// matches nothing. Only an asterisk has wildcard meaning.

@@ -13,25 +13,7 @@ struct StoredStatement<'a> {
     conditions: &'a RawValue,
 }
 
-#[derive(Deserialize, Serialize)]
-struct Condition {
-    operator: Operator,
-    key: String,
-    value: String,
-}
-
-#[derive(Deserialize, Serialize)]
-pub(super) enum Operator {
-    StringEquals,
-    StringNotEquals,
-    NumericEquals,
-    NumericLessThan,
-    NumericGreaterThan,
-    DateTimeLessThan,
-    DateTimeGreaterThan,
-    IpAddress,
-    NotIpAddress,
-}
+use crate::iam_evaluation::Condition;
 
 fn invalid() -> sqlx::Error {
     sqlx::Error::Decode("invalid stored IAM statement".into())
