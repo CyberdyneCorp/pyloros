@@ -2,7 +2,8 @@
 use crate::email_challenge::ConfirmationEmail;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
-    message::{Mailbox, header::ContentType},
+    address::Envelope,
+    message::{Mailbox, MessageBuilder, header::ContentType},
     transport::smtp::authentication::Credentials,
 };
 use std::{env, sync::Mutex, time::Duration};
@@ -127,9 +128,7 @@ impl ConfirmationMailer {
                 let body = format!(
                     "Use this link or code to reset your password.\n\n{action}\n\nIf you did not request this, you can ignore this message."
                 );
-                let message = Message::builder()
-                    .from(from.clone())
-                    .to(recipient.parse().map_err(|_| MailError::Message)?)
+                let message = addressed_message(from, recipient)?
                     .subject("Reset your password")
                     .header(ContentType::TEXT_PLAIN)
                     .body(body)
@@ -172,9 +171,7 @@ impl ConfirmationMailer {
                 ),
             )
         };
-        let message = Message::builder()
-            .from(from.clone())
-            .to(recipient.parse().map_err(|_| MailError::Message)?)
+        let message = addressed_message(from, recipient)?
             .subject(subject)
             .header(ContentType::TEXT_PLAIN)
             .body(body)
@@ -198,9 +195,7 @@ impl ConfirmationMailer {
                 let body = format!(
                     "Enter this code to verify your account email.\n\n{token}\n\nIf you did not register, ignore this message."
                 );
-                let message = Message::builder()
-                    .from(from.clone())
-                    .to(recipient.parse().map_err(|_| MailError::Message)?)
+                let message = addressed_message(from, recipient)?
                     .subject("Confirm your email")
                     .header(ContentType::TEXT_PLAIN)
                     .body(body)
@@ -301,6 +296,18 @@ fn confirmation_url(base: &Url, token: &str) -> Result<Url, MailError> {
     Ok(link)
 }
 
+fn addressed_message(from: &Mailbox, recipient: &str) -> Result<MessageBuilder, MailError> {
+    let to = crate::login_http::account_recipient(recipient).ok_or(MailError::Message)?;
+    // Construct the envelope directly to avoid parsing the To header a second
+    // time with the transport library's 64-byte local-part limit.
+    let envelope = Envelope::new(Some(from.email.clone()), vec![to.email.clone()])
+        .map_err(|_| MailError::Message)?;
+    Ok(Message::builder()
+        .from(from.clone())
+        .to(to)
+        .envelope(envelope))
+}
+
 fn confirmation_message(
     from: &Mailbox,
     base: &Url,
@@ -317,9 +324,7 @@ fn confirmation_message(
         "A password sign-in is awaiting confirmation. Compare this code with the code in your browser.\n\nCode: {}\nDevice: {device}\nIP address: {address}\n\nOpen this link to approve or decline the sign-in:\n{link}\n\nIf you did not start this sign-in, decline it and change your password.",
         email.match_code
     );
-    Message::builder()
-        .from(from.clone())
-        .to(email.recipient.parse().map_err(|_| MailError::Message)?)
+    addressed_message(from, &email.recipient)?
         .subject("Confirm your sign-in")
         .header(ContentType::TEXT_PLAIN)
         .body(body)
@@ -329,6 +334,22 @@ fn confirmation_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_mail_uses_the_long_recipient_for_the_smtp_envelope() {
+        let to = format!("{}@example.com", "r".repeat(65));
+        let from = "service@example.com".parse().unwrap();
+        let message = addressed_message(&from, &to)
+            .unwrap()
+            .body("test".to_owned())
+            .unwrap();
+        assert_eq!(message.envelope().to()[0].to_string(), to);
+        assert!(
+            String::from_utf8(message.formatted())
+                .unwrap()
+                .contains(&to)
+        );
+    }
 
     #[test]
     fn reset_links_preserve_mount_path_and_encode_query_values() {

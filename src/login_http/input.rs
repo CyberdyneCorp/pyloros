@@ -1,3 +1,4 @@
+use super::mailbox::address;
 use axum::{
     Json,
     body::{Body, to_bytes},
@@ -5,7 +6,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::{Value, json};
-use unicode_normalization::UnicodeNormalization;
 
 fn issue(field: &str, kind: &str, msg: &str, input: &Value) -> Value {
     json!({"loc":["body",field],"type":kind,"msg":msg,"input":input})
@@ -28,59 +28,6 @@ fn string<'a>(body: &'a Value, field: &str, errors: &mut Vec<Value>) -> Option<&
             None
         }
     }
-}
-
-fn check_dots_and_hyphens(local: &str, domain: &str) -> Result<(), &'static str> {
-    if local.starts_with('.') {
-        return Err("An email address cannot start with a period.");
-    }
-    if local.ends_with('.') {
-        return Err("An email address cannot have a period immediately before the @-sign.");
-    }
-    if domain.starts_with('.') {
-        return Err("An email address cannot have a period immediately after the @-sign.");
-    }
-    if domain.starts_with('-') {
-        return Err("An email address cannot have a hyphen immediately after the @-sign.");
-    }
-    if domain.ends_with('-') {
-        return Err("An email address cannot end with a hyphen.");
-    }
-    if domain.contains("-.") || domain.contains(".-") {
-        return Err("An email address cannot have a period and a hyphen next to each other.");
-    }
-    if local.contains("..") || domain.contains("..") {
-        return Err("An email address cannot have two periods in a row.");
-    }
-    Ok(())
-}
-
-fn address(raw: &str) -> Result<String, String> {
-    let raw = raw.trim();
-    let addr = raw
-        .strip_suffix('>')
-        .and_then(|display| display.rsplit_once('<'))
-        .map_or(raw, |(_, email)| email.trim());
-    let (local, domain) = addr
-        .split_once('@')
-        .ok_or_else(|| super::email_domain::missing_separator(addr))?;
-    if domain.is_empty() {
-        return Err("There must be something after the @-sign.".into());
-    }
-    if local.is_empty() {
-        return Err("There must be something before the @-sign.".into());
-    }
-    super::email_domain::characters(domain)?;
-    if domain.ends_with('.') {
-        return Err("An email address cannot end with a period.".into());
-    }
-    check_dots_and_hyphens(local, domain)?;
-    let domain = super::email_domain::validate(domain)?;
-    let mailbox = raw
-        .parse::<lettre::message::Mailbox>()
-        .map_err(|_| "The email address is not valid.")?;
-    let local: String = mailbox.email.user().nfc().collect();
-    Ok(format!("{local}@{domain}"))
 }
 
 pub(crate) fn email_field(body: &Value) -> Result<String, Vec<Value>> {
@@ -232,7 +179,10 @@ mod tests {
             address("a@-example.com"),
             Err("An email address cannot have a hyphen immediately after the @-sign.".into())
         );
-        assert_eq!(address("A..B <a@example.com>").unwrap(), "a@example.com");
+        assert_eq!(
+            address("A..B <a@example.com>").unwrap_err(),
+            "The display name contains invalid characters when not quoted: '.'."
+        );
     }
 
     #[tokio::test]

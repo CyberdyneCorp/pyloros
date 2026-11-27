@@ -3,6 +3,8 @@ mod cli;
 mod config;
 pub(crate) use config::identity as signing_identity;
 mod email_domain;
+mod mailbox;
+pub(crate) use mailbox::recipient as account_recipient;
 mod end_session;
 mod federated;
 mod input;

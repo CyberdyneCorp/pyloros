@@ -1,0 +1,1 @@
+Separate optional display text from the recipient. Validate a single unquoted dot-atom, normalize its Unicode spelling and check the complete address size, including its IDNA form. For a recipient beyond the transport parser’s local-part limit, construct the mailbox only after revalidating its syntax and domain. Never pass display text through this fallback.

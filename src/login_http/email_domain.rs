@@ -14,7 +14,7 @@ pub(super) fn missing_separator(input: &str) -> &'static str {
     "An email address must have an @-sign."
 }
 
-fn character_label(c: char) -> String {
+pub(super) fn character_label(c: char) -> String {
     match c {
         ' ' => "SPACE".into(),
         '\'' | '\\' => format!("\"{c}\""),
@@ -49,6 +49,28 @@ pub(super) fn characters(input: &str) -> Result<(), String> {
     Err(format!(
         "The part after the @-sign contains invalid characters: {labels}."
     ))
+}
+
+pub(super) fn check_dots_and_hyphens(domain: &str) -> Result<(), &'static str> {
+    if domain.ends_with('.') {
+        return Err("An email address cannot end with a period.");
+    }
+    if domain.starts_with('.') {
+        return Err("An email address cannot have a period immediately after the @-sign.");
+    }
+    if domain.starts_with('-') {
+        return Err("An email address cannot have a hyphen immediately after the @-sign.");
+    }
+    if domain.ends_with('-') {
+        return Err("An email address cannot end with a hyphen.");
+    }
+    if domain.contains("-.") || domain.contains(".-") {
+        return Err("An email address cannot have a period and a hyphen next to each other.");
+    }
+    if domain.contains("..") {
+        return Err("An email address cannot have two periods in a row.");
+    }
+    Ok(())
 }
 
 fn excess(count: usize, unit: &str) -> String {

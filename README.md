@@ -174,6 +174,8 @@ From the same Preferences screen, an enrolled account can replace its recovery c
 
 Preferences submits the current and replacement password to `POST /api/v1/auth/password/change`. A successful change returns 204, revokes every active refresh session for the account and advances its access-token cutoff. Deployments that enforce token revocation reject previously issued access tokens. The replacement hash uses the configured `PASSWORD_SCHEME`.
 
+Account email addresses support Unicode and unquoted local parts longer than 64 bytes when the full address fits in 254 bytes, including the IDNA domain form. The configured SMTP relay must accept the recipient for mail delivery to succeed.
+
 The existing forgot-password form submits to `POST /api/v1/auth/password/reset-request`. Set `RATELIMIT_RESET_PER_HOUR` to configure the per-source quota (default 5). With SMTP and an account URL configured, the recipient gets a link to the existing reset form. The link expires after one hour. The form submits to `POST /api/v1/auth/password/reset-confirm`. Redemption verifies the email address, applies eligible domain-based organization membership, replaces the password and revokes existing sessions.
 
 Submit the email verification code to `POST /api/v1/auth/verify-email` as the JSON string field `token`. The endpoint accepts UTF-8, UTF-16 and UTF-32 JSON. An invalid field type returns a 422 response containing the submitted value. Success returns an empty 204. Verification consumes the code and applies the verified email domain’s organization membership rules.
