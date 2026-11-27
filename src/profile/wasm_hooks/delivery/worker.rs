@@ -11,7 +11,10 @@ impl ComponentHookWorker {
         let store = Producer::Store.enabled()?;
         let administrator = Producer::Administrator.enabled()?;
         let role = Producer::Role.enabled()?;
-        if !(store || administrator || role) || !config::flag_with_default("HOOKS_ENABLED", true)? {
+        let registration = Producer::Registration.enabled()?;
+        if !(store || administrator || role || registration)
+            || !config::flag_with_default("HOOKS_ENABLED", true)?
+        {
             return Ok(None);
         }
         Ok(Some(Self(tokio::spawn(async move {
@@ -40,9 +43,12 @@ async fn deliver(pool: &PgPool) -> sqlx::Result<bool> {
     };
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
-        "SELECT q.id,q.hook_id,q.hook_name,q.event_type,q.user_id,q.payload::text,
+        "SELECT q.id,q.hook_id,q.hook_name,q.event_type,q.user_id,
+        (CASE WHEN q.event_type='user_registered' AND NOT h.receive_pii
+          THEN jsonb_build_object('event_type',q.event_type,'user_id',q.user_id)
+          ELSE q.payload END)::text AS payload,
         q.timeout_seconds,a.component FROM pyloros_hook_deliveries q
-        JOIN pyloros_hook_artifacts a USING(sha256) WHERE available_at<=clock_timestamp()
+        JOIN hooks h ON h.id=q.hook_id JOIN pyloros_hook_artifacts a ON a.sha256=q.sha256 WHERE available_at<=clock_timestamp()
         ORDER BY available_at,q.id LIMIT 1 FOR UPDATE OF q SKIP LOCKED",
     )
     .fetch_optional(&mut *tx)

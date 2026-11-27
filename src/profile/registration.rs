@@ -143,16 +143,18 @@ async fn register(
     let wallet = ManagedWallet::generate(key)?;
     let hash = state.scheme.hash(password).await?;
     let mut tx = state.pool.begin().await?;
-    if settings.hooks && needs_dispatcher(&mut tx).await? {
-        return Ok(problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Registration hook dispatcher unavailable",
-        ));
-    }
     let user = Uuid::new_v4();
     if !insert_user(&mut tx, user, &email, &hash, &wallet, false).await? {
         tx.rollback().await?;
         return Ok(refusal(&state.pool, email, "already_registered", origin, request).await);
+    }
+    if settings.hooks
+        && !wasm_hooks::delivery::registered(&mut tx, user, &email, &wallet.address).await?
+    {
+        return Ok(problem(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Registration hook dispatcher unavailable",
+        ));
     }
     let now = Utc::now();
     if settings.webhooks {
@@ -219,9 +221,6 @@ async fn insert_user(
     Ok(result.rows_affected() == 1)
 }
 
-async fn needs_dispatcher(tx: &mut Transaction<'_, Postgres>) -> Result<bool, sqlx::Error> {
-    pending_hook(tx, "user_registered").await
-}
 pub(super) async fn pending_hook(
     tx: &mut Transaction<'_, Postgres>,
     event: &str,

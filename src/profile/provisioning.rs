@@ -125,22 +125,7 @@ async fn provision(
     };
     let wallet = ManagedWallet::generate(key)?;
     let mut tx = state.pool.begin().await?;
-    if state.registration.hooks && registration::pending_hook(&mut tx, "user_registered").await? {
-        return Ok(problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Registration hook dispatcher unavailable",
-        ));
-    }
     let address = &invitation.email;
-    if !state
-        .provisioning
-        .addresses
-        .allow_client(Some(&digest(address)), None)
-    {
-        audit(&mut tx, client, "throttled", None).await?;
-        tx.commit().await?;
-        return Ok(accepted());
-    }
     let existing = sqlx::query_scalar::<_, Option<Uuid>>(
         "SELECT (SELECT id FROM users WHERE lower(primary_email)=$1)",
     )
@@ -153,9 +138,28 @@ async fn provision(
             let Some(id) = insert(&mut tx, client, &invitation, &wallet).await? else {
                 return Ok(accepted());
             };
+            if state.registration.hooks
+                && !wasm_hooks::delivery::registered(&mut tx, id, address, &wallet.address).await?
+            {
+                return Ok(problem(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Registration hook dispatcher unavailable",
+                ));
+            }
             (id, state.provisioning.invite_ttl, "created")
         }
     };
+    if !state
+        .provisioning
+        .addresses
+        .allow_client(Some(&digest(address)), None)
+    {
+        tx.rollback().await?;
+        let mut tx = state.pool.begin().await?;
+        audit(&mut tx, client, "throttled", None).await?;
+        tx.commit().await?;
+        return Ok(accepted());
+    }
     let mut bytes = [0u8; 32];
     OsRng.try_fill_bytes(&mut bytes)?;
     let token = URL_SAFE_NO_PAD.encode(bytes);

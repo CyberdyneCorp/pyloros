@@ -1,0 +1,1 @@
+Stage the subject identifier and event type for every recipient. Include the normalized email and public wallet address only when that hook opted in. Check its privacy setting again when reading queued work. Keep verification and invitation secrets out of the event. Queue records and accounts commit together.

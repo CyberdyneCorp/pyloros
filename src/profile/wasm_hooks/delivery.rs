@@ -8,12 +8,14 @@ pub(in crate::profile) enum Producer {
     Store,
     Administrator,
     Role,
+    Registration,
 }
 
 impl Producer {
     fn enabled(self) -> Result<bool, Box<dyn Error>> {
         let name = match self {
             Self::Store => "PYLOROS_STORE_HOOK_DISPATCH",
+            Self::Registration => "PYLOROS_REGISTRATION_HOOK_DISPATCH",
             Self::Role => "PYLOROS_ROLE_HOOK_DISPATCH",
             Self::Administrator => "PYLOROS_ADMIN_ENTITLEMENT_HOOK_DISPATCH",
         };
@@ -58,6 +60,34 @@ pub(in crate::profile) async fn enqueue(
     user: Option<Uuid>,
     payload: Value,
 ) -> sqlx::Result<bool> {
+    enqueue_with_private_fields(tx, producer, event, user, payload, json!({})).await
+}
+
+pub(in crate::profile) async fn registered(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    email: &str,
+    address: &str,
+) -> sqlx::Result<bool> {
+    enqueue_with_private_fields(
+        tx,
+        Producer::Registration,
+        "user_registered",
+        Some(user),
+        json!({}),
+        json!({"email":email, "address":address}),
+    )
+    .await
+}
+
+async fn enqueue_with_private_fields(
+    tx: &mut Transaction<'_, Postgres>,
+    producer: Producer,
+    event: &str,
+    user: Option<Uuid>,
+    payload: Value,
+    private: Value,
+) -> sqlx::Result<bool> {
     if !registration::pending_hook(tx, event).await? {
         return Ok(true);
     }
@@ -67,7 +97,7 @@ pub(in crate::profile) async fn enqueue(
     {
         return Ok(false);
     }
-    stage(tx, event, user, payload).await
+    stage(tx, event, user, payload, private).await
 }
 
 async fn stage(
@@ -75,21 +105,22 @@ async fn stage(
     event: &str,
     user: Option<Uuid>,
     mut payload: Value,
+    private: Value,
 ) -> sqlx::Result<bool> {
     payload["user_id"] = json!(user);
     payload["event_type"] = json!(event);
     // A single snapshot checks the entire recipient set and pins every selected digest.
     sqlx::query_scalar(
         "WITH recipients AS MATERIALIZED (
-          SELECT h.id,h.name,h.timeout_seconds,b.sha256 FROM hooks h
+          SELECT h.id,h.name,h.timeout_seconds,h.receive_pii,b.sha256 FROM hooks h
           LEFT JOIN pyloros_hook_bindings b ON b.hook_id=h.id WHERE h.is_active AND h.event_type=$1
          ), ready AS (SELECT NOT EXISTS(SELECT FROM recipients WHERE sha256 IS NULL) AS ok),
          queued AS (
           INSERT INTO pyloros_hook_deliveries(id,hook_id,sha256,hook_name,event_type,user_id,payload,timeout_seconds)
-          SELECT gen_random_uuid(),id,sha256,name,$1,$2,$3,least(30,greatest(1,timeout_seconds))
+          SELECT gen_random_uuid(),id,sha256,name,$1,$2,CASE WHEN receive_pii THEN $3::jsonb || $4::jsonb ELSE $3::jsonb END,least(30,greatest(1,timeout_seconds))
           FROM recipients,ready WHERE ok
          ) SELECT ok FROM ready")
-        .bind(event).bind(user).bind(payload).fetch_one(&mut **tx).await
+        .bind(event).bind(user).bind(payload).bind(private).fetch_one(&mut **tx).await
 }
 
 #[cfg(test)]
@@ -106,7 +137,7 @@ mod tests {
             .unwrap();
         let mut tx = pool.begin().await.unwrap();
         sqlx::raw_sql("CREATE TEMP TABLE users(id uuid PRIMARY KEY);
-            CREATE TEMP TABLE hooks(id uuid PRIMARY KEY, name text,timeout_seconds int,event_type text,is_active boolean);
+            CREATE TEMP TABLE hooks(id uuid PRIMARY KEY, name text,timeout_seconds int,event_type text,is_active boolean, receive_pii boolean DEFAULT false);
             CREATE TEMP TABLE pyloros_hook_artifacts(sha256 text PRIMARY KEY);")
             .execute(&mut *tx).await.unwrap();
         for ddl in [
@@ -134,7 +165,11 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
-        assert!(!stage(&mut tx, evt, None, json!({})).await.unwrap());
+        assert!(
+            !stage(&mut tx, evt, None, json!({}), json!({}))
+                .await
+                .unwrap()
+        );
         let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pyloros_hook_deliveries")
             .fetch_one(&mut *tx)
             .await
@@ -146,10 +181,18 @@ mod tests {
         .execute(&mut *tx)
         .await
         .unwrap();
+        sqlx::query("UPDATE hooks SET receive_pii=true WHERE id=(SELECT hook_id FROM pyloros_hook_bindings WHERE sha256='v2')")
+            .execute(&mut *tx).await.unwrap();
         assert!(
-            stage(&mut tx, evt, None, json!({"plan":"pro"}))
-                .await
-                .unwrap()
+            stage(
+                &mut tx,
+                evt,
+                None,
+                json!({"plan":"pro"}),
+                json!({"email":"test@example.com"})
+            )
+            .await
+            .unwrap()
         );
         sqlx::query("UPDATE pyloros_hook_bindings SET sha256='v2'")
             .execute(&mut *tx)
@@ -163,5 +206,12 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(rows, ["v1", "v2"]);
+        let recipients: Vec<String> = sqlx::query_scalar(
+            "SELECT sha256 FROM pyloros_hook_deliveries WHERE payload ? 'email'",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(recipients, ["v2"]);
     }
 }

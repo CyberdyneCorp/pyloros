@@ -1,0 +1,2 @@
+- [x] Integrate the account creation paths and filter queued fields per recipient.
+- [x] Verify opted-in and opted-out deliveries, retries and rollback.

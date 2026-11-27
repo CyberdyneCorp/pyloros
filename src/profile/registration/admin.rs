@@ -102,14 +102,14 @@ pub(super) async fn create_verified(
     };
     let wallet = ManagedWallet::generate(key)?;
     let hash = state.scheme.hash(password).await?;
-    if settings.hooks && needs_dispatcher(tx).await? {
-        return Ok(Creation::Unavailable(
-            "Registration hook dispatcher unavailable",
-        ));
-    }
     let id = Uuid::new_v4();
     if !insert_user(tx, id, email, &hash, &wallet, true).await? {
         return Ok(Creation::ConcurrentDuplicate);
+    }
+    if settings.hooks && !wasm_hooks::delivery::registered(tx, id, email, &wallet.address).await? {
+        return Ok(Creation::Unavailable(
+            "Registration hook dispatcher unavailable",
+        ));
     }
     let now = Utc::now();
     if settings.webhooks {
