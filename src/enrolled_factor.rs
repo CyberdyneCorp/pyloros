@@ -2,7 +2,7 @@
 use chrono::{DateTime, Utc};
 use data_encoding::BASE32_NOPAD;
 use ring::{
-    aead, hkdf, hmac,
+    hmac,
     rand::{SecureRandom, SystemRandom},
 };
 use sha2::{Digest, Sha256};
@@ -11,7 +11,9 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-pub struct FactorVerifier(aead::LessSafeKey);
+use crate::key_encryption::KeyEncryptionKey;
+
+pub struct FactorVerifier(KeyEncryptionKey);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum FactorDecision {
@@ -35,30 +37,15 @@ pub enum FactorError {
 
 impl FactorVerifier {
     pub fn new(master: &str) -> Result<Self, FactorError> {
-        if master.is_empty() {
-            return Err(FactorError::Key);
-        }
-        let extracted = hkdf::Salt::new(hkdf::HKDF_SHA256, &[]).extract(master.as_bytes());
-        let derived = extracted
-            .expand(
-                &[b"cyberdyne-auth:key-encryption-key:v1"],
-                &aead::AES_256_GCM,
-            )
-            .map_err(|_| FactorError::Key)?;
-        Ok(Self(aead::LessSafeKey::new(derived.into())))
+        KeyEncryptionKey::new(master)
+            .map(Self)
+            .map_err(|_| FactorError::Key)
     }
 
     fn seed(&self, encrypted: &[u8]) -> Result<Zeroizing<Vec<u8>>, FactorError> {
-        let (prefix, ciphertext) = encrypted.split_at_checked(12).ok_or(FactorError::Seed)?;
-        let nonce =
-            aead::Nonce::try_assume_unique_for_key(prefix).map_err(|_| FactorError::Seed)?;
-        let mut buffer = Zeroizing::new(ciphertext.to_vec());
-        let plain = self
-            .0
-            .open_in_place(nonce, aead::Aad::empty(), &mut buffer)
-            .map_err(|_| FactorError::Seed)?;
+        let mut plain = self.0.decrypt(encrypted).map_err(|_| FactorError::Seed)?;
         plain.make_ascii_uppercase();
-        let encoded = std::str::from_utf8(plain).map_err(|_| FactorError::Seed)?;
+        let encoded = std::str::from_utf8(&plain).map_err(|_| FactorError::Seed)?;
         let seed = BASE32_NOPAD
             .decode(encoded.trim_end_matches('=').as_bytes())
             .map_err(|_| FactorError::Seed)?;
@@ -73,18 +60,10 @@ impl FactorVerifier {
         let mut seed = Zeroizing::new([0u8; 20]);
         random.fill(seed.as_mut()).map_err(|_| FactorError::Seed)?;
         let secret = BASE32_NOPAD.encode(seed.as_ref());
-        let mut nonce = [0u8; 12];
-        random.fill(&mut nonce).map_err(|_| FactorError::Seed)?;
-        let mut ciphertext = secret.as_bytes().to_vec();
-        self.0
-            .seal_in_place_append_tag(
-                aead::Nonce::assume_unique_for_key(nonce),
-                aead::Aad::empty(),
-                &mut ciphertext,
-            )
+        let encrypted = self
+            .0
+            .encrypt(secret.as_bytes())
             .map_err(|_| FactorError::Seed)?;
-        let mut encrypted = nonce.to_vec();
-        encrypted.extend(ciphertext);
         Ok((secret, encrypted))
     }
 
