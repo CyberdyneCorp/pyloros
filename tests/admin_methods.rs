@@ -124,3 +124,29 @@ async fn role_policy_attachment_authenticates_after_decoding_nonfinite_numbers()
         StatusCode::UNAUTHORIZED
     );
 }
+
+#[tokio::test]
+async fn delegated_catalog_requires_service_bearer_credentials() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    for (name, value) in [
+        (header::COOKIE, "access_token=user-session"),
+        (header::AUTHORIZATION, "Basic test"),
+        (header::AUTHORIZATION, "Bearer invalid"),
+    ] {
+        let request = Request::get("/api/v1/clients/me/permissions?client_id=another")
+            .header(name, value)
+            .body(Body::empty())
+            .unwrap();
+        let response = routes.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()[header::WWW_AUTHENTICATE], "Bearer");
+        let body = axum::body::to_bytes(response.into_body(), 256)
+            .await
+            .unwrap();
+        let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(error["detail"], "Service token required");
+    }
+}

@@ -41,13 +41,8 @@ async fn authorize(state: &Profile, headers: &HeaderMap) -> Result<String, Box<R
     let claims = state
         .verify
         .as_ref()
-        .and_then(|v| {
-            let mut validation = v.validation.clone();
-            validation.set_required_spec_claims(&["iss", "exp"]);
-            decode::<Value>(raw, &v.key, &validation).ok()
-        })
-        .ok_or_else(|| service_identity::unauthorized("Invalid token"))?
-        .claims;
+        .and_then(|v| v.service_claims(raw))
+        .ok_or_else(|| service_identity::unauthorized("Invalid token"))?;
     let (client, id) = match VerifiedToken::from_verified_claims(&claims) {
         Ok(VerifiedToken::Service { client, id, .. }) => (client, id),
         Ok(VerifiedToken::Access { .. }) => {

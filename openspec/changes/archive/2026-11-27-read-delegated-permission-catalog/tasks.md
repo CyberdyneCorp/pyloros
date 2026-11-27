@@ -1,0 +1,2 @@
+- [x] Implement service authorization and catalog reads.
+- [x] Compare response and authorization behavior across both backends.

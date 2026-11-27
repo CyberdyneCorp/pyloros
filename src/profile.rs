@@ -93,6 +93,12 @@ impl Verifier {
         Self { key, validation }
     }
 
+    fn service_claims(&self, raw: &str) -> Option<Value> {
+        let mut validation = self.validation.clone();
+        validation.set_required_spec_claims(&["iss", "exp"]);
+        Some(decode::<Value>(raw, &self.key, &validation).ok()?.claims)
+    }
+
     fn read(&self, raw: &str) -> Option<Identity> {
         self.claims(raw)?.identity()
     }
@@ -380,6 +386,10 @@ fn build_routes(
         .route(
             "/api/v1/admin/settings/blockchain",
             any(blockchain::get).put(blockchain::update),
+        )
+        .route(
+            "/api/v1/clients/me/permissions",
+            any(admin_permissions::delegated_list),
         )
         .route(
             "/api/v1/admin/clients/{client_id}/permissions",
