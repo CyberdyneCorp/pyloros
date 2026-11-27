@@ -370,6 +370,10 @@ fn build_routes(
             any(registration::bulk::handle).layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route("/api/v1/admin/users/{user_id}", any(admin_users::detail))
+        .route(
+            "/api/v1/admin/users/{user_id}/passkeys",
+            any(passkeys::admin_list),
+        )
         .route("/api/v1/admin/sessions", any(admin_sessions::list))
         .route(
             "/api/v1/admin/sessions/{session_id}",

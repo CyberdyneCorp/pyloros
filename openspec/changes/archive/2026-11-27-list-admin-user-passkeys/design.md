@@ -1,0 +1,1 @@
+Authenticate the operator before validating the target user. Query active credentials across relying parties, using the same timestamp and metadata representation as the owner inventory. Include the relying party identifier in the admin response. Keep credential key material outside the result projection.

@@ -1,0 +1,3 @@
+- [x] Serve the operator credential inventory.
+- [x] Compare responses, authorization, feature settings and account isolation.
+- [x] Verify the existing browser console displays the inventory.

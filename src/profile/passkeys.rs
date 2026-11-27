@@ -1,3 +1,5 @@
+mod admin;
+pub(super) use admin::list as admin_list;
 mod binding_cookie;
 pub(crate) use binding_cookie::read as binding_cookie;
 mod creation;

@@ -81,20 +81,28 @@ pub(super) async fn detail(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if method != Method::GET {
-        return crate::browser_http::method_not_allowed().await;
-    }
-    let (mut tx, _, _) = match administrator::operator(&state, &headers).await {
+    let (mut tx, id) = match target(&state, &method, &headers, &id).await {
         Ok(v) => v,
         Err(r) => return *r,
-    };
-    let id = match query::path_uuid(&id, "user_id") {
-        Ok(v) => v,
-        Err(e) => return passkeys::validation(vec![e]),
     };
     account(&mut tx, &state.admins, id)
         .await
         .unwrap_or_else(|_| internal())
+}
+
+pub(super) async fn target(
+    state: &Profile,
+    method: &Method,
+    headers: &HeaderMap,
+    raw: &str,
+) -> Result<(Transaction<'static, Postgres>, Uuid), Box<Response>> {
+    if method != Method::GET {
+        return Err(Box::new(crate::browser_http::method_not_allowed().await));
+    }
+    let (tx, _, _) = administrator::operator(state, headers).await?;
+    let user = query::path_uuid(raw, "user_id")
+        .map_err(|issue| Box::new(passkeys::validation(vec![issue])))?;
+    Ok((tx, user))
 }
 
 const COLUMNS: &str = "u.id,u.primary_email,u.default_wallet_address,u.created_at,u.is_active,
