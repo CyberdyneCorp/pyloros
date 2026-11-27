@@ -416,7 +416,9 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/users/{user_id}/organizations",
-            any(admin_organizations::memberships),
+            any(admin_organizations::memberships)
+                .post(admin_organizations::add)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
             "/api/v1/admin/users/{user_id}/roles",

@@ -1,0 +1,2 @@
+- [x] Implement the membership write and request validation.
+- [x] Compare reads, retries, concurrent writers, rollback and existing clients.

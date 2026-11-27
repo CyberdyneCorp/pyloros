@@ -1,7 +1,9 @@
 //! Organization memberships shown in the operator user directory.
 use super::*;
 use axum::extract::Path;
+mod addition;
 mod metadata;
+pub(super) use addition::add;
 
 pub(super) async fn memberships(
     State(state): State<Arc<Profile>>,
@@ -24,11 +26,7 @@ pub(super) async fn memberships(
 }
 
 async fn read(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> Result<Response, sqlx::Error> {
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT FROM users WHERE id=$1)")
-        .bind(user)
-        .fetch_one(&mut **tx)
-        .await?;
-    if !exists {
+    if !user_exists(tx, user).await? {
         return Ok(crate::login_http::problem(
             StatusCode::NOT_FOUND,
             &format!("user {user}"),
@@ -55,6 +53,13 @@ async fn read(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> Result<Response
         organizations.push(item);
     }
     Ok(Json(json!({"organizations": organizations})).into_response())
+}
+
+async fn user_exists(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT FROM users WHERE id=$1)")
+        .bind(user)
+        .fetch_one(&mut **tx)
+        .await
 }
 
 #[cfg(test)]
