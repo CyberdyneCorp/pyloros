@@ -1,0 +1,1 @@
+The validator and installer share upload constraints and the interface check. The installer checks operator access again after upload. PostgreSQL enforces artifact identity using the content digest. Concurrent uploads of identical bytes converge on one row. Keep storage separate from hook definitions so uploading has no execution or activation side effects.

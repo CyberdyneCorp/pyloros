@@ -244,3 +244,14 @@ A successful response includes `valid`, `abi`, `size` in bytes, and the artifact
 `sha256`. HTTP 422 includes the validation error. Each process accepts two
 concurrent uploads or validations (503 when busy). Uploads have a 4 MiB limit
 (413) and a 30-second deadline (408).
+
+### Stage a hook artifact
+
+Apply [the artifact table migration](migrations/001_hook_artifacts.sql) once through
+the deployment's PostgreSQL migration owner. For example, run
+`psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/001_hook_artifacts.sql`.
+
+Upload the binary to `POST /api/v2/admin/hooks/artifacts` using the same credentials
+and media type as validation. A first upload returns 201. Repeating it returns 200
+and the same SHA-256 digest. Administrators can download the exact component from
+`GET /api/v2/admin/hooks/artifacts/{sha256}`. Staged components are inactive.

@@ -14,76 +14,90 @@ const MAX_BYTES: usize = 4 * 1024 * 1024;
 static VALIDATIONS: Semaphore = Semaphore::const_new(2);
 
 pub(super) async fn validate(State(state): State<Arc<Profile>>, req: Request) -> Response {
+    match upload(&state, req).await {
+        Ok(artifact) => artifact.metadata().into_response(),
+        Err(response) => *response,
+    }
+}
+
+mod storage;
+pub(super) use storage::{download, install};
+
+struct Artifact {
+    bytes: axum::body::Bytes,
+    digest: String,
+    _permit: tokio::sync::SemaphorePermit<'static>,
+}
+
+impl Artifact {
+    fn metadata(&self) -> Json<Value> {
+        Json(json!({"valid": true, "abi": ABI, "size": self.bytes.len(), "sha256": self.digest}))
+    }
+}
+
+async fn upload(state: &Profile, req: Request) -> Result<Artifact, Box<Response>> {
     if req.method() != Method::POST {
-        return passkeys::post_required();
+        return Err(Box::new(passkeys::post_required()));
     }
-    match administrator::operator(&state, req.headers()).await {
-        Ok(session) => drop(session),
-        Err(e) => return *e,
-    }
+    drop(administrator::operator(state, req.headers()).await?);
     let media = req
         .headers()
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.split(';').next());
     if !media.is_some_and(|s| s.trim().eq_ignore_ascii_case("application/wasm")) {
-        return crate::login_http::problem(
+        return Err(Box::new(crate::login_http::problem(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             "Expected application/wasm",
-        );
+        )));
     }
     let Ok(permit) = VALIDATIONS.try_acquire() else {
-        return crate::login_http::problem(
+        return Err(Box::new(crate::login_http::problem(
             StatusCode::SERVICE_UNAVAILABLE,
             "Hook validation is busy",
-        );
+        )));
     };
     let read = to_bytes(req.into_body(), MAX_BYTES);
     let bytes = match tokio::time::timeout(std::time::Duration::from_secs(30), read).await {
         Err(_) => {
-            return crate::login_http::problem(
+            return Err(Box::new(crate::login_http::problem(
                 StatusCode::REQUEST_TIMEOUT,
                 "Hook upload timed out",
-            );
+            )));
         }
         Ok(Ok(bytes)) => bytes,
         Ok(Err(error))
             if std::error::Error::source(&error)
                 .is_some_and(|e| e.is::<http_body_util::LengthLimitError>()) =>
         {
-            return crate::login_http::problem(
+            return Err(Box::new(crate::login_http::problem(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 "Hook component exceeds 4 MiB",
-            );
+            )));
         }
         Ok(Err(_)) => {
-            return crate::login_http::problem(
+            return Err(Box::new(crate::login_http::problem(
                 StatusCode::BAD_REQUEST,
                 "Could not read the hook component",
-            );
+            )));
         }
     };
     tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        validation_response(&bytes)
+        if let Err(error) = inspect(&bytes) {
+            let body = Json(json!({"valid": false, "error": error}));
+            return Err(Box::new(
+                (StatusCode::UNPROCESSABLE_ENTITY, body).into_response(),
+            ));
+        }
+        let hash = digest::digest(&digest::SHA256, &bytes);
+        Ok(Artifact {
+            bytes,
+            digest: data_encoding::HEXLOWER.encode(hash.as_ref()),
+            _permit: permit,
+        })
     })
     .await
-    .unwrap_or_else(|_| internal())
-}
-
-fn validation_response(bytes: &[u8]) -> Response {
-    if let Err(error) = inspect(bytes) {
-        let body = Json(json!({"valid": false, "error": error}));
-        return (StatusCode::UNPROCESSABLE_ENTITY, body).into_response();
-    }
-    let hash = digest::digest(&digest::SHA256, bytes);
-    Json(json!({
-        "valid": true,
-        "abi": ABI,
-        "size": bytes.len(),
-        "sha256": data_encoding::HEXLOWER.encode(hash.as_ref()),
-    }))
-    .into_response()
+    .map_err(|_| Box::new(internal()))?
 }
 
 fn inspect(bytes: &[u8]) -> Result<(), String> {

@@ -40,3 +40,46 @@ fn inspection_does_not_run_guest_start_functions() {
     );
     inspect_text(&trap).unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn artifact_table_checks_content_identity_and_upload_bounds() {
+    let pool = sqlx::PgPool::connect(&env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let ddl = include_str!("../../../migrations/001_hook_artifacts.sql")
+        .replace("CREATE TABLE", "CREATE TEMP TABLE");
+    sqlx::raw_sql(&ddl).execute(&mut *tx).await.unwrap();
+    let insert = "INSERT INTO pyloros_hook_artifacts (sha256, component, abi, installed_by)
+                  VALUES (COALESCE($1, encode(sha256($2), 'hex')), $2, $3, $4)";
+    for (digest, bytes, ok) in [
+        (None, vec![1u8], true),
+        (Some("invalid"), vec![1], false),
+        (None, vec![], false),
+        (None, vec![0; MAX_BYTES + 1], false),
+    ] {
+        sqlx::query("SAVEPOINT fixture")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let outcome = sqlx::query(insert)
+            .bind(digest)
+            .bind(bytes)
+            .bind(ABI)
+            .bind(Uuid::new_v4())
+            .execute(&mut *tx)
+            .await;
+        assert_eq!(outcome.is_ok(), ok);
+        if let Err(e) = outcome {
+            assert_eq!(
+                e.as_database_error().unwrap().code().as_deref(),
+                Some("23514")
+            );
+        }
+        sqlx::query("ROLLBACK TO fixture")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+    }
+}

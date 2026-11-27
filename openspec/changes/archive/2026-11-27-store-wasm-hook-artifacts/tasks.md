@@ -1,0 +1,2 @@
+- [x] Add an independently deployable artifact table, installer and download endpoint.
+- [x] Verify digest identity, concurrent installation, current administrator access and retrieval.
