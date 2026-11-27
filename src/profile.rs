@@ -1,7 +1,9 @@
 //! User profile authentication and projection for the PostgreSQL IAM deployment.
 mod admin_clients;
+mod administrator;
 mod edit;
 mod email_verification;
+mod registries;
 pub(crate) use email_verification::verify_account;
 mod enrollment;
 mod logout_all;
@@ -229,6 +231,7 @@ fn timestamp(created: DateTime<Utc>) -> String {
 }
 
 struct Profile {
+    builtin_scopes: std::collections::BTreeMap<String, String>,
     patch_resources: tokio::sync::OnceCell<
         tokio::sync::watch::Receiver<Arc<crate::token_runtime::ResourceRegistry>>,
     >,
@@ -252,7 +255,12 @@ struct Profile {
 }
 
 pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> {
-    build_routes(pool, production, Default::default())
+    build_routes(
+        pool,
+        production,
+        registries::configured_scopes()?,
+        Default::default(),
+    )
 }
 
 pub async fn routes_with_admin_registry(
@@ -260,10 +268,13 @@ pub async fn routes_with_admin_registry(
     production: bool,
     interval: std::time::Duration,
 ) -> Result<Router, Box<dyn Error>> {
-    let catalog = admin_clients::creation::scope_catalog(pool.clone(), interval).await;
+    let builtin_scopes = registries::configured_scopes()?;
+    let catalog =
+        crate::discovery::watch_scopes(pool.clone(), builtin_scopes.clone(), interval).await;
     build_routes(
         pool,
         production,
+        builtin_scopes,
         tokio::sync::OnceCell::new_with(Some(catalog)),
     )
 }
@@ -271,9 +282,11 @@ pub async fn routes_with_admin_registry(
 fn build_routes(
     pool: PgPool,
     production: bool,
+    builtin_scopes: std::collections::BTreeMap<String, String>,
     client_scopes: tokio::sync::OnceCell<crate::discovery::ScopeCatalog>,
 ) -> Result<Router, Box<dyn Error>> {
     let state = Profile {
+        builtin_scopes,
         patch_resources: Default::default(),
         client_scopes,
         admin_enabled: config::flag_with_default("ADMIN_API_ENABLED", true)?,
@@ -304,6 +317,11 @@ fn build_routes(
         production,
     };
     Ok(Router::new()
+        .route("/api/v1/admin/oauth/scopes", any(registries::list_scopes))
+        .route(
+            "/api/v1/admin/oauth/scopes/{name}",
+            any(registries::get_scope),
+        )
         .route(
             "/api/v1/admin/oauth/clients/{client_id}/rotate-secret",
             any(admin_clients::rotate),

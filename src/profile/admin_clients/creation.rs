@@ -2,38 +2,10 @@
 use super::*;
 use crate::{
     browser_prompt::{quoted_list, quoted_string},
-    discovery::{ScopeCatalog, watch_scopes},
     passwords::PasswordScheme,
 };
 use metadata::Metadata;
-use std::{collections::BTreeMap, time::Duration};
-
-pub(in crate::profile) async fn scope_catalog(pool: PgPool, interval: Duration) -> ScopeCatalog {
-    let extra = std::env::var("PYLOROS_RESOURCE_SCOPE_CATALOG").unwrap_or_default();
-    let base = [
-        "openid",
-        "email",
-        "profile",
-        "roles",
-        "offline_access",
-        "users:provision",
-        "directory:read",
-        "roles:read",
-        "roles:manage",
-        "iam:read.tier",
-        "admin:users.read",
-        "admin:users.write",
-        "admin:sessions.read",
-        "admin:sessions.write",
-        "admin:hooks.read",
-        "admin:hooks.write",
-    ]
-    .into_iter()
-    .chain(extra.split_whitespace())
-    .map(|s| (s.to_owned(), String::new()))
-    .collect();
-    watch_scopes(pool, base, interval).await
-}
+use std::collections::BTreeMap;
 
 fn parse_authority(raw: &str) -> Option<axum::http::uri::Authority> {
     if raw.is_ascii() {

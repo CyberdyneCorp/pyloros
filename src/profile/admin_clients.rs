@@ -116,10 +116,7 @@ enum Operation<'a> {
     Rotate(&'a str, Option<Value>, SessionOrigin<'a>),
 }
 async fn handle(state: &Profile, headers: &HeaderMap, op: Operation<'_>) -> Response {
-    let Some(id) = credential(headers)
-        .and_then(|s| state.verify.as_ref()?.read(s))
-        .filter(|id| !id.client_bound)
-    else {
+    let Some(id) = administrator::identity(state, headers) else {
         return unauthorized();
     };
     if matches!(op, Operation::Create(_, _) | Operation::Patch(..))
@@ -133,7 +130,11 @@ async fn handle(state: &Profile, headers: &HeaderMap, op: Operation<'_>) -> Resp
         state
             .client_scopes
             .get_or_init(|| {
-                creation::scope_catalog(state.pool.clone(), std::time::Duration::from_secs(seconds))
+                crate::discovery::watch_scopes(
+                    state.pool.clone(),
+                    state.builtin_scopes.clone(),
+                    std::time::Duration::from_secs(seconds),
+                )
             })
             .await;
     }
@@ -152,30 +153,10 @@ async fn authorized_operation(
     id: &Identity,
     op: Operation<'_>,
 ) -> Result<Response, sqlx::Error> {
-    let mut tx = state.pool.begin().await?;
-    if state.enforce && revoked(&mut tx, id).await? {
-        return Ok(unauthorized());
-    }
-    if !state.admin_enabled {
-        return Ok(problem(StatusCode::FORBIDDEN, "Admin API disabled"));
-    }
-    let operator: Option<(bool, Option<String>, bool)> =
-        sqlx::query_as("SELECT is_admin,primary_email,is_email_verified FROM users WHERE id=$1")
-            .bind(id.user)
-            .fetch_optional(&mut *tx)
-            .await?;
-    let Some((stored, email, verified)) = operator else {
-        return Ok(problem(StatusCode::FORBIDDEN, "Admin access required"));
+    let (mut tx, email) = match administrator::session(state, id).await {
+        Ok(session) => session,
+        Err(response) => return Ok(*response),
     };
-    if !config::effective_admin(
-        stored,
-        email.as_deref(),
-        verified,
-        state.production,
-        &state.admins,
-    ) {
-        return Ok(problem(StatusCode::FORBIDDEN, "Admin access required"));
-    }
     match op {
         Operation::Patch(target, body, origin) => {
             update::apply(state, tx, (id.user, email.as_deref()), target, body, origin).await

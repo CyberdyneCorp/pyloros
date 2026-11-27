@@ -24,18 +24,11 @@ impl Page {
         };
         let page = number("page", 1, None);
         let size = number("page_size", 50, Some(200)) as i64;
-        let active_only = match fields
-            .get("active_only")
-            .map(|s| s.to_ascii_lowercase())
-            .as_deref()
-        {
-            None | Some("0" | "false" | "no" | "off" | "n" | "f") => false,
-            Some("1" | "true" | "yes" | "on" | "y" | "t") => true,
-            _ => {
-                issues.push(json!({"type":"bool_parsing","loc":["query","active_only"],"msg":"Input should be a valid boolean, unable to interpret input","input":fields["active_only"]}));
+        let active_only = crate::query::active_only(fields.get("active_only").map(|v| v.as_ref()))
+            .unwrap_or_else(|e| {
+                issues.push(e);
                 false
-            }
-        };
+            });
         if issues.is_empty() {
             Ok(Self {
                 number: page,

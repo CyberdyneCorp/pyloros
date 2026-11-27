@@ -30,3 +30,13 @@ pub(crate) fn integer(raw: &str) -> Result<String, (&'static str, &'static str)>
     }
     Ok(whole.replace('_', ""))
 }
+
+pub(crate) fn active_only(value: Option<&str>) -> Result<bool, serde_json::Value> {
+    match value.map(str::to_ascii_lowercase).as_deref() {
+        None | Some("0" | "false" | "no" | "off" | "n" | "f") => Ok(false),
+        Some("1" | "true" | "yes" | "on" | "y" | "t") => Ok(true),
+        _ => Err(
+            serde_json::json!({"type":"bool_parsing","loc":["query","active_only"],"msg":"Input should be a valid boolean, unable to interpret input","input":value}),
+        ),
+    }
+}

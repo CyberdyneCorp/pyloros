@@ -23,3 +23,13 @@ The issuer SHALL support authenticated administrative reads, creation, partial u
 
 - **WHEN** an operator deletes a managed registry entry
 - **THEN** retain the inactive administrative record and enforce the applicable scope, resource or origin policy.
+
+#### Scenario: Publish a scope on the writing replica
+
+- **WHEN** an administrator creates, reactivates or deactivates a scope while periodic registry refresh is disabled
+- **THEN** the next discovery request on that replica reflects the committed change.
+
+#### Scenario: Roll back a scope mutation
+
+- **WHEN** the operator audit insert fails
+- **THEN** the scope row and the catalog served by discovery retain their previous state.
