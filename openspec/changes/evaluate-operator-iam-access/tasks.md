@@ -1,0 +1,3 @@
+- [ ] Implement action, resource and context matching and verify condition behavior.
+- [ ] Load effective PostgreSQL policies and return the decision, reason and matched statements.
+- [ ] Verify chain provider behavior, the existing clients and decisions following committed mutations.
