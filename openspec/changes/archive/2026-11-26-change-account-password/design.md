@@ -1,0 +1,1 @@
+Verify and derive hashes with the configured algorithm and the existing bounded password worker pool. Recheck the original hash and access state inside the writing transaction. Serialize credential changes with the account row lock. Write the replacement hash, access-token cutoff, session revocations and success audit atomically.

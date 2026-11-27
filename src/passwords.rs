@@ -1,14 +1,18 @@
 //! Password verification for the credential step of first-party sign-in.
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use argon2::{
+    Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version,
+    password_hash::SaltString,
+};
+use rand::{RngCore, rngs::OsRng};
 use std::str::FromStr;
 use tokio::{sync::Semaphore, task::JoinError};
 
 // Retain the permit inside the worker even when the requesting task is cancelled.
 static HASH_JOBS: Semaphore = Semaphore::const_new(2);
 
-pub(crate) async fn verify_on_worker(
-    check: impl FnOnce() -> bool + Send + 'static,
-) -> Result<bool, JoinError> {
+pub(crate) async fn password_worker<T: Send + 'static>(
+    check: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, JoinError> {
     let permit = HASH_JOBS.acquire().await.expect("hash queue stays open");
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
@@ -44,11 +48,41 @@ impl FromStr for PasswordScheme {
 impl PasswordScheme {
     /// An absent hash still incurs the standard verification work for this scheme.
     pub async fn verify(self, password: String, stored: Option<String>) -> Result<bool, JoinError> {
-        verify_on_worker(move || {
+        password_worker(move || {
             let encoded = stored.as_deref().unwrap_or(self.dummy());
             self.matches(&password, encoded) && stored.is_some()
         })
         .await
+    }
+
+    pub(crate) async fn hash(
+        self,
+        password: String,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        password_worker(
+            move || -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+                match self {
+                    Self::Argon2 => {
+                        let mut salt = [0u8; 16];
+                        OsRng.try_fill_bytes(&mut salt)?;
+                        let salt =
+                            SaltString::encode_b64(&salt).map_err(|_| "invalid salt length")?;
+                        let params = Params::new(65536, 3, 4, None)
+                            .map_err(|_| "invalid Argon2 parameters")?;
+                        let algorithm = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+                        Ok(algorithm
+                            .hash_password(password.as_bytes(), &salt)
+                            .map_err(|_| "password hashing failed")?
+                            .to_string())
+                    }
+                    Self::Bcrypt if password.contains('\0') => {
+                        Err("bcrypt cannot store a password containing NUL".into())
+                    }
+                    Self::Bcrypt => Ok(bcrypt::hash(password.as_bytes(), 12)?),
+                }
+            },
+        )
+        .await?
     }
 
     fn matches(self, password: &str, encoded: &str) -> bool {

@@ -2,6 +2,7 @@
 mod edit;
 mod enrollment;
 mod logout_all;
+mod password_change;
 mod totp;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
@@ -165,6 +166,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
         .route("/api/v1/auth/mfa/totp/enable", any(totp::enable))
         .route("/api/v1/auth/mfa/totp/recovery-codes", any(totp::rotate))
         .route("/api/v1/auth/mfa/totp/disable", any(totp::disable))
+        .route("/api/v1/auth/password/change", any(password_change::handle))
         .route("/api/v1/auth/logout-all", any(logout_all::handle))
         .route("/api/v1/users/me/entitlements", any(entitlements))
         .with_state(Arc::new(state)))

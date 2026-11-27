@@ -96,3 +96,5 @@ The Preferences screen reads `GET /api/v1/auth/mfa/status` with a first-party ac
 Preferences starts authenticator enrollment at `POST /api/v1/auth/mfa/totp/setup`. Scan the QR image or enter its Base32 secret, then confirm a current code at `POST /api/v1/auth/mfa/totp/enable`. Store the ten returned recovery codes when they are shown. `MFA_ISSUER` sets the account label in the authenticator app.
 
 From the same Preferences screen, an enrolled account can replace its recovery codes or disable the authenticator. Both operations require a fresh authenticator code. Password accounts must also supply their password. Passwordless accounts need recent authentication on the calling session. Replacing codes invalidates the previous set immediately.
+
+Preferences submits the current and replacement password to `POST /api/v1/auth/password/change`. A successful change returns 204, revokes every active refresh session for the account and advances its access-token cutoff. Deployments that enforce token revocation reject previously issued access tokens. The replacement hash uses the configured `PASSWORD_SCHEME`.

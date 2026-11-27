@@ -1,5 +1,5 @@
 //! Client authentication for the authorization-code exchange.
-use crate::passwords::{matches_argon2, verify_on_worker};
+use crate::passwords::{matches_argon2, password_worker};
 use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Row, Transaction};
 
@@ -11,7 +11,7 @@ async fn verify_secret(
     previous: Option<String>,
 ) -> Result<bool, sqlx::Error> {
     let secret = secret.to_owned();
-    verify_on_worker(move || {
+    password_worker(move || {
         matches_argon2(secret.as_bytes(), &current)
             || previous.is_some_and(|hash| matches_argon2(secret.as_bytes(), &hash))
     })

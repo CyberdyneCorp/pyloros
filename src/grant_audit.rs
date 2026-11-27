@@ -125,6 +125,7 @@ pub(crate) enum AuditActivity<'a> {
         reason: Option<&'static str>,
         details: Value,
     },
+    PasswordChanged(Result<u64, &'static str>),
     PhoneEdit,
     EmailDecision {
         reason: Option<&'static str>,
@@ -232,6 +233,17 @@ pub(crate) async fn write_activity<'e>(
             outcome(reason.is_some()),
             reason,
             json!({}),
+        ),
+        AuditActivity::PasswordChanged(result) => (
+            "credential",
+            "password_change",
+            Some("password"),
+            "",
+            outcome(result.is_err()),
+            result.err(),
+            result
+                .map(|count| json!({"sessions_revoked":count}))
+                .unwrap_or_else(|_| json!({})),
         ),
         AuditActivity::LogoffAll(count) => (
             "session",

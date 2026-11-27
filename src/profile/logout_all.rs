@@ -68,13 +68,6 @@ async fn end_sessions(
     user: Uuid,
     now: DateTime<Utc>,
 ) -> Result<(u64, AuditSubject), sqlx::Error> {
-    let count =
-        sqlx::query("UPDATE sessions SET revoked_at=$2 WHERE user_id=$1 AND revoked_at IS NULL")
-            .bind(user)
-            .bind(now)
-            .execute(&mut **tx)
-            .await?
-            .rows_affected();
     let (email, organization) = sqlx::query_as::<_, (Option<String>, Option<Uuid>)>(
         "UPDATE users SET tokens_valid_after=GREATEST(tokens_valid_after,$2) WHERE id=$1
          RETURNING primary_email, organization_id",
@@ -85,13 +78,28 @@ async fn end_sessions(
     .await?
     .unwrap_or_default();
     Ok((
-        count,
+        revoke_sessions(tx, user, now).await?,
         AuditSubject {
             user: Some(user),
             email,
             organization,
         },
     ))
+}
+
+pub(super) async fn revoke_sessions(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    Ok(
+        sqlx::query("UPDATE sessions SET revoked_at=$2 WHERE user_id=$1 AND revoked_at IS NULL")
+            .bind(user)
+            .bind(now)
+            .execute(&mut **tx)
+            .await?
+            .rows_affected(),
+    )
 }
 
 #[cfg(test)]
