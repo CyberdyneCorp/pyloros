@@ -23,3 +23,13 @@ An operator SHALL be able to remove a user's membership in an existing organizat
 
 - **WHEN** a required role revocation or operator audit fails
 - **THEN** roll back the local membership, primary and role changes
+
+#### Scenario: Concurrent removal
+
+- **WHEN** a repeated request waits for an earlier removal to commit
+- **THEN** audit both accepted requests and preserve the user revision when the primary assignment has already been cleared
+
+#### Scenario: Audit serialization
+
+- **WHEN** an accepted action waits for a concurrent audit writer
+- **THEN** preserve the action's recording time while linking its hash to the preceding committed audit record

@@ -4,7 +4,7 @@ mod creation;
 mod grant;
 mod revoke;
 pub(super) use grant::grant;
-pub(super) use revoke::revoke;
+pub(super) use revoke::{revoke, withdraw_scoped};
 mod user_inventory;
 pub(super) use user_inventory::list_user;
 mod removal;
@@ -112,7 +112,9 @@ struct Target<'a> {
     change: Option<replacement::Change<'a>>,
 }
 
-async fn authority(state: &Profile) -> Result<Option<crate::chain_settings::Chain>, sqlx::Error> {
+pub(super) async fn authority(
+    state: &Profile,
+) -> Result<Option<crate::chain_settings::Chain>, sqlx::Error> {
     let chain = state.blockchain.membership_source().await;
     if let Some(source) = &chain {
         source.validate_signer()?;
@@ -187,7 +189,7 @@ async fn catalog(
     }
 }
 
-fn chain_error(error: SnapshotError) -> Response {
+pub(super) fn chain_error(error: SnapshotError) -> Response {
     match error {
         SnapshotError::Deadline => internal(),
         SnapshotError::Unavailable => (

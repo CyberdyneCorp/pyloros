@@ -7,10 +7,12 @@ mod creation;
 mod edit;
 mod input;
 mod metadata;
+mod removal;
 pub(super) use assignment::assign;
 pub(super) use catalog::list;
 pub(super) use creation::create;
 pub(super) use edit::{deactivate, edit};
+pub(super) use removal::remove;
 
 pub(super) async fn memberships(
     State(state): State<Arc<Profile>>,

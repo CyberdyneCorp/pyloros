@@ -56,6 +56,7 @@ pub(crate) async fn append_record(
     meta: Value,
     origin: SessionOrigin<'_>,
 ) -> Result<(), sqlx::Error> {
+    let now = Utc::now();
     let (target_type, target) = target.unzip();
     sqlx::query("INSERT INTO audit_chain_head (id,head_hash) VALUES (1,repeat('0',64)) ON CONFLICT(id) DO NOTHING")
         .execute(&mut **tx).await?;
@@ -64,7 +65,6 @@ pub(crate) async fn append_record(
     )
     .fetch_one(&mut **tx)
     .await?;
-    let now = Utc::now();
     let id = Uuid::new_v4();
     let ip = origin.ip.map(|v| v.to_string());
     let actor_id = actor.map(|(id, _)| id);
@@ -102,6 +102,76 @@ pub(crate) async fn append_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn audit_creation_time_precedes_wait_for_chain_serialization() -> Result<(), sqlx::Error>
+    {
+        let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await?;
+        let mut writer = pool.begin().await?;
+        let mut gate = pool.begin().await?;
+        let key = Uuid::new_v4().as_u128() as i64;
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *writer)
+            .await?;
+        sqlx::raw_sql(&format!(
+            "CREATE TEMP TABLE audit_chain_head(id int primary key, head_hash text);
+             CREATE TEMP TABLE admin_action_logs(id uuid,action text,target_type text,target_id text,
+               extra_metadata jsonb,ip_address inet,user_agent text,created_at timestamptz,
+               prev_hash text,row_hash text,actor_user_id uuid,actor_email text);
+             CREATE FUNCTION pg_temp.wait_on_head() RETURNS trigger LANGUAGE plpgsql AS
+               $$ BEGIN PERFORM pg_advisory_xact_lock({key}::bigint); RETURN NEW; END $$;
+             CREATE TRIGGER wait_on_head BEFORE INSERT ON audit_chain_head
+               FOR EACH ROW EXECUTE FUNCTION pg_temp.wait_on_head()"
+        )).execute(&mut *writer).await?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(key)
+            .execute(&mut *gate)
+            .await?;
+        let append = async {
+            append_record(
+                &mut writer,
+                "test",
+                None,
+                None,
+                json!({}),
+                SessionOrigin {
+                    ip: None,
+                    user_agent: None,
+                },
+            )
+            .await?;
+            sqlx::query_scalar::<_, chrono::DateTime<Utc>>(
+                "SELECT created_at FROM pg_temp.admin_action_logs",
+            )
+            .fetch_one(&mut *writer)
+            .await
+        };
+        let release = async {
+            loop {
+                let blocked: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT FROM pg_locks WHERE pid=$1 AND NOT granted)",
+                )
+                .bind(pid)
+                .fetch_one(&mut *gate)
+                .await?;
+                if blocked {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+            let observed = Utc::now();
+            gate.commit().await?;
+            Ok::<_, sqlx::Error>(observed)
+        };
+        let (created, observed) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            tokio::try_join!(append, release)
+        })
+        .await
+        .expect("audit insert reached lock")?;
+        assert!(created <= observed);
+        Ok(())
+    }
+
     #[test]
     fn unicode_registration_metadata_preserves_the_chain_digest() {
         let content = json!({"nested":{"z":1,"a":2},"label":"Δ 🏛"});

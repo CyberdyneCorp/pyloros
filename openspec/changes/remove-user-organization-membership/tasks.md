@@ -1,2 +1,3 @@
-- [ ] Implement membership removal, clearing of a matching primary, scoped role revocation and operator auditing.
-- [ ] Compare provider behavior, role events, rollback, retries and client interoperability against the reference.
+- [x] Implement membership removal, clearing of a matching primary, scoped role revocation and operator auditing.
+- [x] Compare provider behavior, role events, rollback, retries and client interoperability against the reference.
+- [ ] Dispatch configured role-revocation hooks through the WebAssembly runtime and verify the committed state and callback payload.

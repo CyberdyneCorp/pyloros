@@ -440,6 +440,10 @@ fn build_routes(
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route(
+            "/api/v1/admin/users/{user_id}/organizations/{organization_id}",
+            any(admin_organizations::remove),
+        )
+        .route(
             "/api/v1/admin/users/{user_id}/roles",
             any(admin_client_roles::list_user).post(admin_client_roles::grant),
         )

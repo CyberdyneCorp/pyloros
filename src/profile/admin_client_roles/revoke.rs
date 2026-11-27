@@ -175,6 +175,25 @@ impl Assignment {
     }
 }
 
+pub(in crate::profile) async fn withdraw_scoped(
+    tx: &mut Transaction<'_, Postgres>,
+    state: &Profile,
+    user: Uuid,
+    org: Uuid,
+    group: Uuid,
+    client: String,
+    key: String,
+) -> Result<Option<Response>, sqlx::Error> {
+    Assignment {
+        user,
+        org: Some(org),
+        client,
+        key,
+    }
+    .withdraw(tx, state, group)
+    .await
+}
+
 fn no_identity() -> Response {
     problem(
         StatusCode::CONFLICT,
