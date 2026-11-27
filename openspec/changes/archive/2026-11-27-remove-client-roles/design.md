@@ -1,0 +1,1 @@
+Use the same client lock as creation and the same role lock as permission replacement. Resolve the global and organization groups using the role-name parser. Delete matching groups and mappings and append the audit entry in one transaction. Chain IAM remains authoritative when configured.

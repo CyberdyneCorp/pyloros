@@ -1,0 +1,2 @@
+- [x] 1. Implement atomic deletion and serialize mapping edits.
+- [x] 2. Verify behavior against the reference and existing clients.

@@ -115,11 +115,6 @@ impl Change<'_> {
         client: &str,
         key: &str,
     ) -> Result<Response, sqlx::Error> {
-        sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))")
-            .bind(client)
-            .bind(key)
-            .execute(&mut *tx)
-            .await?;
         let known: Vec<String> =
             sqlx::query_scalar("SELECT key FROM client_permissions WHERE client_id=$1")
                 .bind(client)

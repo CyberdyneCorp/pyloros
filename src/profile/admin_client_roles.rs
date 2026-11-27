@@ -1,10 +1,12 @@
 //! Operator inventory of global roles for an active client.
 use super::*;
 mod creation;
+mod removal;
 mod replacement;
 use crate::chain_settings::SnapshotError;
 use axum::extract::Path;
 pub(super) use creation::create;
+pub(super) use removal::remove;
 pub(super) use replacement::put;
 use serde::Serialize;
 
@@ -97,6 +99,9 @@ async fn catalog(
         && let Some(target) = target
     {
         let key = target.key;
+        if target.change.is_some() {
+            lock_role(&mut tx, client, key).await?;
+        }
         let name = format!("rp:{client}:{key}");
         let exists = !client.contains('@')
             && sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT FROM iam_groups WHERE name=$1)")
@@ -122,7 +127,11 @@ async fn catalog(
         None => Ok(Json(json!({"client_id":client,"roles":roles})).into_response()),
         Some(target) => {
             let exists = roles.iter().any(|r| r.role_key == target.key);
-            complete_mapping(state.pool.begin().await?, client, target, exists).await
+            let mut tx = state.pool.begin().await?;
+            if target.change.is_some() {
+                lock_role(&mut tx, client, target.key).await?;
+            }
+            complete_mapping(tx, client, target, exists).await
         }
     }
 }
@@ -159,6 +168,44 @@ async fn complete_mapping(
     }
 }
 
+fn missing_role(client: &str, key: &str) -> Response {
+    use crate::browser_prompt::quoted_string;
+    crate::login_http::problem(
+        StatusCode::NOT_FOUND,
+        &format!(
+            "role {} not found for client {}",
+            quoted_string(key),
+            quoted_string(client)
+        ),
+    )
+}
+
+async fn lock_role(
+    tx: &mut Transaction<'_, Postgres>,
+    client: &str,
+    key: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))")
+        .bind(client)
+        .bind(key)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+async fn active_client_for_update(
+    tx: &mut Transaction<'_, Postgres>,
+    client: &str,
+) -> Result<bool, sqlx::Error> {
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT active FROM oauth_clients WHERE client_id=$1 FOR NO KEY UPDATE",
+    )
+    .bind(client)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(active == Some(true))
+}
+
 async fn role_mapping<'a>(
     db: impl sqlx::PgExecutor<'a>,
     client: &str,
@@ -166,12 +213,7 @@ async fn role_mapping<'a>(
     exists: bool,
 ) -> Result<Response, sqlx::Error> {
     if !exists {
-        let client = crate::browser_prompt::quoted_string(client);
-        let role = crate::browser_prompt::quoted_string(key);
-        return Ok(crate::login_http::problem(
-            StatusCode::NOT_FOUND,
-            &format!("role {role} not found for client {client}"),
-        ));
+        return Ok(missing_role(client, key));
     }
     let permissions: Vec<String> = sqlx::query_scalar(
         r#"SELECT permission_key FROM client_role_permissions

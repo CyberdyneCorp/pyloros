@@ -101,13 +101,7 @@ async fn insert(
     actor: (Uuid, Option<&str>),
     origin: SessionOrigin<'_>,
 ) -> Result<Response, sqlx::Error> {
-    let active = sqlx::query_scalar::<_, bool>(
-        "SELECT active FROM oauth_clients WHERE client_id=$1 FOR NO KEY UPDATE",
-    )
-    .bind(client)
-    .fetch_optional(&mut *tx)
-    .await?;
-    if active != Some(true) {
+    if !active_client_for_update(&mut tx, client).await? {
         return Ok(admin_permissions::unknown_client(client));
     }
     if let Some(chain) = chain {

@@ -8,11 +8,25 @@ use uuid::Uuid;
 pub(crate) fn assignment(name: &str) -> Option<(String, Option<Uuid>)> {
     let body = name.strip_prefix("rp:")?;
     let (token, organization) = match body.split_once('@') {
-        Some((token, id)) => (token, Some(Uuid::parse_str(id).ok()?)),
+        Some((token, id)) => (token, Some(organization_id(id)?)),
         None => (body, None),
     };
     let (client, key) = token.rsplit_once(':')?;
     (valid_role_key(key) && !client.is_empty()).then(|| (token.to_owned(), organization))
+}
+
+fn organization_id(value: &str) -> Option<Uuid> {
+    Uuid::parse_str(value).ok().or_else(|| {
+        // Older stored organization identifiers can have noncanonical separators.
+        let hex = value
+            .strip_prefix("urn:uuid:")
+            .unwrap_or(value)
+            .trim_matches(|ch| matches!(ch, '{' | '}'))
+            .replace('-', "");
+        (hex.len() == 32)
+            .then(|| Uuid::parse_str(&hex).ok())
+            .flatten()
+    })
 }
 
 pub(crate) fn valid_role_key(key: &str) -> bool {

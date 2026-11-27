@@ -389,6 +389,10 @@ fn build_routes(
             any(admin_client_roles::list).post(admin_client_roles::create),
         )
         .route(
+            "/api/v1/admin/clients/{client_id}/roles/{role_key}",
+            any(admin_client_roles::remove),
+        )
+        .route(
             "/api/v1/admin/clients/{client_id}/roles/{role_key}/permissions",
             any(admin_client_roles::mapping).put(admin_client_roles::put),
         )
