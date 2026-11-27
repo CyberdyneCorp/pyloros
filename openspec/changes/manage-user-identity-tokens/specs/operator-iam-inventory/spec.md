@@ -35,3 +35,9 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 - **WHEN** an operator reapplies blockchain settings while using the local provider
 - **THEN** the new provider starts its token sequence at one
 - **AND** the user token read continues to expose previously stored metadata
+
+#### Scenario: User metadata changes during a mint retry
+
+- **WHEN** a retry loads user metadata, a concurrent edit commits, and the provider returns an outcome for that retry
+- **THEN** persist the retry result against the originally loaded metadata, even when doing so overwrites the intervening metadata edit
+- **AND** commit the operator audit and metadata change together

@@ -99,14 +99,20 @@ async fn store(
     let Some((wallet, key, metadata)) = row else {
         return Ok(problem(StatusCode::NOT_FOUND, "User not found"));
     };
-    admin_organizations::normalized_storage(&metadata)?;
+    let normalized = admin_organizations::normalized_storage(&metadata)?;
     let outcome = match (wallet.as_deref(), key.as_deref()) {
         (Some(wallet), Some(key)) if !wallet.is_empty() && !key.is_empty() => {
             let outcome = match mint(provider, wallet, key).await {
                 Ok(result) => result,
                 Err(response) => return Ok(response),
             };
-            save_metadata(&mut tx, id, &outcome).await?;
+            save_metadata(
+                &mut tx,
+                id,
+                normalized.as_deref().unwrap_or(&metadata),
+                &outcome,
+            )
+            .await?;
             outcome
         }
         _ => Outcome::failed("user has no wallet/keypair".into()),
@@ -127,15 +133,10 @@ async fn store(
 async fn save_metadata(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
+    metadata: &str,
     outcome: &Outcome,
 ) -> Result<(), sqlx::Error> {
-    // Acquire the row after the provider call so concurrent retries can both make progress.
-    let metadata: String =
-        sqlx::query_scalar("SELECT extra_metadata::text FROM users WHERE id=$1 FOR UPDATE")
-            .bind(id)
-            .fetch_one(&mut **tx)
-            .await?;
-    let normalized = admin_organizations::normalized_storage(&metadata)?;
+    // A completed retry applies its outcome to the snapshot from before the provider call.
     let patch = if outcome.success {
         json!({"nft_status":outcome.nft_status,"nft_token_id":outcome.token_id,"nft_tx_hash":outcome.tx_hash})
     } else {
@@ -146,7 +147,7 @@ async fn save_metadata(
         WHERE id=$1 AND extra_metadata IS DISTINCT FROM (($2::text::jsonb - 'nft_error') || $3)",
     )
     .bind(id)
-    .bind(normalized.as_deref().unwrap_or(&metadata))
+    .bind(metadata)
     .bind(patch)
     .execute(&mut **tx)
     .await?;
@@ -224,6 +225,45 @@ mod tests {
             settings.token_provider().await?.status("1").await,
             Ok(Some(0))
         ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn completed_retry_uses_metadata_loaded_before_the_provider_call()
+    -> Result<(), sqlx::Error> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&std::env::var("DATABASE_URL").unwrap())
+            .await?;
+        sqlx::raw_sql("CREATE TEMP TABLE users(id uuid PRIMARY KEY, extra_metadata jsonb, updated_at timestamptz)")
+            .execute(&pool).await?;
+        let id = Uuid::new_v4();
+        let snapshot: String = sqlx::query_scalar("INSERT INTO users VALUES($1,jsonb_build_object('label','before'),now()) RETURNING extra_metadata::text")
+            .bind(id).fetch_one(&pool).await?;
+        sqlx::query(
+            "UPDATE users SET extra_metadata=jsonb_build_object('label','during') WHERE id=$1",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await?;
+        let mut tx = pool.begin().await?;
+        save_metadata(
+            &mut tx,
+            id,
+            &snapshot,
+            &Outcome::failed("test refusal".into()),
+        )
+        .await?;
+        tx.commit().await?;
+        let result: Value = sqlx::query_scalar("SELECT extra_metadata FROM users WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(
+            result,
+            json!({"label":"before","nft_status":"failed","nft_error":"test refusal"})
+        );
         Ok(())
     }
 }
