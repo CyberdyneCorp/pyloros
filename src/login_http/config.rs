@@ -88,6 +88,7 @@ impl Login {
         };
         Ok(Some(Self {
             signed_out,
+            passkeys: passkey::Policy::configured()?,
             reuse_grace: TimeDelta::seconds(grace),
             pool,
             issuer: GrantSessionIssuer::with_identity(signing.clone(), refresh)?,

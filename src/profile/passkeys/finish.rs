@@ -5,9 +5,9 @@ use crate::{
     request_json::{parse_body, token_field},
 };
 
-pub(super) struct Proof {
-    pub(super) ceremony: Uuid,
-    credential: Value,
+pub(crate) struct Proof {
+    pub(crate) ceremony: Uuid,
+    pub(crate) credential: Value,
     name: String,
 }
 
@@ -41,7 +41,7 @@ pub(in crate::profile) async fn handle(
     .await
 }
 
-fn parse(body: Value) -> Result<Proof, Vec<Value>> {
+pub(crate) fn parse(body: Value) -> Result<Proof, Vec<Value>> {
     if !body.is_object() {
         return Err(vec![token_field(body, "ceremony_id", 1, 64).unwrap_err()]);
     }
@@ -91,7 +91,7 @@ fn parse(body: Value) -> Result<Proof, Vec<Value>> {
     })
 }
 
-pub(super) fn invalid() -> Response {
+pub(crate) fn invalid() -> Response {
     problem(
         StatusCode::UNAUTHORIZED,
         "Invalid passkey ceremony or authentication proof",

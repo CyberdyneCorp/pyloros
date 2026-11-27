@@ -1,5 +1,8 @@
 mod binding_cookie;
+pub(crate) use binding_cookie::read as binding_cookie;
 mod creation;
+pub(crate) use creation::Settings as CeremonySettings;
+pub(crate) use finish::{Proof, invalid as invalid_proof, parse as parse_proof};
 mod finish;
 pub(super) use finish::handle as finish_enrollment;
 mod rename;
@@ -110,7 +113,7 @@ pub(super) async fn modify(
     }
 }
 
-fn post_required() -> Response {
+pub(crate) fn post_required() -> Response {
     let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
     response
         .headers_mut()
@@ -173,7 +176,7 @@ enum Operation {
     Rename(Result<(Uuid, String), Vec<Value>>),
 }
 
-fn validation(issues: Vec<Value>) -> Response {
+pub(crate) fn validation(issues: Vec<Value>) -> Response {
     (
         StatusCode::UNPROCESSABLE_ENTITY,
         Json(json!({"detail":issues})),

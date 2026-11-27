@@ -3,7 +3,7 @@ mod edit;
 mod email_verification;
 mod enrollment;
 mod logout_all;
-mod passkeys;
+pub(crate) mod passkeys;
 pub use passkeys::limit_passkey_body;
 mod password_change;
 mod password_reset;

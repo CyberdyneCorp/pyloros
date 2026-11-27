@@ -6,6 +6,7 @@ pub(crate) use input::email_field;
 mod logout;
 mod mfa;
 use crate::enrolled_factor::FactorVerifier;
+mod passkey;
 mod poll;
 mod refresh;
 use crate::mfa_challenges::ChallengeVerifier;
@@ -38,6 +39,7 @@ use uuid::Uuid;
 
 struct Login {
     signed_out: String,
+    passkeys: Option<passkey::Policy>,
     pool: PgPool,
     signing: SigningIdentity,
     issuer: GrantSessionIssuer,
@@ -68,6 +70,7 @@ pub fn routes(pool: PgPool, production: bool) -> Result<Router, Box<dyn Error>> 
     };
     Ok(Router::new()
         .route("/api/v1/auth/oauth2/logout", end_session)
+        .route("/api/v1/auth/passkeys/login/verify", any(passkey::handle))
         .route("/api/v1/auth/login", any(handle))
         .route("/api/v1/auth/refresh", any(refresh::handle))
         .route("/api/v1/auth/logout", any(logout::handle))
@@ -129,11 +132,26 @@ fn challenge(method: &str, token: String, code: Option<String>) -> Response {
         .into_response()
 }
 
+#[derive(Clone, Copy)]
+enum Primary {
+    Password,
+    Passkey,
+}
+impl Primary {
+    fn audit(self) -> &'static str {
+        match self {
+            Self::Password => "pwd",
+            Self::Passkey => "user",
+        }
+    }
+}
+
 enum LoginMethod {
+    Passkey(Uuid),
     Password,
     Email(chrono::DateTime<Utc>),
-    Totp,
-    Recovery,
+    Totp(Primary),
+    Recovery(Primary),
 }
 
 type LoginResult = Result<Response, Box<dyn Error + Send + Sync>>;
@@ -218,10 +236,13 @@ impl Login {
                 _ => now,
             },
             methods: match method {
+                LoginMethod::Passkey(_) => &["mfa", "swk", "user"],
                 LoginMethod::Password => &["pwd"],
                 LoginMethod::Email(_) => &["pwd", "mca"],
-                LoginMethod::Totp => &["pwd", "otp", "mfa"],
-                LoginMethod::Recovery => &["pwd", "mfa"],
+                LoginMethod::Totp(Primary::Password) => &["pwd", "otp", "mfa"],
+                LoginMethod::Totp(Primary::Passkey) => &["swk", "user", "otp", "mfa"],
+                LoginMethod::Recovery(Primary::Password) => &["pwd", "mfa"],
+                LoginMethod::Recovery(Primary::Passkey) => &["swk", "user", "mfa"],
             },
             origin,
         };
@@ -243,10 +264,15 @@ impl Login {
         write_activity(
             &mut *tx,
             match method {
+                LoginMethod::Passkey(key) => AuditActivity::PasskeyLogin(pair.session, key),
                 LoginMethod::Password => AuditActivity::PasswordLogin(pair.session),
                 LoginMethod::Email(_) => AuditActivity::EmailLogin(pair.session),
-                LoginMethod::Totp => AuditActivity::FactorLogin(pair.session, "totp"),
-                LoginMethod::Recovery => AuditActivity::FactorLogin(pair.session, "recovery_code"),
+                LoginMethod::Totp(primary) => {
+                    AuditActivity::FactorLogin(pair.session, "totp", primary.audit())
+                }
+                LoginMethod::Recovery(primary) => {
+                    AuditActivity::FactorLogin(pair.session, "recovery_code", primary.audit())
+                }
             },
             AuditSubject {
                 user: Some(user),

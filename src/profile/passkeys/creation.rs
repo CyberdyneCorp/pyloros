@@ -4,12 +4,12 @@ use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
 use std::net::IpAddr;
 
-pub(super) struct Settings {
+pub(crate) struct Settings {
     name: String,
     ttl: i64,
     browser: Vec<String>,
     native: Vec<String>,
-    pub(super) digest: String,
+    pub(crate) digest: String,
     dev: bool,
     secure: bool,
     proxy_peers: Vec<ipnet::IpNet>,
@@ -45,7 +45,7 @@ fn json_string(value: &str) -> String {
 }
 
 impl Settings {
-    pub(super) fn configured(rp: &str) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn configured(rp: &str) -> Result<Self, Box<dyn Error>> {
         let browser = crate::login_methods::configured_origins("PASSKEYS_ORIGINS");
         let native = crate::login_methods::configured_origins("PASSKEYS_NATIVE_ORIGINS");
         let policy = format!(
@@ -86,7 +86,7 @@ impl Settings {
         })
     }
 
-    pub(super) fn transport(
+    pub(crate) fn transport(
         &self,
         headers: &HeaderMap,
         peer: IpAddr,
@@ -131,9 +131,9 @@ impl Settings {
     }
 }
 
-pub(super) struct Transport {
-    pub(super) origin: String,
-    pub(super) secret: String,
+pub(crate) struct Transport {
+    pub(crate) origin: String,
+    pub(crate) secret: String,
     native: bool,
 }
 

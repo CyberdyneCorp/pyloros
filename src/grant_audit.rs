@@ -135,6 +135,9 @@ pub(crate) enum AuditActivity<'a> {
         reason: Option<&'static str>,
     },
     PasswordLogin(Uuid),
+    PasskeyLogin(Uuid, Uuid),
+    PasskeyRefused(bool),
+    PasskeyChallenge,
     PasskeyRevoked(Uuid),
     PasskeyEnrolled(Uuid),
     LogoffAll(u64),
@@ -148,8 +151,8 @@ pub(crate) enum AuditActivity<'a> {
         session: Option<Uuid>,
         reason: Option<&'static str>,
     },
-    FactorLogin(Uuid, &'static str),
-    FactorRefused(&'static str),
+    FactorLogin(Uuid, &'static str, &'static str),
+    FactorRefused(&'static str, &'static str),
     EmailLogin(Uuid),
     EmailLoginRefused(&'static str),
     PasswordRefused(&'static str),
@@ -177,7 +180,10 @@ pub(crate) async fn write_activity<'e>(
         email,
         organization,
     } = subject;
-    let is_mfa = matches!(activity, AuditActivity::FactorLogin(_, _));
+    let is_mfa = matches!(
+        activity,
+        AuditActivity::FactorLogin(_, _, _) | AuditActivity::PasskeyLogin(_, _)
+    );
     let (class, activity, protocol, client, outcome, reason, details) = match activity {
         AuditActivity::Grant {
             client,
@@ -191,6 +197,33 @@ pub(crate) async fn write_activity<'e>(
             outcome(reason.is_some()),
             reason,
             details,
+        ),
+        AuditActivity::PasskeyLogin(session, key) => (
+            "authentication",
+            "logon",
+            Some("passkey"),
+            "",
+            "success",
+            None,
+            json!({"session_id":session,"passkey_id":key}),
+        ),
+        AuditActivity::PasskeyRefused(counter) => (
+            "authentication",
+            "logon",
+            Some("passkey"),
+            "",
+            "failure",
+            Some("invalid_passkey"),
+            json!({"counter_anomaly":counter}),
+        ),
+        AuditActivity::PasskeyChallenge => (
+            "authentication",
+            "mfa_challenge",
+            Some("passkey"),
+            "",
+            "success",
+            Some("mfa_required"),
+            json!({"method":"totp"}),
         ),
         AuditActivity::EmailLogin(session) => (
             "authentication",
@@ -210,16 +243,16 @@ pub(crate) async fn write_activity<'e>(
             Some(reason),
             json!({}),
         ),
-        AuditActivity::FactorLogin(session, method) => (
+        AuditActivity::FactorLogin(session, method, primary) => (
             "authentication",
             "mfa_verify",
             Some(method),
             "",
             "success",
             None,
-            json!({"session_id":session,"primary":"pwd"}),
+            json!({"session_id":session,"primary":primary}),
         ),
-        AuditActivity::FactorRefused(reason) => (
+        AuditActivity::FactorRefused(reason, primary) => (
             "authentication",
             "mfa_verify",
             None,
@@ -227,7 +260,7 @@ pub(crate) async fn write_activity<'e>(
             "failure",
             Some(reason),
             if reason == "mfa_failed" {
-                json!({"primary":"pwd"})
+                json!({"primary":primary})
             } else {
                 json!({})
             },

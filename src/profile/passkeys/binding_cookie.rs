@@ -1,7 +1,7 @@
 //! Quoted cookie values can occur when an existing client supplies its own binding.
 use axum::http::{HeaderMap, header};
 
-pub(super) fn read(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn read(headers: &HeaderMap) -> Option<String> {
     let raw = headers
         .get_all(header::COOKIE)
         .iter()

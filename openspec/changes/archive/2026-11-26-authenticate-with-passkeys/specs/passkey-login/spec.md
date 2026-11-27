@@ -18,3 +18,8 @@ The service SHALL support account-independent initiation and verify a user-prese
 
 - **WHEN** a valid assertion arrives for a device-bound credential with positive stored and returned counters
 - **THEN** require the returned value to exceed the stored value. Allow a zero counter or a non-increasing counter on a backup-eligible credential, and preserve the greatest observed value.
+
+#### Scenario: Complete a passkey-bound second factor
+
+- **WHEN** the same client submits the MFA challenge with its original origin and binding
+- **THEN** consume that challenge once, recheck the credential is active, and issue a session only after a valid authenticator or unused recovery code. A wrong binding preserves the challenge. A wrong factor code consumes it.
