@@ -70,12 +70,15 @@ impl Check {
                 "Relationship check grant required",
             ));
         }
-        let stored: Option<sqlx::types::Json<Model>> =
-            sqlx::query_scalar("SELECT model FROM pyloros_relationship_models WHERE client_id=$1")
-                .bind(owner)
-                .fetch_optional(&mut *tx)
-                .await?;
-        let Some(sqlx::types::Json(model)) = stored else {
+        let inputs = sqlx::query_as::<_, (sqlx::types::Json<Model>, bool)>(
+            "SELECT model, EXISTS(SELECT 1 FROM users WHERE id=$2 AND is_active)
+             FROM pyloros_relationship_models WHERE client_id=$1",
+        )
+        .bind(owner)
+        .bind(self.user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some((sqlx::types::Json(model), active)) = inputs else {
             return Ok(problem(
                 StatusCode::CONFLICT,
                 "Install a relationship model first",
@@ -90,11 +93,6 @@ impl Check {
                 "Unknown object type or permission",
             ));
         }
-        let active: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND is_active)")
-                .bind(self.user_id)
-                .fetch_one(&mut *tx)
-                .await?;
         if !active {
             return Ok(decision(false));
         }

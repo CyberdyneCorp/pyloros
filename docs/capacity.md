@@ -143,3 +143,9 @@ Two loopback trials per version added 2 ms of delay per database response chunk.
 The direct and inherited latency ranges overlap. Measure on the deployment's network and graph before estimating its latency savings.
 
 In a separate 60-second run without injected delay, one tenant alternated 60 grants and 60 revocations while eight readers checked another tenant's wide graph. Both tenants used the same document, team and user identifiers. All 960 checks issued after acknowledged writes returned the expected inherited decision on both replicas. The unchanged tenant retained access throughout. The background readers completed 78,041 wide checks including warmup and drain. Each write had one audit entry. The p99 time from write acknowledgement until all eight decisions returned was 41.8 ms on this host.
+
+### Reading the model and account eligibility
+
+After checking the service client's grant, the permission evaluator fetches its model and the subject account's active status in one PostgreSQL statement. Two trials per version traced direct grants, inherited grants and wide denials. Every trace on the earlier build included a separate account lookup. The updated build returned eligibility with the model in all six traces.
+
+Each trial also measured 32 sequential requests per shape with 1 ms of simulated delay per database response chunk. Direct-check trial medians were 16.8–17.2 ms before and 16.8–17.3 ms after. Inherited-check medians were 19.3–23.1 ms before and 21.5–22.2 ms after. Wide-denial medians were 67.5–88.7 ms before and 89.1–95.8 ms after. These trials demonstrate the statement reduction. Deployment latency and throughput still need measurement on the target graph and network.
