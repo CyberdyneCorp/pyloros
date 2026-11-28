@@ -14,6 +14,13 @@ from check_frontend_assets import check, check_content_type
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
+    content_encodings = ()
+
+    def end_headers(self):
+        for encoding in self.content_encodings:
+            self.send_header("Content-Encoding", encoding)
+        super().end_headers()
+
     def log_message(self, *args):
         pass
 
@@ -61,6 +68,12 @@ class ServedAssets(unittest.TestCase):
                 with patch.object(QuietHandler, "guess_type", return_value="text/plain"):
                     with self.assertRaisesRegex(ValueError, "invalid Content-Type"):
                         check(reviewed, base)
+                for values in [("gzip",), ("identity", "br"), ("gzip, identity",)]:
+                    with self.subTest(values=values), patch.object(QuietHandler, "content_encodings", values):
+                        with self.assertRaisesRegex(ValueError, "Content-Encoding"):
+                            check(reviewed, base)
+                with patch.object(QuietHandler, "content_encodings", ("Identity",)):
+                    self.assertEqual(check(reviewed, base), {"verified_assets": 1})
                 for changed in (data[:-1], data + b"!", data[:-1] + b"!"):
                     asset.write_bytes(changed)
                     with self.assertRaisesRegex(ValueError, "Served content"):

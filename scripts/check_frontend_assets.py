@@ -33,6 +33,10 @@ def compare_asset(client, target, path, asset):
     with client.getresponse() as response:
         if response.status != 200:
             raise ValueError(f"{asset} returned HTTP {response.status}")
+        encodings = response.headers.get_all("Content-Encoding", [])
+        for value in encodings:
+            if any(coding.strip().lower() != "identity" for coding in value.split(",") if coding.strip()):
+                raise ValueError(f"{asset} has incompatible Content-Encoding for an identity request: {encodings!r}")
         check_content_type(asset, path.suffix, response.headers)
         with path.open("rb") as reviewed:
             for chunk in iter(lambda: reviewed.read(65536), b""):
