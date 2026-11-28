@@ -521,6 +521,8 @@ organization ID and a null user ID. Renewing a grant or repeating a withdrawal
 delivers an event for each committed administrator action. The audit record,
 entitlement change and queued deliveries commit together.
 
+When handing administrator entitlement writes back to the legacy service, pause new grants and withdrawals and let in-flight writes commit. If downstream consumers require earlier Rust hooks to finish before later legacy hooks, keep the component worker running until the pending grant and revoke deliveries finish, confirm their execution histories, then switch writers and resume. Switching writers first lets a later legacy hook finish while an earlier Rust delivery is still queued. Editing the hook source clears its binding for new Rust writes. Already queued deliveries retain their selected component.
+
 ### Assign a component delivery worker
 
 By default, a process with hooks enabled consumes queued component deliveries when any producer is enabled. Set `PYLOROS_COMPONENT_WORKER_ENABLED=false` on a publisher to leave execution to another replica. A dedicated worker can set `HOOKS_ENABLED=true` and `PYLOROS_COMPONENT_WORKER_ENABLED=true` to drain queued deliveries with all producers disabled. Keep a compatible Rust worker available until pending component deliveries have finished during rollback.
