@@ -61,7 +61,8 @@ async fn body<T: serde::de::DeserializeOwned>(mut response: Response) -> Result<
         }
         bytes.extend_from_slice(&piece);
     }
-    serde_json::from_slice(&bytes).map_err(|_| ExchangeError)
+    let text = crate::request_json::encoding::text(&bytes).map_err(|_| ExchangeError)?;
+    serde_json::from_str(&text).map_err(|_| ExchangeError)
 }
 
 impl Remote {

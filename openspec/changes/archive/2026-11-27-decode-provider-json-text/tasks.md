@@ -1,0 +1,3 @@
+- [x] Compare the supported encodings against both reference adapters.
+- [x] Verify Unicode profiles, mixed encodings and malformed input through Rust provider exchanges.
+- [x] Reuse the shared text decoder and validate the specification.

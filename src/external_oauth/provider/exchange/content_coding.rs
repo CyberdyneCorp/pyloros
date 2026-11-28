@@ -59,6 +59,16 @@ async fn exchange(
     token_doc.resize(token_len.max(token_doc.len()), b' ');
     let mut user_doc = br#"{"id":"account","sub":"account"}"#.to_vec();
     user_doc.resize(profile_len.max(user_doc.len()), b' ');
+    exchange_documents(kind, token, profile, token_doc, user_doc).await
+}
+
+async fn exchange_documents(
+    kind: Kind,
+    token: Coding,
+    profile: Coding,
+    token_doc: Vec<u8>,
+    user_doc: Vec<u8>,
+) -> Result<Profile, ExchangeError> {
     let app = Router::new()
         .route(
             "/token",
@@ -121,6 +131,83 @@ async fn limit_applies_to_each_decoded_provider_document() {
             .await
             .is_ok(),
             accepted
+        );
+    }
+}
+
+#[tokio::test]
+async fn token_and_profile_decode_unicode_independently() {
+    let token = r#"{"access_token":"example"}"#;
+    let user = r#"{"id":"δοκιμή🌿","sub":"δοκιμή🌿"}"#;
+    fn encodings(text: &str) -> Vec<Vec<u8>> {
+        let representations: [(Vec<u8>, Vec<u8>); 5] = [
+            (vec![0xef, 0xbb, 0xbf], text.as_bytes().to_vec()),
+            (
+                vec![0xff, 0xfe],
+                text.encode_utf16().flat_map(u16::to_le_bytes).collect(),
+            ),
+            (
+                vec![0xfe, 0xff],
+                text.encode_utf16().flat_map(u16::to_be_bytes).collect(),
+            ),
+            (
+                vec![0xff, 0xfe, 0, 0],
+                text.chars()
+                    .flat_map(|c| u32::from(c).to_le_bytes())
+                    .collect(),
+            ),
+            (
+                vec![0, 0, 0xfe, 0xff],
+                text.chars()
+                    .flat_map(|c| u32::from(c).to_be_bytes())
+                    .collect(),
+            ),
+        ];
+        representations
+            .into_iter()
+            .flat_map(|(mut marker, bytes)| {
+                marker.extend_from_slice(&bytes);
+                [bytes, marker]
+            })
+            .collect()
+    }
+    let tokens = encodings(token);
+    let profiles = encodings(user);
+    for kind in [Kind::Google, Kind::Microsoft] {
+        for token_bytes in &tokens {
+            for user_bytes in &profiles {
+                let account = exchange_documents(
+                    kind,
+                    Coding::Gzip,
+                    Coding::Deflate,
+                    token_bytes.clone(),
+                    user_bytes.clone(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(account.subject, "δοκιμή🌿");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn invalid_unicode_on_either_provider_endpoint_fails_the_exchange() {
+    let broken = vec![0xff, 0xfe, b'{'];
+    for (token, user) in [
+        (broken.clone(), br#"{"sub":"subject"}"#.to_vec()),
+        (br#"{"access_token":"example"}"#.to_vec(), broken),
+    ] {
+        assert!(
+            exchange_documents(
+                Kind::Google,
+                Coding::Identity,
+                Coding::Identity,
+                token,
+                user
+            )
+            .await
+            .is_err()
         );
     }
 }
