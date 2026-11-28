@@ -105,3 +105,11 @@ In a loopback migration rehearsal, the provider rejected gas estimation before s
 | Grant requiring creation of an organization group | HTTP 500, with no grant audit or delivery | HTTP 500, with no grant audit or delivery |
 
 Each trial had one matching webhook subscriber. A success audit and a queued notification can therefore accompany a failed reference write. If the membership read still shows the previous state, reconcile any downstream action taken on that notification before retrying. For a write that reached submission, use its transaction hash and the receipt inspection procedure as well.
+
+Set `BLOCKCHAIN_RPC_ENDPOINT` to the provider for the intended chain, then run:
+
+```sh
+just inspect-iam-membership "$group_contract" "$group_id" "$identity_token_id" "$block_hash"
+```
+
+Supply the group and identity token IDs as unsigned decimal integers and the block as a 32-byte hash. The provider must support a canonical block hash on `eth_call` and have the state for that block. The command prints JSON containing the contract, block hash, IDs and `member`. Both membership outcomes exit successfully. A command or provider error exits nonzero without a report. The observation describes membership at the selected block. To check a later state, run the command again with its block hash.

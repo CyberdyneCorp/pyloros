@@ -86,6 +86,11 @@ check-stripe-route url *flags:
 inspect-iam-receipt hash *flags:
     cargo run --quiet --locked -- --inspect-iam-receipt "$@"
 
+# Check one identity in a chain group at a canonical block hash.
+[positional-arguments]
+inspect-iam-membership contract group identity block:
+    cargo run --quiet --locked -- --inspect-iam-membership "$@"
+
 # List hook bindings and check coverage for active definitions.
 [positional-arguments]
 hook-inventory *event:

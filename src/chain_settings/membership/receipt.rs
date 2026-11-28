@@ -1,4 +1,5 @@
 //! Inspect a known transaction without loading a signer or submitting a mutation.
+use super::inspection::inspection_chain;
 use super::{Chain, Value, json};
 use alloy_primitives::B256;
 use serde::Serialize;
@@ -53,17 +54,6 @@ impl Chain {
             .await
             .unwrap_or(Ok("receipt_timeout"))
     }
-}
-
-fn inspection_chain() -> Result<Chain, Box<dyn Error>> {
-    Ok(Chain {
-        endpoint: std::env::var("BLOCKCHAIN_RPC_ENDPOINT")?,
-        identity: None,
-        policy: None,
-        group: None,
-        signer: None,
-        timeout: super::super::rpc_timeout()?,
-    })
 }
 
 pub async fn inspect_receipt(hash: &str) -> Result<ReceiptObservation, Box<dyn Error>> {

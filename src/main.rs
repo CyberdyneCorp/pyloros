@@ -14,9 +14,25 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
         );
         return Ok(ExitCode::SUCCESS);
     }
-    let mut receipt = env::args_os().skip(1);
-    if receipt.next().as_deref() == Some(std::ffi::OsStr::new("--inspect-iam-receipt")) {
-        return inspect_receipt(receipt).await;
+    let mut inspection = env::args_os().skip(1);
+    match inspection.next().as_deref().and_then(|arg| arg.to_str()) {
+        Some("--inspect-iam-receipt") => return inspect_receipt(inspection).await,
+        Some("--inspect-iam-membership") => {
+            let args = inspection
+                .map(|arg| arg.into_string().map_err(|_| "invalid membership argument"))
+                .collect::<Result<Vec<_>, _>>()?;
+            let [contract, group, identity, block] = args.as_slice() else {
+                return Err(
+                    "expected contract address, group ID, identity token ID and block hash".into(),
+                );
+            };
+            let report =
+                pyloros::chain_settings::inspect_membership(contract, group, identity, block)
+                    .await?;
+            println!("{}", serde_json::to_string(&report)?);
+            return Ok(ExitCode::SUCCESS);
+        }
+        _ => {}
     }
     let mut fixture = env::args_os().skip(1);
     if fixture.next().as_deref() == Some(std::ffi::OsStr::new("--check-hook-fixture")) {

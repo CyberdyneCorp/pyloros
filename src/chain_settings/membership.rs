@@ -1,5 +1,6 @@
 //! Read the authority's IAM inventory without sending transactions.
 mod health_connection;
+pub(super) mod inspection;
 mod large_health;
 pub(super) mod policy_transaction;
 pub(super) mod receipt;
@@ -444,11 +445,20 @@ impl Chain {
     }
 
     async fn call<C: SolCall>(&self, address: &str, call: C) -> Result<C::Return, ReadError> {
+        self.call_at(address, call, json!("latest")).await
+    }
+
+    async fn call_at<C: SolCall>(
+        &self,
+        address: &str,
+        call: C,
+        block: Value,
+    ) -> Result<C::Return, ReadError> {
         validate_address(address)?;
         self.rpc("eth_chainId", json!([])).await?;
         let data = format!("0x{}", HEXLOWER.encode(&call.abi_encode()));
         let value = self
-            .rpc("eth_call", json!([{"to":address,"data":data},"latest"]))
+            .rpc("eth_call", json!([{"to":address,"data":data},block]))
             .await?;
         self.rpc("eth_chainId", json!([])).await?;
         let raw = value

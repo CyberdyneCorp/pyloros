@@ -1,0 +1,3 @@
+- [x] Implement the canonical-block read, CLI and just recipe.
+- [x] Verify positive, negative, malformed and unavailable results using a loopback provider.
+- [x] Document command inputs, output and the scope of the observation.
