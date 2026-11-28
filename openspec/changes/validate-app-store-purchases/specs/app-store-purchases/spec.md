@@ -17,3 +17,12 @@ The service SHALL authenticate the customer and validate the signed transaction 
 #### Scenario: Certificate status service unavailable
 - **WHEN** an online certificate check cannot obtain a status response
 - **THEN** return a retryable failure and leave the purchase unclaimed
+
+#### Scenario: Repeat a current receipt across backends
+- **WHEN** the owner successfully claims the same current signed transaction on each backend with one active grant hook
+- **THEN** retain one ownership record and one entitlement, and run the grant hook once per successful claim
+- **AND** preserve the execution count when another account presents that receipt
+
+#### Scenario: Grant hook awaits binding
+- **WHEN** an eligible transaction needs an active entitlement grant hook that has no component binding
+- **THEN** return HTTP 503 and roll back ownership, entitlement and hook delivery so the claim can be retried after binding

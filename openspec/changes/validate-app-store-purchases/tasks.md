@@ -1,3 +1,4 @@
 - [x] Implement signed purchase verification and online certificate checks.
 - [x] Implement account claims and compare grants and replays across backends.
-- [ ] Verify actual sandbox purchases and active entitlement hooks for signoff.
+- [x] Verify active entitlement hooks on first claim, same-owner replay, and another account’s refusal across both writer orders.
+- [ ] Verify purchases issued by the App Store sandbox.
