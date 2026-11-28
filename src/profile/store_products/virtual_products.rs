@@ -1,5 +1,6 @@
 //! Audited updates to the product directory.
 use super::*;
+use futures_util::StreamExt;
 use sqlx::Row;
 
 #[derive(Deserialize)]
@@ -53,56 +54,81 @@ fn input(model: Value, create: bool) -> Result<Input, Vec<Value>> {
     })
 }
 
+pub(super) async fn deactivate(
+    State(state): State<Arc<Profile>>,
+    Path(key): Path<String>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    method: Method,
+    headers: HeaderMap,
+    body: axum::body::Body,
+) -> Response {
+    use axum::body::HttpBody;
+    if !body.is_end_stream() {
+        // Keep an HTTP/1 upload readable after sending the response.
+        tokio::spawn(async move {
+            let mut chunks = body.into_data_stream();
+            while let Some(Ok(_)) = chunks.next().await {}
+        });
+    }
+    if method != Method::DELETE {
+        let mut response = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+        response
+            .headers_mut()
+            .insert(header::ALLOW, header::HeaderValue::from_static("PATCH"));
+        return response;
+    }
+    let (tx, user, email) = match administrator::operator(&state, &headers).await {
+        Ok(actor) => actor,
+        Err(e) => return *e,
+    };
+    let edit = Input {
+        active: Some(false),
+        ..Default::default()
+    };
+    persist(
+        tx,
+        (user, email),
+        Some(key),
+        edit,
+        true,
+        origin(&state, &headers, peer),
+    )
+    .await
+    .unwrap_or_else(|_| internal())
+}
+
 pub(super) async fn edit(
     State(state): State<Arc<Profile>>,
     Path(path): Path<ProductPath>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    method: Method,
     headers: HeaderMap,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let creating = path.key.is_none();
-    if !creating && !matches!(method, Method::PATCH | Method::DELETE) {
-        let mut r = problem(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
-        r.headers_mut()
-            .insert(header::ALLOW, header::HeaderValue::from_static("PATCH"));
-        return r;
-    }
-    let raw = if method == Method::DELETE {
-        None
-    } else {
-        match fields::document(&headers, &bytes) {
-            Ok(raw) => raw,
-            Err(e) => return *e,
-        }
+    let raw = match fields::document(&headers, &bytes) {
+        Ok(raw) => raw,
+        Err(e) => return *e,
     };
     let (tx, user, email) = match administrator::operator(&state, &headers).await {
         Ok(actor) => actor,
         Err(e) => return *e,
     };
-    let edit = if method == Method::DELETE {
-        Input {
-            active: Some(false),
-            ..Default::default()
-        }
+    let Some(raw) = raw else { return internal() };
+    let creating = path.key.is_none();
+    let keys = if creating {
+        ["key", "name", "description"]
     } else {
-        let Some(raw) = raw else { return internal() };
-        let keys = if creating {
-            ["key", "name", "description"]
-        } else {
-            ["name", "description", "active"]
-        };
-        match fields::validate_scalar_document(&raw, &keys, |model| input(model, creating)) {
-            Ok(data) => data,
-            Err(e) => return *e,
-        }
+        ["name", "description", "active"]
+    };
+    let edit = match fields::validate_scalar_document(&raw, &keys, |model| input(model, creating)) {
+        Ok(data) => data,
+        Err(e) => return *e,
     };
     persist(
         tx,
         (user, email),
         path.key,
         edit,
-        method == Method::DELETE,
+        false,
         origin(&state, &headers, peer),
     )
     .await

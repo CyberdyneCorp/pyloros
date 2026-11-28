@@ -38,7 +38,7 @@ pub(super) fn routes() -> Router<Arc<Profile>> {
         )
         .route(
             "/api/v1/admin/products/{key}",
-            any(virtual_products::edit).patch(edit_product),
+            any(virtual_products::deactivate).patch(edit_product),
         );
     for (path, store) in [
         ("/api/v1/admin/apple-products", APPLE),

@@ -340,3 +340,42 @@ async fn padded_product_writes_reach_administrator_authentication() {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
     }
 }
+
+#[tokio::test]
+async fn bodyless_product_methods_respond_before_the_upload_finishes() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    for (method, expected) in [
+        (Method::DELETE, StatusCode::UNAUTHORIZED),
+        (Method::PUT, StatusCode::METHOD_NOT_ALLOWED),
+    ] {
+        let (finish_upload, remaining_upload) = tokio::sync::oneshot::channel();
+        let (drained, observed) = tokio::sync::oneshot::channel();
+        let stream = futures_util::stream::once(async move {
+            remaining_upload.await.unwrap();
+            drained.send(()).unwrap();
+            Ok::<_, std::io::Error>(axum::body::Bytes::from_static(b"unused"))
+        });
+        let request = Request::builder()
+            .method(method)
+            .uri("/api/v1/admin/products/example")
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .body(Body::from_stream(stream))
+            .unwrap();
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            routes.clone().oneshot(request),
+        )
+        .await
+        .expect("method dispatch waited for the unused upload")
+        .unwrap();
+        assert_eq!(response.status(), expected);
+        finish_upload.send(()).expect("upload stream was dropped");
+        tokio::time::timeout(std::time::Duration::from_secs(2), observed)
+            .await
+            .expect("remaining upload was never drained")
+            .unwrap();
+    }
+}

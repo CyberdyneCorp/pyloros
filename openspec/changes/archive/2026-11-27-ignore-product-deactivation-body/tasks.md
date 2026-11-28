@@ -1,0 +1,2 @@
+- [x] 1. Compare method handling, authorization, product state and audit effects with small and large bodies.
+- [x] 2. Separate the bodyless path and verify that responses can precede the end of an upload.

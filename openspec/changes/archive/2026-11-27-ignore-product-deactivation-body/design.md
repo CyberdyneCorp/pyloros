@@ -1,0 +1,1 @@
+Dispatch DELETE and unsupported methods separately from JSON writes. Discard any incoming body incrementally so HTTP/1 clients can finish uploading after the server responds. Keep deactivation and its audit event in one transaction.
