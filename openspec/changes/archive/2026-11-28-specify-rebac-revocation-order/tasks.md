@@ -1,0 +1,3 @@
+- [x] Exercise both writer orders for user and object assignments across two API replicas.
+- [x] Compare permission decisions, model persistence and change audit counts after retry.
+- [x] Specify client-visible outcomes for relation retirement.

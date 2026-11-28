@@ -1,0 +1,1 @@
+Use one client with a permission inherited through an object relationship and a user membership. Exercise each relationship as the last assignment blocking removal of its relation. Hold the client row lock, queue both writers in a known order on separate replicas, and compare the committed model, permission checks and change audit count.

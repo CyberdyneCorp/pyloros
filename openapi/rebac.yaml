@@ -26,7 +26,7 @@ paths:
                     read: [{relation: member}, {via: parent, permission: read}]
       responses:
         '204': {description: Model committed or already current. Subsequent permission checks on all API replicas sharing the primary use this model.}
-        '409': {description: Existing assignments would become invalid. Includes a conflicting grant that committed first., content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '409': {description: Existing assignments would become invalid. Includes a conflicting grant that committed first. Retry the replacement after revoking all blocking assignments., content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
         '400': {$ref: '#/components/responses/Malformed'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
