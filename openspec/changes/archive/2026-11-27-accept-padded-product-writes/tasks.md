@@ -1,0 +1,2 @@
+- [x] 1. Verify the four product writes above the default body limit and add a router regression.
+- [x] 2. Update extraction and compare authenticated success, invalid fields and missing credentials across three encodings.

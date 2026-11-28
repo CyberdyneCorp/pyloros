@@ -314,3 +314,29 @@ async fn role_permission_documents_validate_integer_size_before_authorization() 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
     }
 }
+
+#[tokio::test]
+async fn padded_product_writes_reach_administrator_authentication() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    let mut document = b"{}".to_vec();
+    document.resize(2 * 1024 * 1024 + 1, b' ');
+    for (method, path) in [
+        (Method::POST, "/api/v1/admin/products"),
+        (Method::PATCH, "/api/v1/admin/products/example"),
+        (Method::POST, "/api/v1/admin/apple-products"),
+        (Method::POST, "/api/v1/admin/google-products"),
+    ] {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(header::CONTENT_TYPE, "application/json")
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .body(Body::from(document.clone()))
+            .unwrap();
+        let response = routes.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
+}

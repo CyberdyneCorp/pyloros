@@ -5,7 +5,7 @@ use super::*;
 use crate::{grant_response::SessionOrigin, login_http::problem, request_json::fields};
 use axum::{
     Extension,
-    extract::{Path, RawQuery},
+    extract::{DefaultBodyLimit, Path, RawQuery},
 };
 
 #[derive(Clone, Copy)]
@@ -30,19 +30,26 @@ const GOOGLE: Store = Store {
 };
 
 pub(super) fn routes() -> Router<Arc<Profile>> {
+    let edit_product = virtual_products::edit.layer(DefaultBodyLimit::disable());
     let mut routes = Router::new()
         .route(
             "/api/v1/admin/products",
-            any(catalog::list).post(virtual_products::edit),
+            any(catalog::list).post(edit_product.clone()),
         )
-        .route("/api/v1/admin/products/{key}", any(virtual_products::edit));
+        .route(
+            "/api/v1/admin/products/{key}",
+            any(virtual_products::edit).patch(edit_product),
+        );
     for (path, store) in [
         ("/api/v1/admin/apple-products", APPLE),
         ("/api/v1/admin/google-products", GOOGLE),
     ] {
         routes = routes.merge(
             Router::new()
-                .route(path, any(list).post(create))
+                .route(
+                    path,
+                    any(list).post(create.layer(DefaultBodyLimit::disable())),
+                )
                 .route(&format!("{path}/{{id}}"), any(remove))
                 .layer(Extension(store)),
         );
