@@ -15,6 +15,14 @@ When webhook delivery is enabled, the service SHALL deliver queued notifications
 - **WHEN** the retry is claimed after the previous key expires
 - **THEN** send the same message ID and body with a signature from the current key alone
 
+#### Scenario: Receiver applies both gzip and deflate
+- **WHEN** a receiver lists multiple encodings in one field or across successive Content-Encoding fields
+- **THEN** decode supported encodings in reverse application order and record up to the first 1,024 decoded bytes with the HTTP status
+
+#### Scenario: Receiver exceeds the decoder depth limit
+- **WHEN** a response applies more than eight supported encoding layers
+- **THEN** report a response read failure for the attempt
+
 #### Scenario: Recover or retry
 - **WHEN** a delivery fails or its worker stops
 - **THEN** record completed attempts atomically, retry within the attempt budget and make abandoned leases eligible for another worker
