@@ -24,3 +24,7 @@ When webhook delivery is enabled, the service SHALL deliver queued notifications
 - **WHEN** the receiver closes an unencoded HTTP response before the declared length and before the excerpt limit
 - **THEN** record a transport failure with the received and expected byte counts and leave the HTTP status and excerpt absent
 - **AND** once the full excerpt has arrived, record the receiver's status and excerpt without waiting for more bytes
+
+#### Scenario: Compressed excerpt ends at the HTTP body boundary
+- **WHEN** a receiver sends the full HTTP body with raw or zlib-wrapped deflate and the decoder produces an excerpt before the compression end marker
+- **THEN** retain the receiver's status and the available decoded bytes up to the excerpt limit, and apply the usual retry rule for that status

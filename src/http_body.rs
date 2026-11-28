@@ -97,15 +97,17 @@ async fn read_deflate(mut response: Response, limit: ReadLimit) -> io::Result<Ve
             break;
         }
     }
-    wrapped
-        .and_then(Inflate::finish)
-        .or_else(|| raw.and_then(Inflate::finish))
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid or oversized deflate document",
-            )
-        })
+    // Prefer a finished raw stream over an unfinished zlib interpretation.
+    let decoder = match (&wrapped, &raw) {
+        (Some(w), Some(r)) if r.complete && !w.complete => raw,
+        _ => wrapped.or(raw),
+    };
+    decoder.and_then(Inflate::finish).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid or oversized deflate document",
+        )
+    })
 }
 
 struct Inflate {
@@ -153,9 +155,7 @@ impl Inflate {
     }
 
     fn finish(self) -> Option<Vec<u8>> {
-        let empty_response =
-            matches!(self.limit, ReadLimit::Prefix(_)) && self.decoder.total_in() == 0;
-        (self.complete || empty_response).then_some(self.bytes)
+        (self.complete || matches!(self.limit, ReadLimit::Prefix(_))).then_some(self.bytes)
     }
 }
 
@@ -218,6 +218,24 @@ mod tests {
                 Inflate::feed,
             )?
             .finish()
+    }
+
+    #[test]
+    fn unfinished_deflate_yields_an_excerpt_but_cannot_finish_a_document() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(b"ok").unwrap();
+        encoder.flush().unwrap();
+        let wrapped = encoder.get_ref();
+        // One nonfinal raw stored block containing the same two bytes.
+        let raw = [0, 2, 0, 253, 255, b'o', b'k'];
+        for (bytes, zlib) in [(wrapped.as_slice(), true), (raw.as_slice(), false)] {
+            let prefix = bytes
+                .chunks(1)
+                .try_fold(Inflate::new(zlib, ReadLimit::Prefix(1024)), Inflate::feed)
+                .unwrap();
+            assert_eq!(prefix.finish().as_deref(), Some(b"ok".as_slice()));
+            assert!(fragmented(bytes, zlib).is_none());
+        }
     }
 
     #[test]
