@@ -143,6 +143,8 @@ With passkeys enabled, `GET /api/v1/auth/passkeys` lists the current account’s
 `DELETE /api/v1/auth/passkeys/{passkey_id}` requires recent authentication. A successful removal returns HTTP 204 and records a credential audit event. When the selected passkey is the account’s last one for its relying party, removal requires a verified password account, a linked Google or Microsoft identity, or a wallet identity. Concurrent removals are serialized per account.
 
 
+For migration deployments, install [the migration launcher](scripts/pyloros-migration) alongside the release binary and hook worker. Place the deployment’s existing assets in that directory as `signed-out.html`, `consent-ui.json`, `device-ui.json`, `erasure-report.json`, `migration-openapi.json` and `migration-openapi.csp`. Start `./pyloros-migration` to use those assets from any working directory. Explicit asset environment settings take precedence.
+
 With OIDC enabled, `GET` and form `POST /api/v1/auth/oauth2/logout` end the browser session and clear its cookies. A registered return URI can be selected with a client ID or signed ID-token hint. A refused redirect still ends the session. Set `PYLOROS_SIGNED_OUT_HTML_PATH` to the shared, private signed-out HTML artifact for the same page on both deployments. The default is a minimal confirmation page.
 
 With OIDC enabled, `GET /api/v1/auth/oauth2/userinfo` accepts a bearer user access token and reads the current active account from PostgreSQL. It returns the subject plus available email, verification status, name and picture. This compatibility endpoint returns those fields for client-bound user tokens independently of their scopes. `ENFORCE_TOKEN_REVOCATION` applies to UserInfo.

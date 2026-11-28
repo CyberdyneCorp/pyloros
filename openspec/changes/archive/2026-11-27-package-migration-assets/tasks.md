@@ -1,0 +1,2 @@
+- [x] 1. Verify relocated package defaults and explicit environment overrides.
+- [x] 2. Exercise the assembled package with the deployment-owned assets through the normal HTTP entry points.

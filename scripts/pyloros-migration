@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+package_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+: "${PYLOROS_SIGNED_OUT_HTML_PATH:=$package_dir/signed-out.html}"
+: "${PYLOROS_CONSENT_UI_PATH:=$package_dir/consent-ui.json}"
+: "${PYLOROS_DEVICE_UI_PATH:=$package_dir/device-ui.json}"
+: "${PYLOROS_ERASURE_REPORT_PATH:=$package_dir/erasure-report.json}"
+: "${PYLOROS_OPENAPI_PATH:=$package_dir/migration-openapi.json}"
+if [ -z "${PYLOROS_OPENAPI_CSP:-}" ]; then
+    PYLOROS_OPENAPI_CSP=$(cat "$package_dir/migration-openapi.csp")
+fi
+export PYLOROS_SIGNED_OUT_HTML_PATH PYLOROS_CONSENT_UI_PATH PYLOROS_DEVICE_UI_PATH
+export PYLOROS_ERASURE_REPORT_PATH PYLOROS_OPENAPI_PATH PYLOROS_OPENAPI_CSP
+exec "$package_dir/pyloros" "$@"
