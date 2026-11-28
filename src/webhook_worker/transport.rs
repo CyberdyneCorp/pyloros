@@ -88,12 +88,14 @@ async fn post(
     .ok_or_else(|| format!("destination refused: {host} resolves to a non-public address"))?;
     let client = reqwest::Client::builder()
         .no_proxy()
+        .no_deflate()
         .redirect(reqwest::redirect::Policy::none())
         .resolve(host, address)
         .build()
         .map_err(http_error)?;
     let mut request = client
         .post(url.clone())
+        .header("accept-encoding", "gzip, deflate")
         .header("content-type", "application/json")
         .header(
             "user-agent",
@@ -109,15 +111,11 @@ async fn post(
     {
         request = request.header("host", authority.as_str());
     }
-    let mut response = request.send().await.map_err(http_error)?;
+    let response = request.send().await.map_err(http_error)?;
     let code = i32::from(response.status().as_u16());
-    let mut excerpt = Vec::new();
-    while excerpt.len() < 1024 {
-        let Some(chunk) = response.chunk().await.map_err(http_error)? else {
-            break;
-        };
-        excerpt.extend_from_slice(&chunk[..chunk.len().min(1024 - excerpt.len())]);
-    }
+    let excerpt = crate::http_body::read(response, crate::http_body::ReadLimit::Prefix(1024))
+        .await
+        .map_err(|_| "ReadError: response unavailable".to_owned())?;
     Ok(Attempt {
         code: Some(code),
         duration_ms: 0,
@@ -186,22 +184,30 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let app = Router::new().route(
             "/notify",
-            route_post(|headers: HeaderMap, body: String| async move {
-                assert_eq!(body, "{}");
-                assert_eq!(headers["webhook-signature"], "v1,test");
-                assert_eq!(headers["webhook-timestamp"], "123");
-                assert_eq!(headers["webhook-id"], "msg_test");
-                (
-                    StatusCode::TEMPORARY_REDIRECT,
-                    [("location", "/other"), ("content-encoding", "gzip")],
-                    STANDARD
+            route_post(
+                |uri: axum::extract::OriginalUri, headers: HeaderMap, body: String| async move {
+                    assert_eq!(body, "{}");
+                    assert_eq!(headers["webhook-signature"], "v1,test");
+                    assert_eq!(headers["webhook-timestamp"], "123");
+                    assert_eq!(headers["webhook-id"], "msg_test");
+                    let gzip = STANDARD
                         .decode("H4sIAAAAAAAC/zu3+9woHIWjcBSOwlFIMgQAQxwPwUAGAAA=")
-                        .unwrap(),
-                )
-            }),
+                        .unwrap();
+                    let (coding, encoded) = if uri.query() == Some("raw") {
+                        ("deflate", gzip[10..gzip.len() - 8].to_vec())
+                    } else {
+                        ("gzip", gzip)
+                    };
+                    (
+                        StatusCode::TEMPORARY_REDIRECT,
+                        [("location", "/other"), ("content-encoding", coding)],
+                        encoded,
+                    )
+                },
+            ),
         );
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let d = Delivery {
+        let mut d = Delivery {
             id: Uuid::new_v4(),
             event: Uuid::new_v4(),
             subscription: Uuid::new_v4(),
@@ -224,6 +230,12 @@ mod tests {
             .unwrap();
         assert_eq!(result.code, Some(307));
         assert_eq!(result.error.as_deref(), Some("HTTP 307"));
+        assert_eq!(result.excerpt.unwrap(), "λ".repeat(512));
+        d.url.push_str("?raw");
+        let result = post(&d, "msg_test", 123, "v1,test".into(), &settings)
+            .await
+            .unwrap();
+        assert_eq!(result.code, Some(307));
         assert_eq!(result.excerpt.unwrap(), "λ".repeat(512));
         settings.insecure = false;
         assert!(

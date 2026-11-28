@@ -25,6 +25,7 @@ pub mod grant_response;
 pub mod grant_sessions;
 pub mod headers;
 mod hook_egress;
+mod http_body;
 pub mod iam_evaluation;
 pub mod id_tokens;
 mod json_representation;

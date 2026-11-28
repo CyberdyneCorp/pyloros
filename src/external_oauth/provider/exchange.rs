@@ -1,7 +1,6 @@
 use super::{Backend, Kind, Provider, Remote};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::Response;
-mod document;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -54,7 +53,10 @@ async fn body<T: serde::de::DeserializeOwned>(response: Response) -> Result<T, E
     if !response.status().is_success() {
         return Err(ExchangeError);
     }
-    let bytes = document::read(response).await.map_err(|_| ExchangeError)?;
+    let bytes =
+        crate::http_body::read(response, crate::http_body::ReadLimit::Complete(1024 * 1024))
+            .await
+            .map_err(|_| ExchangeError)?;
     let text = crate::request_json::encoding::text(&bytes).map_err(|_| ExchangeError)?;
     serde_json::from_str(&text).map_err(|_| ExchangeError)
 }
