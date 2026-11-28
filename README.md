@@ -111,6 +111,8 @@ Each unsigned POST sends an empty JSON object. A sample passes when the upstream
 
 A subscription update can arrive before checkout maps the customer. Redelivery after checkout applies the new plan and its expiry. An `invoice.created` event is informational and returns `handled: false`. A refund for a separate one-time payment revokes only the grants tied to that payment reference.
 
+If a full refund reaches the writer before checkout creates the entitlement, the refund returns HTTP 200 with `handled: false`. Checkout can then grant access. Run `just db-stripe-deferred` against the writer database to list committed deferred event IDs and reasons. The command requires schema access and `SELECT (event_id, status, reason)` on `stripe_events`. It exits 2 when events are pending and 0 when the list is empty. Once the purchase exists, request redelivery of the original refund event and confirm its ID clears from the list. A processed replay also returns `handled: false`, so use the ledger to distinguish the two outcomes.
+
 ## App Store purchases
 
 Set `BILLING_ENABLED=true`, `APPLE_BUNDLE_ID` and `APPLE_ROOT_CA_DIR` on the server. Install trusted Apple roots as DER certificate files in that directory. Set `APPLE_ENVIRONMENT` to `Sandbox` or `Production` (default), and supply `APPLE_APP_APPLE_ID` for production. The server needs network access to the OCSP responders listed in the trusted certificate chain.

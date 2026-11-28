@@ -35,6 +35,10 @@ db-commit-checks:
 db-passkey-models:
     uv run --script scripts/passkey_models.py
 
+# List committed Stripe event IDs and deferral reasons pending redelivery.
+db-stripe-deferred:
+    uv run --script scripts/deferred_stripe_events.py
+
 # Count registered client identifiers that overlap at a role namespace separator.
 [positional-arguments]
 db-client-id-overlaps *args:

@@ -1,0 +1,3 @@
+- [x] Compare both commit orders across two billing writers and check entitlement visibility through both implementations.
+- [x] Provide the deferred-event report and document required database access.
+- [x] Verify the report with column-level privileges at each transaction boundary.
