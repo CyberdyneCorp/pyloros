@@ -47,6 +47,12 @@ hook-worker:
 build-hook-example:
     cargo component build --release --locked --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
 
+# Execute all three compiled example components in the local worker.
+check-hook-examples:
+    cargo component build --locked --release --lib --examples --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
+    cargo build --locked --manifest-path hook-worker/Cargo.toml --target-dir hook-worker/target
+    python3 scripts/check_hook_examples.py hook-worker/target/debug/pyloros-hook-worker target/hook-examples/wasm32-unknown-unknown/release
+
 # Inspect one known transaction on the configured chain RPC endpoint.
 [positional-arguments]
 inspect-iam-receipt hash *flags:

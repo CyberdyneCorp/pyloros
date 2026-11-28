@@ -98,3 +98,16 @@ jobs:
       - run: cargo clippy --manifest-path hook-worker/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo test --manifest-path hook-worker/Cargo.toml --locked
       - run: cargo test --locked --manifest-path examples/event-name-hook/Cargo.toml --lib --example counter_hook
+      - uses: actions/cache@v4
+        id: component-tool
+        with:
+          path: ~/.cargo/bin/cargo-component
+          key: cargo-component-0.21.1-${{ runner.os }}-${{ runner.arch }}
+      - if: steps.component-tool.outputs.cache-hit != 'true'
+        run: cargo install cargo-component --version 0.21.1 --locked
+      - run: rustup target add wasm32-unknown-unknown
+      - name: Run compiled examples with the Linux hook worker
+        run: |
+          cargo component build --locked --release --lib --examples --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
+          cargo build --locked --manifest-path hook-worker/Cargo.toml
+          python3 scripts/check_hook_examples.py hook-worker/target/debug/pyloros-hook-worker target/hook-examples/wasm32-unknown-unknown/release
