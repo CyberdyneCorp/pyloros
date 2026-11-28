@@ -181,6 +181,20 @@ All 79,200 measured decisions matched the expected permissions. After the highes
 
 Rust executable SHA-256: `897f4be10d897aed466458389ba1a24a9c9e58ccf20af7066f067726c51f3704`.
 
+### Membership changes during fixed-rate permission checks
+
+Two fresh PostgreSQL 17.12 trials ran on an Apple M3 Pro with two Rust replicas. Sixteen workers checked access to folders with 32 or 33 teams. An independent writer alternated grants and withdrawals on a separate 33-team folder at four changes per second. After each acknowledgement, both replicas checked the affected folder for two accounts in each of two tenants sharing the same object ID.
+
+Each phase offered reads for four seconds and drained its queue before the next phase. Values show trial 1 / trial 2. Read latency includes time waiting in the driver. Write latency starts when the driver sends the mutation.
+
+| Offered reads/s | Reads completed within 4 s | Read p95 (ms) | Slowest of 16 writes (ms) | Queue drain (ms) |
+|---:|---:|---:|---:|---:|
+| 600 | 2399 / 2399 | 3.84 / 3.34 | 12.14 / 12.41 | 0.74 / 0.55 |
+| 1,800 | 4108 / 4165 | 2798.27 / 2669.84 | 56.58 / 81.1 | 2936.55 / 2825.09 |
+| 600 after drain | 2399 / 2399 | 5.41 / 5.03 | 4.35 / 4.01 | 0.04 / 0.08 |
+
+Across both trials, all 24,000 scheduled reads and 768 post-commit checks returned the expected decisions. All 96 writes produced one audit entry each. Both trials accumulated a read backlog at 1,800/s. These short local bursts leave sustained deployment capacity open.
+
 ### Starting a ReBAC permission snapshot
 
 Each permission check opens a read-only repeatable-read transaction. Opening it with both modes in the initial SQL statement removes one round trip to PostgreSQL. Statement traces confirmed the change on direct, inherited and wide-graph checks.
