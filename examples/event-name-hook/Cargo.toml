@@ -28,3 +28,8 @@ ryu = "1"
 name = "counter_hook"
 path = "examples/counter_hook.rs"
 crate-type = ["cdylib"]
+
+[[example]]
+name = "message_hook"
+path = "examples/message_hook.rs"
+crate-type = ["cdylib"]

@@ -70,9 +70,9 @@ hook-worker:
 build-hook-example:
     cargo component build --release --locked --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
 
-# Execute all three compiled example components in the local worker.
+# Execute the compiled example components in the local worker.
 check-hook-examples:
-    cargo component build --locked --release --lib --examples --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
+    PYLOROS_HOOK_MESSAGE=ready cargo component build --locked --release --lib --examples --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
     cargo build --locked --manifest-path hook-worker/Cargo.toml --target-dir hook-worker/target
     python3 scripts/check_hook_examples.py hook-worker/target/debug/pyloros-hook-worker target/hook-examples/wasm32-unknown-unknown/release
 
@@ -122,6 +122,11 @@ check-hook-fixture component event expected:
 # Build the silent guest for hooks that produce no output or other effects.
 build-silent-hook:
     cargo component build --release --locked --example silent_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
+
+# Build a guest that prints the supplied message and a newline.
+[positional-arguments]
+build-message-hook message:
+    PYLOROS_HOOK_MESSAGE="$1" cargo component build --release --locked --example message_hook --target wasm32-unknown-unknown --target-dir target/hook-message --manifest-path examples/event-name-hook/Cargo.toml
 
 # Build the numeric counter guest.
 build-counter-hook:

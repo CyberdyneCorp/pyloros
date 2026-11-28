@@ -1,0 +1,2 @@
+- [x] Build and execute the fixed-message guest in the worker.
+- [x] Verify output limits and compare a selected component against a reference definition.
