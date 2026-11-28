@@ -113,15 +113,27 @@ async fn post(
     }
     let response = request.send().await.map_err(http_error)?;
     let code = i32::from(response.status().as_u16());
-    let excerpt = crate::http_body::read(response, crate::http_body::ReadLimit::Prefix(1024))
-        .await
-        .map_err(|_| "ReadError: response unavailable".to_owned())?;
+    let excerpt = receiver_excerpt(response).await?;
     Ok(Attempt {
         code: Some(code),
         duration_ms: 0,
         excerpt: Some(String::from_utf8_lossy(&excerpt).into_owned()),
         error: (!(200..300).contains(&code)).then(|| format!("HTTP {code}")),
     })
+}
+
+async fn receiver_excerpt(response: reqwest::Response) -> Result<Vec<u8>, String> {
+    crate::http_body::read(response, crate::http_body::ReadLimit::Prefix(1024))
+        .await
+        .map_err(|error| {
+            match error
+                .get_ref()
+                .and_then(|e| e.downcast_ref::<crate::http_body::ShortBody>())
+            {
+                Some(short) => format!("RemoteProtocolError: {short}"),
+                None => "ReadError: response unavailable".to_owned(),
+            }
+        })
 }
 
 fn http_error(error: reqwest::Error) -> String {
@@ -171,6 +183,44 @@ mod tests {
         );
         d.subscription = Uuid::new_v4();
         assert!(signatures(&d, &key, &message, 1234).is_none());
+    }
+
+    #[tokio::test]
+    async fn short_fixed_length_body_reports_byte_counts_until_the_excerpt_is_full() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for size in [0, 1023, 1024] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let receiver = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = vec![0u8; 4096];
+                let _ = socket.read(&mut request).await.unwrap();
+                let mut reply = b"HTTP/1.1 202 Accepted\r\nContent-Length: 1100\r\n\r\n".to_vec();
+                reply.extend(vec![b'x'; size]);
+                socket.write_all(&reply).await.unwrap();
+                socket.shutdown().await.unwrap();
+            });
+            let response = reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap()
+                .post(format!("http://{address}"))
+                .send()
+                .await
+                .unwrap();
+            let result = receiver_excerpt(response).await;
+            receiver.await.unwrap();
+            if size == 1024 {
+                assert_eq!(result.unwrap(), vec![b'x'; size]);
+            } else {
+                assert_eq!(
+                    result.unwrap_err(),
+                    format!(
+                        "RemoteProtocolError: peer closed connection without sending complete message body (received {size} bytes, expected 1100)"
+                    )
+                );
+            }
+        }
     }
 
     #[tokio::test]

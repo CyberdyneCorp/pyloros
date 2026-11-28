@@ -1,7 +1,33 @@
 //! Bounded decoding for complete HTTP documents and receiver response excerpts.
 use flate2::{Decompress, FlushDecompress, Status};
 use reqwest::{Response, header::CONTENT_ENCODING};
-use std::io;
+use std::{error::Error, io};
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "peer closed connection without sending complete message body (received {received} bytes, expected {expected})"
+)]
+pub(crate) struct ShortBody {
+    received: usize,
+    expected: u64,
+}
+
+fn body_error(error: reqwest::Error, received: usize, expected: Option<u64>) -> io::Error {
+    if let Some(expected) = expected {
+        let eof = std::iter::successors(error.source(), |cause| (*cause).source()).any(|cause| {
+            cause
+                .downcast_ref::<io::Error>()
+                .is_some_and(|io| io.kind() == io::ErrorKind::UnexpectedEof)
+        });
+        if eof {
+            return io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                ShortBody { received, expected },
+            );
+        }
+    }
+    io::Error::other(error)
+}
 
 #[derive(Clone, Copy)]
 pub(crate) enum ReadLimit {
@@ -37,8 +63,13 @@ pub(crate) async fn read(mut response: Response, limit: ReadLimit) -> io::Result
     if deflate {
         return read_deflate(response, limit).await;
     }
+    let expected = response.content_length();
     let mut bytes = Vec::new();
-    while let Some(piece) = response.chunk().await.map_err(io::Error::other)? {
+    while let Some(piece) = response
+        .chunk()
+        .await
+        .map_err(|e| body_error(e, bytes.len(), expected))?
+    {
         if limit.append(&mut bytes, &piece)? {
             break;
         }
