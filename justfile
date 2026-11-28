@@ -107,6 +107,11 @@ check-frontend-runtime directory *expected:
 check-frontend-image build_image runtime_image:
     python3 scripts/check_frontend_image.py "$@"
 
+# Start the shipped console command and check its login page on loopback.
+[positional-arguments]
+check-frontend-start runtime_image:
+    python3 scripts/check_frontend_start.py "$@"
+
 # Validate the published ReBAC contract and its JSON examples.
 check-rebac-contract:
     uv run --script scripts/check_rebac_contract.py
