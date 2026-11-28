@@ -2,6 +2,6 @@
 - [x] Compare API outcomes, inherited decisions and inventory through the existing clients.
 - [x] Compare concurrent changes against both writers.
 - [x] Verify unsigned preparation for both group policy contract calls and provider failure responses.
-- [ ] Verify confirmed chain mutations and post-confirmation auditing.
+- [x] Verify confirmed chain mutations and post-confirmation auditing.
 - [ ] Resolve overlapping attachment, detachment and policy deletion during a mixed-writer rollout.
 - [x] Verify a waiting attachment and detachment after a populated group deletion commits across writer pools, including audit and inherited access.

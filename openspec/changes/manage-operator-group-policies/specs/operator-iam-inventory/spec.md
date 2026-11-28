@@ -29,3 +29,15 @@ An authorized operator SHALL be able to attach and detach an existing IAM policy
 - **WHEN** a detachment waits for a group deletion that removes its existing attachment and commits
 - **THEN** the detachment returns HTTP 200 and records one detachment audit
 - **AND** subsequent group inventory omits the group and permission checks deny access previously granted solely through that attachment
+
+#### Scenario: Confirm a chain-backed group policy change
+- **WHEN** an operator attaches or detaches a policy through the group contract
+- **THEN** verify the receipt for the submitted transaction and configured group contract before committing the operator audit and returning success
+- **WHEN** PostgreSQL rejects the audit commit after confirmation
+- **THEN** return HTTP 500 and leave the confirmed group policy change observable on chain
+
+#### Scenario: Concurrent PostgreSQL group policy changes
+- **WHEN** an attachment sees an existing link while a peer detachment is uncommitted
+- **THEN** audit the attachment without reinserting the link and allow the detachment to finish
+- **WHEN** two first attachments both see an absent link
+- **THEN** a unique constraint rejection rolls back the losing attachment and its audit

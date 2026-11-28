@@ -1,8 +1,6 @@
 //! Dispatch authorized group and user IAM relationship edits to the selected provider.
 use super::*;
-use crate::{
-    chain_settings::IamMutation, grant_response::SessionOrigin, request_json::iam_document,
-};
+use crate::{grant_response::SessionOrigin, request_json::iam_document};
 use axum::extract::Path;
 use serde_json::value::RawValue;
 
@@ -224,32 +222,28 @@ async fn change(
     };
     let actor = (actor, email.as_deref());
     if let Some(chain) = chain {
-        let mutation = match parent {
+        return match parent {
             Relation::UserPolicy(_) => {
-                return user_policies::prepare_chain(&chain, tx, owner, target, add).await;
+                user_policies::prepare_chain(&chain, tx, owner, target, add).await
             }
             Relation::Membership(_) => {
-                return group_members::write_chain(&chain, tx, owner, target, add, actor, origin)
-                    .await;
+                group_members::write_chain(&chain, tx, owner, target, add, actor, origin).await
             }
             Relation::RolePolicy(_) => {
                 if tx.commit().await.is_err() {
                     return internal();
                 }
                 // A chain role must be resolved before the policy can be looked up.
-                return match chain.operator_roles().await {
+                match chain.operator_roles().await {
                     Ok(_) if add => assume_role::missing(owner),
                     Err(error) => admin_client_roles::chain_error(error),
                     Ok(_) => internal(),
-                };
+                }
             }
-            Relation::GroupPolicy(_) => IamMutation::GroupPolicy {
-                group: owner,
-                policy: target,
-                attach: add,
-            },
+            Relation::GroupPolicy(_) => {
+                group_policies::write_chain(&chain, tx, owner, target, add, actor, origin).await
+            }
         };
-        return writes::prepare_chain_write(tx, &chain, mutation).await;
     }
     match parent {
         Relation::UserPolicy(_) => {
