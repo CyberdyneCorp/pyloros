@@ -6,8 +6,12 @@ use url::Url;
 use uuid::Uuid;
 
 fn inventory(url: &Url, events: &[&str]) -> Output {
+    check(url, "--check-hook-bindings", events)
+}
+
+fn check(url: &Url, command: &str, events: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_pyloros"))
-        .arg("--check-hook-bindings")
+        .arg(command)
         .args(events)
         .env("DATABASE_URL", url.as_str())
         .env("BIND_ADDR", "invalid") // Inventory must run without starting HTTP.
@@ -149,8 +153,52 @@ async fn inventory_tracks_active_hooks_across_binding_migration() -> sqlx::Resul
         assert!(output.stdout.is_empty());
         assert!(String::from_utf8_lossy(&output.stderr).contains("hook event"));
     }
+    check_queue_visibility(&url, &mut conn).await?;
     sqlx::raw_sql(&format!("DROP SCHEMA {schema} CASCADE"))
         .execute(&mut *conn)
         .await?;
+    Ok(())
+}
+
+async fn check_queue_visibility(url: &Url, conn: &mut sqlx::PgConnection) -> sqlx::Result<()> {
+    let queue = |events: &[&str], code: i32, count: Option<i64>| {
+        let output = check(url, "--check-hook-queue", events);
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        match count {
+            Some(n) => assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+                json!({"pending":n})
+            ),
+            None => assert!(output.stdout.is_empty()),
+        }
+    };
+    queue(&[], 1, None);
+    sqlx::raw_sql("CREATE TABLE pyloros_hook_deliveries(event_type text, available_at timestamptz);
+        INSERT INTO pyloros_hook_deliveries VALUES ('entitlement_granted', now() + interval '1 hour'), ('entitlement_revoked', now()), ('role_granted', now())")
+        .execute(&mut *conn).await?;
+    let billing = [
+        "entitlement_granted",
+        "entitlement_revoked",
+        "entitlement_granted",
+    ];
+    queue(&[], 2, Some(3));
+    queue(&billing, 2, Some(2));
+    queue(&["user_registered"], 0, Some(0));
+    queue(&["entitlement_granted", "unknown"], 1, None);
+    use sqlx::Connection;
+    let mut tx = conn.begin().await?;
+    sqlx::query("DELETE FROM pyloros_hook_deliveries WHERE event_type = ANY($1)")
+        .bind(&billing[..])
+        .execute(&mut *tx)
+        .await?;
+    queue(&billing, 2, Some(2));
+    tx.commit().await?;
+    queue(&billing, 0, Some(0));
+    queue(&[], 2, Some(1));
     Ok(())
 }

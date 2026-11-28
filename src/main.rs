@@ -33,31 +33,19 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
         .acquire_timeout(Duration::from_secs(2))
         .connect_lazy(&env::var("DATABASE_URL")?)?;
     let mut args = env::args_os().skip(1);
-    if args.next().as_deref() == Some(std::ffi::OsStr::new("--check-hook-bindings")) {
-        let mut selected = Vec::new();
-        for arg in args {
-            let name = arg
-                .to_str()
-                .and_then(|name| {
-                    pyloros::profile::HOOK_EVENTS
-                        .iter()
-                        .find(|&&event| event == name)
-                })
-                .ok_or_else(|| {
-                    format!(
-                        "expected hook events from {}",
-                        pyloros::profile::HOOK_EVENTS.join(", ")
-                    )
-                })?;
-            selected.push(*name);
+    let command = args.next();
+    match command.as_deref().and_then(|name| name.to_str()) {
+        Some("--check-hook-bindings") => {
+            let report = hook_inventory::read(&pool, &hook_events(args)?).await?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            return Ok(coverage_status(report.active_unbound == 0));
         }
-        let report = hook_inventory::read(&pool, &selected).await?;
-        println!("{}", serde_json::to_string_pretty(&report)?);
-        return Ok(if report.active_unbound == 0 {
-            ExitCode::SUCCESS
-        } else {
-            ExitCode::from(2)
-        });
+        Some("--check-hook-queue") => {
+            let pending = hook_inventory::pending(&pool, &hook_events(args)?).await?;
+            println!("{}", serde_json::json!({ "pending": pending }));
+            return Ok(coverage_status(pending == 0));
+        }
+        _ => {}
     }
     let listener =
         TcpListener::bind(env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8000".into()))
@@ -86,6 +74,37 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
     })
     .await?;
     Ok(ExitCode::SUCCESS)
+}
+
+fn hook_events(
+    args: impl Iterator<Item = std::ffi::OsString>,
+) -> Result<Vec<&'static str>, Box<dyn Error>> {
+    let mut selected = Vec::new();
+    for arg in args {
+        let name = arg
+            .to_str()
+            .and_then(|name| {
+                pyloros::profile::HOOK_EVENTS
+                    .iter()
+                    .find(|&&event| event == name)
+            })
+            .ok_or_else(|| {
+                format!(
+                    "expected hook events from {}",
+                    pyloros::profile::HOOK_EVENTS.join(", ")
+                )
+            })?;
+        selected.push(*name);
+    }
+    Ok(selected)
+}
+
+fn coverage_status(complete: bool) -> ExitCode {
+    if complete {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(2)
+    }
 }
 
 async fn inspect_receipt(

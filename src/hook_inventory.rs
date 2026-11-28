@@ -54,3 +54,10 @@ pub async fn read(pool: &PgPool, events: &[&str]) -> sqlx::Result<Report> {
         hooks: rows.into_iter().map(|(_, hook)| hook).collect(),
     })
 }
+
+pub async fn pending(pool: &PgPool, events: &[&str]) -> sqlx::Result<i64> {
+    sqlx::query_scalar("SELECT count(*) FROM pyloros_hook_deliveries WHERE cardinality($1::text[]) = 0 OR event_type = ANY($1)")
+        .bind(events)
+        .fetch_one(pool)
+        .await
+}

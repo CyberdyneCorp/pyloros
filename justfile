@@ -57,6 +57,11 @@ inspect-iam-receipt hash *flags:
 hook-inventory *event:
     cargo run --quiet --locked -- --check-hook-bindings "$@"
 
+# Check how many committed component deliveries remain for these events.
+[positional-arguments]
+hook-queue *event:
+    cargo run --quiet --locked -- --check-hook-queue "$@"
+
 # Compare a candidate guest with a recorded outcome before uploading it.
 [positional-arguments]
 check-hook-fixture component event expected:

@@ -1,0 +1,1 @@
+Count committed queue rows with one SELECT, including delayed entries and deliveries claimed by a worker. PostgreSQL keeps a row visible to the reader until a worker commits its deletion. Reuse the supported event-name validation from the binding inventory. Report the count without fetching event payloads or account identifiers.
