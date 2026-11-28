@@ -195,6 +195,18 @@ Each phase offered reads for four seconds and drained its queue before the next 
 
 Across both trials, all 24,000 scheduled reads and 768 post-commit checks returned the expected decisions. All 96 writes produced one audit entry each. Both trials accumulated a read backlog at 1,800/s. These short local bursts leave sustained deployment capacity open.
 
+### PostgreSQL execution time during inherited permission checks
+
+A separate read-only trial used the same 32- and 33-team fixture and two replicas on PostgreSQL 17.12. With a warm cache, all 9,600 scheduled decisions matched. At 1,800 offered checks/s, 4,496 of 7,200 completed within the four-second window. The driver recorded 2,318 ms p95 from scheduled arrival to dispatch by a worker and 2,333 ms p95 from scheduled arrival to response.
+
+| Relationship query at 1,800 checks/s | Calls | Mean PostgreSQL execution time |
+|---|---:|---:|
+| Fetch destinations for one relation | 14,400 | 9.6 µs |
+| Check membership across a batch of destination IDs | 7,200 | 5.1 µs |
+| Check membership on one destination | 3,600 | 2.7 µs |
+
+PostgreSQL statement statistics recorded zero shared-block reads and zero temporary blocks written for these queries. The representative 33-edge destination lookup and 32-team membership miss both used primary-key index-only scans with forced custom and generic plans. The folder model checks two inherited relations, which accounts for the two destination queries per request. These server execution times exclude round trips, pool acquisition and the rest of request processing. Distinguishing those costs requires separate timing.
+
 ### Starting a ReBAC permission snapshot
 
 Each permission check opens a read-only repeatable-read transaction. Opening it with both modes in the initial SQL statement removes one round trip to PostgreSQL. Statement traces confirmed the change on direct, inherited and wide-graph checks.
