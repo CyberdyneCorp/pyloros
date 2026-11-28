@@ -63,3 +63,13 @@ In a local handoff rehearsal, both services read all 257 stored keys. Deleting o
 The PostgreSQL catalog limit is 64 global roles per client. In two handoff trials, a client started with 65 global roles and 1,000 organization-scoped groups. The administrator and delegated APIs listed all 65 global roles with the same member counts on both services. Removing one global role left the catalog full. After a second removal, recreating a retired role succeeded with zero members and an empty permission mapping.
 
 On this fixture, PostgreSQL query plans showed 65 executions of the inventory's membership count after filtering scoped groups, down from 1,065. This measures database work for the catalog read.
+
+## Switching writers at the final catalog slot
+
+The operator and delegated creation routes share a client's catalog. When the role or permission catalog has one slot left, requests admitted by different writers can compete for it.
+
+1. Hold creation at ingress for both `POST /api/v1/admin/clients/{client_id}/{roles|permissions}` and `POST /api/v1/clients/me/{roles|permissions}`. Keep inventory reads available. The local rehearsal held all four creation paths across clients for the handoff window.
+2. Drain already admitted writes on the outgoing pool and confirm their PostgreSQL transactions have ended. Read the catalog and its committed creation audit on the primary. If a read disconnects or receives a proxy error, repeat the read before deciding whether a slot is free.
+3. Keep admission closed through the pool switch. Verify the committed key and count through the incoming pool, then release admission. If the last slot is occupied, a different key receives HTTP 409. If the outgoing transaction rolled back, the incoming writer can create a key in the free slot.
+
+Eight local handoffs covered the 64th role and 256th permission in both writer directions. A committed creation occupied the final slot in every case. On an injected commit rejection, the reference returned HTTP 201 and Pyloros returned HTTP 500. Both left the slot free with no creation audit. Each incoming writer then created a different key and recorded its caller. Two preliminary rollback trials encountered a disconnect or HTTP 502 on inventory readback. Deployment ingress and concurrent writes outside this handoff window still require verification.
