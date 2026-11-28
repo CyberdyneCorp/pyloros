@@ -1,0 +1,2 @@
+- [x] Share provider selection and implement the offline release command.
+- [x] Verify default and explicit schemes and failure on invalid configuration.

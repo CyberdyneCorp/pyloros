@@ -316,3 +316,14 @@ For an eligible address, the service SHALL issue a distinct recovery credential 
 #### Scenario: Commit rejected after delivery
 - **WHEN** the relay accepts the email and PostgreSQL explicitly rejects the request at commit
 - **THEN** return HTTP 500, preserve the previous credential and audit state, and reject the discarded link on redemption
+
+### Requirement: Verify the shipped password provider
+The release executable SHALL provide an offline check of the configured account password scheme using synthetic credentials.
+
+#### Scenario: Check a configured provider
+- **WHEN** an operator invokes the provider check
+- **THEN** exercise current hash creation and verification, a historical hash, wrong-password refusal and missing-account refusal; report the scheme and outcomes without disclosing credentials or hashes
+
+#### Scenario: Unusable provider configuration
+- **WHEN** the configured scheme is unsupported or a check fails
+- **THEN** exit unsuccessfully

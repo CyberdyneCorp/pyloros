@@ -435,9 +435,7 @@ fn build_routes(
             env::var("RATELIMIT_RESET_PER_HOUR").map_or(Ok(5), |s| s.parse())?,
             std::time::Duration::from_secs(3600),
         ),
-        scheme: env::var("PASSWORD_SCHEME")
-            .unwrap_or_else(|_| "argon2".into())
-            .parse()?,
+        scheme: crate::passwords::PasswordScheme::configured()?,
         factor: env::var("MASTER_KEY")
             .ok()
             .map(|key| crate::enrolled_factor::FactorVerifier::new(&key))

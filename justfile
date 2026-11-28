@@ -49,6 +49,10 @@ db-client-id-overlaps *args:
 db-iam-statement-positions *args:
     uv run --script scripts/iam_statement_positions.py "$@"
 
+# Exercise the configured password provider with disposable inputs.
+check-password-provider:
+    cargo run --release --locked --bin pyloros -- --check-password-provider
+
 # Count account password prefixes on the target PostgreSQL database.
 [positional-arguments]
 db-password-schemes *args:

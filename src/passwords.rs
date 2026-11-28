@@ -37,6 +37,26 @@ pub enum PasswordScheme {
     Bcrypt,
 }
 
+#[derive(serde::Serialize)]
+pub struct ProviderCheck {
+    scheme: &'static str,
+    write: bool,
+    read_own: bool,
+    reject_wrong: bool,
+    reject_missing: bool,
+    read_historical: bool,
+}
+
+impl ProviderCheck {
+    pub fn passed(&self) -> bool {
+        self.write
+            && self.read_own
+            && self.reject_wrong
+            && self.reject_missing
+            && self.read_historical
+    }
+}
+
 impl FromStr for PasswordScheme {
     type Err = &'static str;
 
@@ -50,6 +70,42 @@ impl FromStr for PasswordScheme {
 }
 
 impl PasswordScheme {
+    pub fn configured() -> Result<Self, &'static str> {
+        std::env::var("PASSWORD_SCHEME")
+            .unwrap_or_else(|_| "argon2".into())
+            .parse()
+    }
+
+    /// Exercise the shipped provider without reading any account or configuration secrets.
+    pub async fn check(self) -> Result<ProviderCheck, Box<dyn std::error::Error + Send + Sync>> {
+        let sample = uuid::Uuid::new_v4().to_string();
+        let encoded = self.hash(sample.clone()).await?;
+        let (scheme, prefix, historical_password, historical_hash) = match self {
+            Self::Argon2 => (
+                "argon2",
+                "$argon2id$v=19$",
+                "historical fixture",
+                "$argon2id$m=2048,t=2,p=1$cHlsb3Jvcy10ZXN0LXNhbHQ$aT/k2Yyd5O27u79PVZvQ2ON2eCO2QfpmyXMIHSfiY0M",
+            ),
+            Self::Bcrypt => (
+                "bcrypt",
+                "$2b$",
+                "unicode π",
+                "$2$04$nK6rieB8W.Z.qDHk0LpMOeoNFtwAU1a1LZ/L0GRjhebBmFcOt.IeK",
+            ),
+        };
+        Ok(ProviderCheck {
+            scheme,
+            write: encoded.starts_with(prefix),
+            read_own: self.verify(sample.clone(), Some(encoded.clone())).await?,
+            reject_wrong: !self.verify(format!("{sample}!"), Some(encoded)).await?,
+            reject_missing: !self.verify("pyloros fixture π".into(), None).await?,
+            read_historical: self
+                .verify(historical_password.into(), Some(historical_hash.into()))
+                .await?,
+        })
+    }
+
     /// An absent hash still incurs the standard verification work for this scheme.
     pub async fn verify(self, password: String, stored: Option<String>) -> Result<bool, JoinError> {
         password_worker(move || {

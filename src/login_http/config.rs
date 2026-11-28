@@ -96,9 +96,7 @@ impl Login {
             refresh,
             mail: ConfirmationMailer::configured()?,
             cookies: SessionCookies::configured(production)?,
-            scheme: env::var("PASSWORD_SCHEME")
-                .unwrap_or_else(|_| "argon2".into())
-                .parse()?,
+            scheme: crate::passwords::PasswordScheme::configured()?,
             admins: crate::config::admin_emails()?,
             production,
             proxies: number("TRUSTED_PROXY_COUNT", 0)?.try_into()?,

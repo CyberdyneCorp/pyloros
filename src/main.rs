@@ -16,6 +16,17 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
     }
     let mut inspection = env::args_os().skip(1);
     match inspection.next().as_deref().and_then(|arg| arg.to_str()) {
+        Some("--check-password-provider") => {
+            if inspection.next().is_some() {
+                return Err("password provider check takes no arguments".into());
+            }
+            let report = pyloros::passwords::PasswordScheme::configured()?
+                .check()
+                .await
+                .map_err(|_| "password provider check failed")?;
+            println!("{}", serde_json::to_string(&report)?);
+            return Ok(coverage_status(report.passed()));
+        }
         Some("--inspect-iam-receipt") => return inspect_receipt(inspection).await,
         Some("--inspect-iam-membership") => {
             let args = inspection

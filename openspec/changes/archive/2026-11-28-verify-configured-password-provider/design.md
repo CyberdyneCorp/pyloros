@@ -1,0 +1,1 @@
+Share password scheme selection with the login and account handlers. Run the check before database configuration and exercise the provider through its normal hashing worker. Print only the scheme and check outcomes.
