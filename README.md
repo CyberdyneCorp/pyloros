@@ -237,7 +237,7 @@ During coexistence, Pyloros can handle authorization-code, refresh-token and dev
 
 Set `PYLOROS_OPENAPI_PATH` to a deployment-owned OpenAPI 3 JSON file to publish it at `/openapi.json`. The server checks the document envelope at startup and serves the supplied bytes for the lifetime of the process. Clients can use GET to read the document or HEAD to check its length. The schema route uses the standard browser policy by default. Set `PYLOROS_OPENAPI_CSP` to supply a deployment-specific Content-Security-Policy for that route.
 
-The [health probes](openspec/specs/health/spec.md) and [issuer discovery](openspec/specs/issuer-discovery/spec.md) specifications describe the five foundation HTTP routes. The [HTTP response spec](openspec/specs/http-responses/spec.md) covers shared browser security headers. With the OpenSpec CLI installed, run `just spec-check` to validate the specifications.
+The [health probes](openspec/specs/health/spec.md) and [issuer discovery](openspec/specs/issuer-discovery/spec.md) specifications describe the five foundation HTTP routes. The [HTTP response spec](openspec/specs/http-responses/spec.md) covers shared browser security headers. Run `just spec-check` with OpenSpec CLI 1.13.2 to validate active changes, published specifications and the task lists in archived changes. The same checks run on pushes and pull requests.
 
 ## Comparing running services
 

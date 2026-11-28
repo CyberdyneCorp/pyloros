@@ -105,7 +105,8 @@ health:
 
 # Validate the project specifications with the OpenSpec CLI.
 spec-check:
-    openspec validate --all --strict
+    openspec validate --all --strict --no-interactive
+    openspec validate --archived --strict --no-interactive
 
 # Compare the five foundation routes on two running services.
 [positional-arguments]
