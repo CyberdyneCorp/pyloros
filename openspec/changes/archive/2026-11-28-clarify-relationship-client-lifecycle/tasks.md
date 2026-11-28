@@ -1,0 +1,3 @@
+- [x] Verify reads before and after deactivation commit and after reactivation on two API replicas.
+- [x] Verify that deleting a registration removes both assignment types and its model, and that the replacement registration starts empty.
+- [x] Document client lifecycle behavior in the operator guide.
