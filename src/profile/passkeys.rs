@@ -249,16 +249,16 @@ impl SessionProof {
         enrollment: &crate::passkey_ceremonies::SessionCeremony<'_>,
         tx: Transaction<'_, Postgres>,
         ceremony: Uuid,
-    ) -> Result<Vec<u8>, Response> {
+    ) -> Result<Vec<u8>, Box<Response>> {
         let result = match self {
             Self::Register => enrollment.claim(tx, ceremony).await,
             Self::Reauthenticate => enrollment.claim_reauthentication(tx, ceremony).await,
         };
         match result {
             Ok(Some(challenge)) => Ok(challenge),
-            Ok(None) => Err(finish::invalid()),
-            Err(sqlx::Error::Database(_)) => Err(internal()),
-            Err(_) => Err(inventory_unavailable()),
+            Ok(None) => Err(Box::new(finish::invalid())),
+            Err(sqlx::Error::Database(_)) => Err(Box::new(internal())),
+            Err(_) => Err(Box::new(inventory_unavailable())),
         }
     }
 }
@@ -374,7 +374,7 @@ async fn inventory(
         };
         let challenge = match purpose.claim(&enrollment, tx, proof.ceremony).await {
             Ok(challenge) => challenge,
-            Err(response) => return Ok(response),
+            Err(response) => return Ok(*response),
         };
         if matches!(purpose, SessionProof::Reauthenticate) {
             return reauth::verify(state, id, &enrollment, proof, challenge).await;

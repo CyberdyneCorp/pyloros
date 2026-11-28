@@ -51,11 +51,14 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
         let Some((component, files)) = paths.split_first() else {
             return Err("expected a component followed by event and expected outcome pairs".into());
         };
-        let pairs = files.chunks_exact(2);
-        if !pairs.remainder().is_empty() {
+        let (pairs, remaining) = files.as_chunks::<2>();
+        if !remaining.is_empty() {
             return Err("each event must have an expected outcome path".into());
         }
-        let cases: Vec<_> = pairs.map(|p| (p[0].as_path(), p[1].as_path())).collect();
+        let cases: Vec<_> = pairs
+            .iter()
+            .map(|[event, expected]| (event.as_path(), expected.as_path()))
+            .collect();
         let digest = pyloros::profile::check_hook_fixtures(component, &cases).await?;
         println!("{digest}");
         return Ok(ExitCode::SUCCESS);

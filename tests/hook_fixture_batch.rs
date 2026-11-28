@@ -73,3 +73,19 @@ echo '{"status":"success","output":"private sample"}'
     assert!(error.contains("Fixture 2"));
     assert!(!error.contains("private"));
 }
+
+#[test]
+fn incomplete_pair_is_rejected_before_loading_the_component() {
+    let result = Command::new(env!("CARGO_BIN_EXE_pyloros"))
+        .env_remove("DATABASE_URL")
+        .args(["--check-hook-fixture", "absent-component", "unpaired-event"])
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    assert!(
+        String::from_utf8(result.stderr)
+            .unwrap()
+            .contains("each event must have an expected outcome path")
+    );
+}
