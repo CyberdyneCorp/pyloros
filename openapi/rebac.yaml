@@ -26,7 +26,7 @@ paths:
                     read: [{relation: member}, {via: parent, permission: read}]
       responses:
         '204': {description: Model committed or already current. Subsequent permission checks on all API replicas sharing the primary use this model.}
-        '409': {description: Existing assignments would become invalid., content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '409': {description: Existing assignments would become invalid. Includes a conflicting grant that committed first., content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
         '400': {$ref: '#/components/responses/Malformed'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -49,7 +49,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '413': {description: Request exceeds the body size limit.}
         '415': {description: The request requires a JSON media type.}
-        '422': {$ref: '#/components/responses/Invalid'}
+        '422': {$ref: '#/components/responses/Invalid', description: Invalid assignment. This includes a relation removed by a model replacement that committed first.}
         '500': {description: Internal server error.}
         '503': {$ref: '#/components/responses/Unavailable'}
     delete:
