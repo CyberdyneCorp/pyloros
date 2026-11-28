@@ -2,6 +2,7 @@
 mod health_connection;
 mod large_health;
 pub(super) mod policy_transaction;
+pub(super) mod receipt;
 mod rpc_response;
 mod transport;
 use super::ChainSettings;

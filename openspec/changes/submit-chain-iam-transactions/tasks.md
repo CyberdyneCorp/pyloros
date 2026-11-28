@@ -1,4 +1,5 @@
 - [x] Encode and compare unsigned create, replacement and deletion calls.
 - [x] Prepare the unsigned transaction using the configured signer, pending nonce, gas estimate and dynamic fees.
+- [x] Inspect a known transaction hash through read-only RPC and distinguish matching, reverted, missing and ambiguous receipt results.
 - [ ] Implement submission, nonce coordination, receipt validation and error mapping.
 - [ ] Wire policy mutations, audit their results and compare the original clients.

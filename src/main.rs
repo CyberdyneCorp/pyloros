@@ -14,6 +14,10 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
         );
         return Ok(ExitCode::SUCCESS);
     }
+    let mut receipt = env::args_os().skip(1);
+    if receipt.next().as_deref() == Some(std::ffi::OsStr::new("--inspect-iam-receipt")) {
+        return inspect_receipt(receipt).await;
+    }
     let mut fixture = env::args_os().skip(1);
     if fixture.next().as_deref() == Some(std::ffi::OsStr::new("--check-hook-fixture")) {
         let paths: Vec<std::path::PathBuf> = fixture.map(Into::into).collect();
@@ -81,4 +85,22 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
     })
     .await?;
     Ok(ExitCode::SUCCESS)
+}
+
+async fn inspect_receipt(
+    mut receipt: impl Iterator<Item = std::ffi::OsString>,
+) -> Result<ExitCode, Box<dyn Error>> {
+    let hash = receipt.next().ok_or("expected one transaction hash")?;
+    if receipt.next().is_some() {
+        return Err("expected one transaction hash".into());
+    }
+    let report =
+        pyloros::chain_settings::inspect_receipt(hash.to_str().ok_or("invalid transaction hash")?)
+            .await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(if report.outcome == "reported_success" {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(2)
+    })
 }

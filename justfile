@@ -43,6 +43,11 @@ hook-worker:
 build-hook-example:
     cargo component build --release --locked --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
 
+# Inspect one known transaction on the configured chain RPC endpoint.
+[positional-arguments]
+inspect-iam-receipt hash:
+    cargo run --quiet --locked -- --inspect-iam-receipt "$@"
+
 # List hook bindings and check coverage for active definitions.
 [positional-arguments]
 hook-inventory *event:

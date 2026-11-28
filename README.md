@@ -513,3 +513,7 @@ its component. Administrator and delegated writes queue an event with the
 subject user, resolved client and role key. Scoped assignments also include
 the organization ID. Removing an organization membership queues one revocation
 per withdrawn scoped role. Audit, membership and delivery changes commit together.
+
+## Inspect an IAM transaction receipt
+
+For an IAM mutation whose transaction hash is already known, set `BLOCKCHAIN_RPC_ENDPOINT` to the intended chain and run `just inspect-iam-receipt HASH`. The command reads the provider's receipt without signing or submitting a transaction. Exit zero means the receipt hash matched and the provider reported successful execution. Exit 2 reports an unavailable receipt, invalid or mismatched hash, unrecognized status, or revert. Exit 1 indicates a command or provider error. Verify block finality and the expected contract event before reconciling IAM state.

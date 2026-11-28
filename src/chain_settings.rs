@@ -5,6 +5,7 @@ mod membership;
 use data_encoding::HEXLOWER_PERMISSIVE;
 pub(crate) use identity_tokens::TokenProvider;
 use k256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
+pub use membership::receipt::{ReceiptObservation, inspect_receipt};
 pub(crate) use membership::{
     Chain, Inventory, SnapshotError,
     policy_transaction::{IamMutation, PrepareError},
