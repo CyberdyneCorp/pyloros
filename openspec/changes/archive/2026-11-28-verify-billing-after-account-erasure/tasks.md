@@ -1,0 +1,2 @@
+- [x] Compare signed webhook delivery with reference billing projections across both account erasure writers.
+- [x] Verify rollback, processed replay, unmapped renewal and recovery for a new account UUID.

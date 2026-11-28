@@ -1,0 +1,1 @@
+The account UUID owns the customer mapping and entitlements. The event ledger uses the provider event ID and survives account deletion. Verify all three records through an erasure, recreation with a new UUID, and a fresh checkout. Repeat with an explicitly rejected deletion commit before the successful erasure.
