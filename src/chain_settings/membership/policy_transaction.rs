@@ -3,6 +3,7 @@ use super::*;
 use serde::Deserialize;
 mod arguments;
 mod creation;
+pub use creation::{CreationObservation, inspect_creation};
 #[cfg(test)]
 mod deletion_tests;
 mod quantities;

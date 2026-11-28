@@ -1,0 +1,2 @@
+- [x] Add offline creation receipt inspection to the executable and justfile.
+- [x] Verify supported formats, absent or mismatched evidence and offline operation.

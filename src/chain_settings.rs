@@ -6,6 +6,7 @@ use data_encoding::HEXLOWER_PERMISSIVE;
 pub(crate) use identity_tokens::TokenProvider;
 use k256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
 pub use membership::inspection::{MembershipObservation, inspect_membership};
+pub use membership::policy_transaction::{CreationObservation, inspect_creation};
 pub use membership::receipt::{
     ReceiptObservation, inspect_receipt, inspect_receipt_for, wait_for_receipt,
 };

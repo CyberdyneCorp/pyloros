@@ -27,6 +27,7 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
             println!("{}", serde_json::to_string(&report)?);
             return Ok(coverage_status(report.passed()));
         }
+        Some("--inspect-iam-creation") => return inspect_creation(inspection),
         Some("--inspect-iam-receipt") => return inspect_receipt(inspection).await,
         Some("--inspect-iam-membership") => {
             let args = inspection
@@ -187,6 +188,29 @@ fn coverage_status(complete: bool) -> ExitCode {
     } else {
         ExitCode::from(2)
     }
+}
+
+fn inspect_creation(
+    args: impl Iterator<Item = std::ffi::OsString>,
+) -> Result<ExitCode, Box<dyn Error>> {
+    let args: Vec<_> = args.collect();
+    let [kind, hash, contract, path] = args.as_slice() else {
+        return Err(
+            "expected creation kind, transaction hash, contract address and receipt file".into(),
+        );
+    };
+    let receipt = serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(path)?))?;
+    let report = pyloros::chain_settings::inspect_creation(
+        kind.to_str().ok_or("invalid creation kind")?,
+        hash.to_str().ok_or("invalid transaction hash")?.parse()?,
+        contract
+            .to_str()
+            .ok_or("invalid contract address")?
+            .parse()?,
+        &receipt,
+    )?;
+    println!("{}", serde_json::to_string(&report)?);
+    Ok(coverage_status(report.outcome == "decoded_candidates"))
 }
 
 async fn inspect_receipt(

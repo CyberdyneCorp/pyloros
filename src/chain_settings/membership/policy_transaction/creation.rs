@@ -72,6 +72,54 @@ pub(super) fn mint_id(receipt: &Value, contract: Address) -> Result<Option<Token
         .ok_or_else(|| invalid_mint_id(&bytes))
 }
 
+fn role_id(receipt: &Value, contract: Address) -> Option<TokenId> {
+    creation_data(receipt, contract).and_then(|(data, _)| text_id(&data))
+}
+
+#[derive(serde::Serialize)]
+pub struct CreationObservation {
+    pub outcome: &'static str,
+    pub candidate_ids: Vec<String>,
+}
+
+pub fn inspect_creation(
+    kind: &str,
+    hash: B256,
+    contract: Address,
+    receipt: &Value,
+) -> Result<CreationObservation, &'static str> {
+    if !matches!(kind, "group" | "policy" | "identity" | "role") {
+        return Err("expected identity, group, policy or role");
+    }
+    let mut outcome = super::super::receipt::outcome(hash, Some(contract), receipt);
+    let mut candidates = Vec::new();
+    if outcome == "reported_success" {
+        candidates = match kind {
+            "identity" => mint_id(receipt, contract)
+                .ok()
+                .flatten()
+                .into_iter()
+                .collect(),
+            "role" => role_id(receipt, contract).into_iter().collect(),
+            _ => creation_ids(receipt, contract)
+                .map(|(ids, _)| ids)
+                .unwrap_or_default(),
+        };
+        candidates.dedup();
+        outcome = if candidates.is_empty() {
+            "no_matching_identifier"
+        } else if kind == "identity" && receipt["logs"][0].get("data").is_none() {
+            "missing_data_zero_fallback"
+        } else {
+            "decoded_candidates"
+        };
+    }
+    Ok(CreationObservation {
+        outcome,
+        candidate_ids: candidates.into_iter().map(|id| id.to_string()).collect(),
+    })
+}
+
 fn mint_text_integer(bytes: &[u8]) -> Option<TokenId> {
     // The provider parses the log bytes as a base-16 integer, including digit separators.
     let text = std::str::from_utf8(bytes).ok()?.trim();
@@ -131,15 +179,13 @@ impl Chain {
             .await?;
         let contract = envelope.to;
         let receipt = self.submit_envelope(envelope).await?;
-        let id = creation_data(&receipt, contract)
-            .and_then(|(data, _)| text_id(&data))
-            .ok_or_else(|| {
-                eprintln!(
-                    "Could not verify role ID for confirmed transaction {} on {contract}",
-                    receipt["transactionHash"]
-                );
-                PrepareError::Invalid
-            })?;
+        let id = role_id(&receipt, contract).ok_or_else(|| {
+            eprintln!(
+                "Could not verify role ID for confirmed transaction {} on {contract}",
+                receipt["transactionHash"]
+            );
+            PrepareError::Invalid
+        })?;
         Ok(OperatorRole {
             id: chain_uuid("role", id),
             name: name.into(),

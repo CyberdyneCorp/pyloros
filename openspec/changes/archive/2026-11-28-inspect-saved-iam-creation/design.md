@@ -1,0 +1,1 @@
+Use the receipt classifier and the mutation path’s first-log decoder. Take the expected contract and transaction hash independently of the file. Output decimal strings so full-width identifiers survive JSON tooling. Directory candidates still require canonical catalog reconciliation.

@@ -13,7 +13,7 @@ pub struct ReceiptObservation {
     pub outcome: &'static str,
 }
 
-fn outcome(expected: B256, contract: Option<Address>, receipt: &Value) -> &'static str {
+pub(super) fn outcome(expected: B256, contract: Option<Address>, receipt: &Value) -> &'static str {
     if receipt.is_null() {
         return "receipt_unavailable";
     }

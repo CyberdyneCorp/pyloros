@@ -85,6 +85,11 @@ check-hook-examples:
 check-stripe-route url *flags:
     python3 scripts/check_stripe_route.py "$@"
 
+# Decode candidate creation IDs from a saved receipt without an RPC or signer.
+[positional-arguments]
+inspect-iam-creation kind hash contract file:
+    cargo run --quiet --locked -- --inspect-iam-creation "$@"
+
 # Inspect one known transaction on the configured chain RPC endpoint.
 [positional-arguments]
 inspect-iam-receipt hash *flags:
