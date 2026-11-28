@@ -14,3 +14,7 @@ Pyloros SHALL let first-party administrators browse authentication activity glob
 #### Scenario: Read one user's trail
 - **WHEN** a user identifier scopes the directory
 - **THEN** return events for that subject and identify the user as the target of the read audit, including when the directory is empty
+
+#### Scenario: Database rejects the read audit at commit
+- **WHEN** PostgreSQL explicitly rejects the audit transaction for a global or per-user directory read at commit
+- **THEN** return HTTP 500 and withhold the event page
