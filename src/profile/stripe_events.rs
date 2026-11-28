@@ -244,6 +244,41 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]
+    async fn informational_events_complete_while_the_payment_reference_is_locked()
+    -> sqlx::Result<()> {
+        let pool = billing_fixture().await;
+        let reference = Uuid::new_v4().to_string();
+        let other = PgPool::connect(&env::var("DATABASE_URL").unwrap()).await?;
+        let mut owner = other.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext('stripe-reference'),hashtext($1))")
+            .bind(&reference)
+            .execute(&mut *owner)
+            .await?;
+        sqlx::query("SET lock_timeout = '1s'")
+            .execute(&pool)
+            .await?;
+        for (kind, handled) in [("invoice.created", false), ("charge.refunded", true)] {
+            let notification: Event = serde_json::from_value(json!({
+                "id":kind, "type":kind, "data":{"object":{"payment_intent":reference,"refunded":false}}
+            })).unwrap();
+            assert_eq!(
+                ledger::process(&pool, &notification, false).await?,
+                Some(handled)
+            );
+            assert_eq!(
+                ledger::process(&pool, &notification, false).await?,
+                Some(false)
+            );
+        }
+        let statuses: Vec<String> = sqlx::query_scalar("SELECT status FROM stripe_events")
+            .fetch_all(&pool)
+            .await?;
+        assert_eq!(statuses, ["processed", "processed"]);
+        owner.rollback().await
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
     async fn signed_checkout_can_be_replayed_after_its_product_is_registered() {
         let pool = billing_fixture().await;
         let user = Uuid::new_v4();

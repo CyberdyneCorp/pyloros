@@ -1,0 +1,3 @@
+- [x] Scope reference locking to entitlement mutations.
+- [x] Add a PostgreSQL regression for independent ledger acknowledgements and replays.
+- [x] Verify overlapping signed callbacks and entitlement outcomes across two replicas.

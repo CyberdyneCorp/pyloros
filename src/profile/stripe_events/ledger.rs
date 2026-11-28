@@ -29,12 +29,6 @@ pub(super) async fn process(
     if status == "processed" {
         return Ok(Some(false));
     }
-    if let Some(reference) = event.reference() {
-        sqlx::query("SELECT pg_advisory_xact_lock(hashtext('stripe-reference'),hashtext($1))")
-            .bind(reference)
-            .execute(&mut *tx)
-            .await?;
-    }
     let outcome = match event.kind.as_str() {
         "checkout.session.completed"
         | "customer.subscription.created"
@@ -119,10 +113,21 @@ async fn customer(tx: &mut Tx<'_>, event: &Event) -> sqlx::Result<Result<Uuid, S
     Ok(Ok(user))
 }
 
+async fn lock_reference(tx: &mut Tx<'_>, reference: &str) -> sqlx::Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('stripe-reference'),hashtext($1))")
+        .bind(reference)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 async fn grant(tx: &mut Tx<'_>, event: &Event, hooks: bool) -> sqlx::Result<Outcome> {
     let Some((product, plan)) = event.product() else {
         return Ok(Outcome::Deferred("no product metadata".into()));
     };
+    if let Some(reference) = event.reference() {
+        lock_reference(tx, reference).await?;
+    }
     let user = match customer(tx, event).await? {
         Ok(user) => user,
         Err(reason) => return Ok(Outcome::Deferred(reason)),
@@ -154,6 +159,7 @@ async fn revoke(tx: &mut Tx<'_>, event: &Event, hooks: bool) -> sqlx::Result<Out
     let Some(reference) = event.reference().filter(|s| !s.is_empty()) else {
         return Ok(Outcome::Deferred("no matchable reference".into()));
     };
+    lock_reference(tx, reference).await?;
     let exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT FROM entitlements WHERE external_ref=$1)")
             .bind(reference)

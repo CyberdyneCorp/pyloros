@@ -1,0 +1,1 @@
+Keep the event-row lock before dispatch. Acquire the transaction-scoped reference lock inside the grant and revoke paths, ahead of any entitlement work or customer lock. An ignored event or partial refund can commit its own ledger row while a different event is waiting to complete a grant.
