@@ -1,0 +1,3 @@
+- [x] Compare both reset writers across all four legacy bcrypt prefixes.
+- [x] Verify second-factor continuity, recovery-code state and peer session reads.
+- [x] Check an account with a previously consumed authenticator step.
