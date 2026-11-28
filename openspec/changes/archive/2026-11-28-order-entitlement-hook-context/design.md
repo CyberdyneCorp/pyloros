@@ -1,0 +1,1 @@
+Project the stored JSONB fields into ordered JSON at claim time. Each grant or withdrawal keeps the original owner identifiers, null values and event-specific keys. Account privacy filtering continues to apply only to registration and login events.

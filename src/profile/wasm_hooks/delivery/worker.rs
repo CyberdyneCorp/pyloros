@@ -181,7 +181,15 @@ mod tests {
             r#"{"event_type": "user_logged_in", "user_id": "subject"}"#,
             r#"{"email": "person@example.org", "user_agent": null, "ip": null, "event_type": "user_logged_in", "user_id": "subject"}"#,
         );
-        for (event, public, private) in [registrations, logins] {
+        // Entitlement fields are public event data for both privacy settings.
+        let grant = r#"{"product_key": "books", "plan": null, "entitlement_id": "grant", "source": "admin", "organization_id": "org", "event_type": "entitlement_granted", "user_id": null}"#;
+        let revoke = r#"{"product_key": "books", "plan": null, "entitlement_id": "grant", "event_type": "entitlement_revoked", "user_id": "subject"}"#;
+        for (event, public, private) in [
+            registrations,
+            logins,
+            ("entitlement_granted", grant, grant),
+            ("entitlement_revoked", revoke, revoke),
+        ] {
             for (stored, enabled, expected) in [
                 (private, true, private),
                 (private, false, public),
