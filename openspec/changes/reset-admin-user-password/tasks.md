@@ -2,4 +2,5 @@
 - [x] Compare HTTP errors, login, session behavior, concurrency and rollback.
 - [x] Exercise the unchanged operator console and CLI.
 - [x] Verify operator recovery from legacy bcrypt credentials through Argon2 writers on both backends and verify revocation on the peer.
+- [x] Verify the bcrypt inventory before and after operator resets for active and inactive accounts with stored, blank and missing primary emails.
 - [ ] Resolve the bcrypt compatibility gate for deployments whose existing password provider fails initialization.
