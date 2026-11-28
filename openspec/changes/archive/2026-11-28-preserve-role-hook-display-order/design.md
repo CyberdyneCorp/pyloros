@@ -1,0 +1,1 @@
+Use the claim query to order the fields already present in the queued payload. Both role event types share the same sequence. The organization field appears only for scoped assignments. No queue migration is needed.

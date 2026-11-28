@@ -1,0 +1,2 @@
+- [x] Restore field order in the worker and cover scoped and global role events on PostgreSQL.
+- [x] Verify operator and delegated histories under both privacy settings.

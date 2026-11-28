@@ -184,11 +184,15 @@ mod tests {
         // Entitlement fields are public event data for both privacy settings.
         let grant = r#"{"product_key": "books", "plan": null, "entitlement_id": "grant", "source": "admin", "organization_id": "org", "event_type": "entitlement_granted", "user_id": null}"#;
         let revoke = r#"{"product_key": "books", "plan": null, "entitlement_id": "grant", "event_type": "entitlement_revoked", "user_id": "subject"}"#;
+        let role_grant = r#"{"client_id": "client", "role_key": "reader", "organization_id": "org", "event_type": "role_granted", "user_id": "subject"}"#;
+        let role_revoke = r#"{"client_id": "client", "role_key": "reader", "event_type": "role_revoked", "user_id": "subject"}"#;
         for (event, public, private) in [
             registrations,
             logins,
             ("entitlement_granted", grant, grant),
             ("entitlement_revoked", revoke, revoke),
+            ("role_granted", role_grant, role_grant),
+            ("role_revoked", role_revoke, role_revoke),
         ] {
             for (stored, enabled, expected) in [
                 (private, true, private),
