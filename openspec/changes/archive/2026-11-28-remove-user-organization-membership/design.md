@@ -8,4 +8,4 @@ Exercise both IAM providers, state after retries, orphaned role assignments, fai
 
 ## Current verification
 
-PostgreSQL removal, event delivery records, audit rollback, the original clients and provider outage handling have been exercised. A configured active role-revocation hook currently returns 503 and rolls back the removal. Dispatching that callback after commit remains an interoperability requirement for the WebAssembly runtime.
+Both PostgreSQL writers revoke the target organization's roles, clear its primary assignment and preserve global roles and other memberships. Each selected hook runs once for each revoked role. A retry on the peer records an empty revocation list. A partial binding rolls back the removal. Chain-backed role revocation depends on confirmed chain writes tracked in `submit-chain-iam-transactions`.

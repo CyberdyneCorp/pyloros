@@ -33,3 +33,13 @@ An operator SHALL be able to remove a user's membership in an existing organizat
 
 - **WHEN** an accepted action waits for a concurrent audit writer
 - **THEN** preserve the action's recording time while linking its hash to the preceding committed audit record
+
+#### Scenario: Remove membership with PostgreSQL role hooks
+
+- **WHEN** removal revokes roles in PostgreSQL and every active revocation hook has a component binding
+- **THEN** execute each hook once per revoked role with the event type, user ID, client ID, role key and organization ID. A successful retry records an empty revocation list and dispatches no further callbacks.
+
+#### Scenario: Partial role hook bindings
+
+- **WHEN** the Rust backend receives a PostgreSQL membership removal that would revoke roles and only some active revocation hooks have bindings
+- **THEN** return HTTP 503 and preserve the primary organization, memberships and role assignments. Record no removal audit or hook deliveries.
