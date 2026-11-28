@@ -317,3 +317,15 @@ Two fresh PostgreSQL runs scheduled eight seconds each at 160, 320 and 160 write
 | 160 after peak | 1,280 / 1,280 | 4.87 ms | 6.29 ms |
 
 All 10,240 writes produced one audit entry each, split equally between administrator and service-client calls. These local bursts establish the observed latency at 320 writes/s for independent roles. The saturation rate and performance with production background work remain open.
+
+### Role mapping writes during coexistence
+
+Three local trials each scheduled 8,192 writes over 32 seconds (256/s) on eight distinct roles. Two processes received equal shares of the traffic. In the mixed trial, each role moved between a Rust and a legacy writer during the run. PostgreSQL 17.12, the driver and both backends shared the benchmark host. End-to-end latency starts at scheduled arrival and includes waiting for the previous write on the same role.
+
+| Writers | Completed within 32 s | Time to finish remaining writes | End-to-end p99 |
+|---|---:|---:|---:|
+| Two Rust | 8,012 | 0.66 s | 0.84 s |
+| One Rust and one legacy | 2,214 | 80.62 s | 79.71 s |
+| Two legacy | 2,336 | 72.23 s | 72.29 s |
+
+Every trial committed 4,096 administrator audits and 4,096 service-client audits. All four API replicas then verified the audit chain and returned the expected mapping for every role. In the mixed trial the p99 delay before the driver dispatched a request was 79.56 seconds. Concurrent compiler activity was visible on the host, and a follow-up trial stopped during setup when local disk space ran out. The results establish that the mixed writers converged under backlog. Estimating sustainable throughput requires a repeat on a host with controlled load and sufficient disk space.
