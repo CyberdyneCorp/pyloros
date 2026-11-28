@@ -223,3 +223,16 @@ Sixteen accounts completed password-bound MFA simultaneously on a local Apple M3
 All 256 sessions authenticated on the backend that issued the challenge. PostgreSQL recorded one session, one successful MFA audit and the expected factor consumption per account. Each trial used a fresh database and four waves. With two receiving processes, each handled eight requests per wave and alternated factors between waves. These short bursts measure completion latency at a fixed concurrency. Sustained capacity and production latency targets remain open.
 
 Rust executable SHA-256: `af2b79ed968f986ad1849b60092178e4964787bdf95f29a27d67ace4d721ee56`.
+
+### Bursts of 32 concurrent accounts
+
+Two fresh PostgreSQL 17.12 trials on the same M3 Pro host doubled the wave to 32 independent accounts. Two Rust API processes each handled 16 warmed connections per wave. Each wave contained 16 authenticator codes and 16 recovery codes, with factors alternating between processes across waves. Each trial measured four waves. Timing began after the password step and ended when the MFA completion response arrived.
+
+| Trial | Completions | p50 (ms) | p95 (ms) | p99 (ms) | Authenticator p95 (ms) | Recovery p95 (ms) |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 | 128 | 23.03 | 45.56 | 47.07 | 44.46 | 46.19 |
+| 2 | 128 | 23.97 | 44.27 | 45.07 | 44.19 | 44.36 |
+
+All 256 Rust-issued sessions authenticated against the challenge issuer. Each account had one persisted session, one successful MFA audit and the expected authenticator step advance or recovery-code consumption. The trials used loopback networking, RS256 signing and disabled hooks and webhooks. Sustained arrival rates and production tail latency remain unmeasured for this workload.
+
+Rust executable SHA-256 `884d9f24030d10c40d753ab03ca61a9b353b0ee4f5f3dc8b76d0b909e5dc2c80`.
