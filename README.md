@@ -8,7 +8,7 @@ Role-based access control (RBAC) lets an application assign permissions to roles
 
 Relationship-based access control (ReBAC) lets an application check access to a specific object through relationships between people and resources. A reviewer might be allowed to open a particular submission because it belongs to a collection shared with their team. Applications can require both the reviewer role and access to that submission.
 
-Application object IDs belong to the calling client. Remove assignments involving a deleted application object before reusing its ID, including assignments where it appears as the subject. [OpenAPI contract and request examples](openapi/rebac.yaml)
+Application object IDs belong to the calling client. Remove assignments involving a deleted application object before reusing its ID, including assignments where it appears as the subject. [OpenAPI contract and request examples](openapi/rebac.yaml) · [Typed operator CLI commands](integrations/operator-cli/README.md)
 
 The first ReBAC migration adds client-owned graph storage to an existing PostgreSQL database. It supports relationships to accounts and between application objects. Deleting an account removes its direct relationships. Deleting a client removes its graph. [PostgreSQL migration](migrations/005_relationship_graphs.sql)
 

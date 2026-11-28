@@ -1,0 +1,2 @@
+- [x] Implement the four commands and operation mappings.
+- [x] Build with the operator CLI and verify command parity, dry runs, access and revocation.

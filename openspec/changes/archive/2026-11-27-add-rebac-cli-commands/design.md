@@ -1,0 +1,1 @@
+The service command group supplies the HTTP context and a service token. Read a model document from a file or stdin. Construct each assignment from separate object and subject arguments so punctuation in IDs is preserved. Revocation uses destructive-action confirmation. Permission checks render the returned boolean. Keep credentials out of the request payload and model document.

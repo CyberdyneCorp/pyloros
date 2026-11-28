@@ -45,12 +45,14 @@ dev: db-up run
 
 # Format Rust source.
 fmt:
+    rustfmt --edition 2024 integrations/operator-cli/rebac.rs
     cargo fmt --all
     cargo fmt --manifest-path examples/event-name-hook/Cargo.toml
     cargo fmt --manifest-path hook-worker/Cargo.toml
 
 # Check formatting and lint all targets.
 lint:
+    rustfmt --edition 2024 --check integrations/operator-cli/rebac.rs
     cargo fmt --manifest-path examples/event-name-hook/Cargo.toml -- --check
     cargo fmt --manifest-path hook-worker/Cargo.toml -- --check
     cargo clippy --manifest-path hook-worker/Cargo.toml --locked --all-targets -- -D warnings
