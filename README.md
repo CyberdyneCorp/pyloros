@@ -402,7 +402,7 @@ A first-party session can edit its phone with `PATCH /api/v1/users/me` or `cyber
 
 ### Inspect legacy hook source during migration
 
-For a source hook that prints its context, build the Rust guest with `just build-context-hook`. The artifact is `target/hook-examples/wasm32-unknown-unknown/release/examples/context_hook.wasm`. It formats nested fields in insertion order and caps the displayed output at 10,000 characters including the newline. Before binding, compare representative inputs from that hook in the isolated worker. Dense numeric arrays can exceed its execution budget even when the input fits the 64 KiB limit.
+For a source hook that prints its context, build the Rust guest with `just build-context-hook`. The artifact is `target/hook-examples/wasm32-unknown-unknown/release/examples/context_hook.wasm`. It formats nested fields in insertion order and caps the displayed output at 10,000 characters including the newline. Before binding, compare representative inputs from that hook in the isolated worker. The worker has rendered 3,000 integers and 2,000 short fixed-point decimals in one array. Dense arrays of objects, strings needing quoting, or numbers written in exponent notation can still exceed its execution budget below the 64 KiB input limit.
 
 Administrators can send `{"code":"print(context)"}` to
 `POST /api/v1/admin/hooks/validate`. The endpoint checks source without

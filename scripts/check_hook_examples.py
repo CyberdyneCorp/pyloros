@@ -47,6 +47,12 @@ def main():
         json.dumps({"text": "雪" * 10001}, ensure_ascii=False),
         json.dumps({str(i): i for i in range(1000)}, separators=(",", ":")),
     ]
+    for values in ([1] * 3000, [n / 100 for n in range(2000)], [[[{}]]] * 900, ["a"] * 2000):
+        contexts.append(json.dumps({"items": values}, separators=(",", ":")))
+    contexts.extend([
+        '{"v":[-0.00,0.000010,0.000100,1.23000,1.0,1.20e10,99999999999.9,9999999999999.9]}',
+        json.dumps({"v": ["'", '\\', 'a"b', "雪", {"z": "a]b"}]}),
+    ])
     for event in contexts:
         expected = (repr(json.loads(event)) + "\n")[:10_000]
         cases.append(("examples/context_hook", event, "success", expected))
