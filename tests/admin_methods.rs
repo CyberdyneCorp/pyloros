@@ -293,3 +293,24 @@ async fn padded_catalog_writes_reach_authorization() {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
     }
 }
+
+#[tokio::test]
+async fn role_permission_documents_validate_integer_size_before_authorization() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    for path in [
+        "/api/v1/admin/clients/example/roles/reader/permissions",
+        "/api/v1/clients/me/roles/reader/permissions",
+    ] {
+        let body = format!(r#"{{"permissions":[],"extra":{}}}"#, "9".repeat(4301));
+        let request = Request::put(path)
+            .header(header::CONTENT_TYPE, "application/json")
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .body(Body::from(body))
+            .unwrap();
+        let response = routes.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
+    }
+}

@@ -1,0 +1,2 @@
+- [x] Compare wire responses and saved mappings on both backends.
+- [x] Align validation, add regression coverage and run the project checks.

@@ -1,0 +1,1 @@
+Decode the document with the IAM parser before authorization. After authorization, preserve each invalid permission value and its position for the shared error serializer. Perform mapping replacement only after successful validation.

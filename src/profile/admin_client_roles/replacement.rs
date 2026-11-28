@@ -17,7 +17,7 @@ pub(in crate::profile) async fn put(
     Path(path): Path<RolePath>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let body = match crate::request_json::fields::document(&headers, &bytes) {
+    let body = match crate::request_json::iam_document::document(&headers, &bytes) {
         Ok(body) => body,
         Err(response) => return *response,
     };
@@ -57,37 +57,28 @@ pub(in crate::profile) async fn put(
     .unwrap_or_else(|_| internal())
 }
 
-use crate::request_json::fields::{FieldIssue, field_issue, validation_input};
+use crate::request_json::fields::{invalid, validation_input};
 use serde_json::value::RawValue;
-
-fn invalid(detail: Vec<FieldIssue<'_>>) -> Box<Response> {
-    #[derive(Serialize)]
-    struct Errors<'a> {
-        detail: Vec<FieldIssue<'a>>,
-    }
-    Box::new((StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { detail })).into_response())
-}
 
 fn input(raw: &RawValue) -> Result<BTreeSet<String>, Box<Response>> {
     let (model, original) = validation_input(raw, "permissions")?;
-    let fields =
-        admin_fields::object_field(&model).map_err(|e| invalid(vec![field_issue(e, raw)]))?;
+    let fields = admin_fields::object_field(&model).map_err(|e| invalid(vec![(e, raw)]))?;
     let location = ["body", "permissions"];
     if !fields.contains_key("permissions") {
-        return Err(invalid(vec![field_issue(
+        return Err(invalid(vec![(
             json!({"type":"missing","loc":location,"msg":"Field required"}),
             raw,
         )]));
     }
     let Ok(items) = serde_json::from_str::<Vec<&RawValue>>(original.get()) else {
-        return Err(invalid(vec![field_issue(
+        return Err(invalid(vec![(
             json!({"type":"list_type","loc":location,"msg":"Input should be a valid list"}),
             original,
         )]));
     };
     let n = items.len();
     if n > 256 {
-        return Err(invalid(vec![field_issue(
+        return Err(invalid(vec![(
             json!({"type":"too_long","loc":location,"msg":format!("List should have at most 256 items after validation, not {n}"),"ctx":{"field_type":"List","max_length":"256","actual_length":n.to_string()}}),
             original,
         )]));
@@ -97,7 +88,7 @@ fn input(raw: &RawValue) -> Result<BTreeSet<String>, Box<Response>> {
     for (i, item) in items.into_iter().enumerate() {
         match serde_json::from_str::<String>(item.get()) {
             Ok(key) => { keys.insert(key); }
-            Err(_) => issues.push(field_issue(json!({"type":"string_type","loc":["body","permissions",i],"msg":"Input should be a valid string"}),item)),
+            Err(_) => issues.push((json!({"type":"string_type","loc":["body","permissions",i],"msg":"Input should be a valid string"}),item)),
         }
     }
     if issues.is_empty() {
@@ -187,6 +178,16 @@ mod tests {
         assert_eq!(
             input(&raw).unwrap_err().status(),
             StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+
+    #[test]
+    fn diagnostic_rejects_nested_nonfinite_input() {
+        let raw =
+            serde_json::from_str::<&RawValue>(r#"{"permissions":[{"value":1e999}]}"#).unwrap();
+        assert_eq!(
+            input(raw).unwrap_err().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
         );
     }
 
