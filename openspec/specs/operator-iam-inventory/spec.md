@@ -188,6 +188,11 @@ The PostgreSQL policy directory SHALL include each policy in name order, includi
 - **WHEN** an operator lists a directory containing empty and multi-statement policies
 - **THEN** the empty policies contain empty statement arrays and the populated policies retain their statement identifiers, effects, actions, resources and conditions
 
+#### Scenario: A stored rule contains an oversized integer in an omitted field
+- **WHEN** a policy read encounters an integer wider than 4,300 digits anywhere in a stored statement, including an unused condition field or an action map value
+- **THEN** the policy detail and any directory containing that policy return HTTP 500
+- **AND** an operator can still retrieve a different policy with valid stored rules
+
 ### Requirement: Include ordinary policies in rule collision reports
 The operator SHALL be able to request position or rule-content counts across all PostgreSQL IAM policies with `--all-policies`. Without this option the reports SHALL retain their chain-linked scope.
 

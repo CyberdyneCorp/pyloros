@@ -75,6 +75,7 @@ struct Statement<T, C> {
 fn project<T: DeserializeOwned, C: DeserializeOwned>(
     raw: &str,
 ) -> Result<Vec<Statement<T, C>>, sqlx::Error> {
+    crate::stored_json::check_integers(raw)?;
     let stored: Vec<StoredStatement<'_>> = serde_json::from_str(raw).map_err(|_| invalid())?;
     stored
         .into_iter()
@@ -130,7 +131,6 @@ pub(super) struct ExportPolicy {
 }
 
 fn stored_statements(raw: &str) -> sqlx::Result<Vec<Statement<Box<RawValue>, ExportCondition>>> {
-    crate::stored_json::check_integers(raw)?;
     project(raw)
 }
 
@@ -288,6 +288,27 @@ mod tests {
         assert!(encoded.contains(r#""key":42,"value":null"#));
         assert!(project::<String, Condition>(raw).is_err());
     }
+    #[test]
+    fn policy_reads_check_integer_width_before_discarding_unexposed_values() {
+        for width in [4300, 4301] {
+            let number = "9".repeat(width);
+            for (actions, conditions) in [
+                (format!(r#"{{"view":{number}}}"#), "[]".to_owned()),
+                (
+                    "[]".to_owned(),
+                    format!(
+                        r#"[{{"operator":"StringEquals","key":"kind","value":"a","unused":{number}}}]"#
+                    ),
+                ),
+            ] {
+                let raw = format!(
+                    r#"[{{"effect":"allow","actions":{actions},"resources":[],"conditions":{conditions}}}]"#
+                );
+                assert_eq!(project::<String, Condition>(&raw).is_ok(), width == 4300);
+            }
+        }
+    }
+
     #[test]
     fn condition_requires_named_fields_even_when_an_array_has_the_correct_arity() {
         let array = serde_json::from_str(r#"[["IpAddress","scope","local"]]"#).unwrap();
