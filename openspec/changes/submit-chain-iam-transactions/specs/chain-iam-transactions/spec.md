@@ -30,6 +30,11 @@ The service SHALL submit operator policy changes to the configured IAM provider 
 - **WHEN** the policy is absent from the provider inventory
 - **THEN** return HTTP 404 without submitting a transaction or recording a deletion audit
 
+#### Scenario: Replace an existing chain policy
+- **WHEN** an operator replaces an existing policy with ordered statements
+- **THEN** use the current catalog name and description for omitted metadata, submit the replacement to the policy contract, and require a matching successful receipt
+- **AND** commit the operator audit before returning the updated policy with its submitted statements and incremented response version
+
 ### Requirement: Observe a pending IAM transaction
 
 The operator receipt check SHALL support waiting for a known transaction hash on the configured provider for up to 60 seconds.

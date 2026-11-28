@@ -9,3 +9,4 @@
 - [x] Submit ordinary group membership changes and audit confirmed receipts.
 - [x] Reconcile a lost submission response by reading the receipt for the locally computed hash.
 - [x] Submit policy deletion to the configured policy contract and verify the receipt, operator audit, CLI and browser inventory.
+- [x] Confirm policy replacements and verify ordered contract statements, the response, the operator audit and original clients.

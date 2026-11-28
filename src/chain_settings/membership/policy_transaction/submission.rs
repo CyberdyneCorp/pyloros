@@ -51,6 +51,13 @@ impl Chain {
         mutation: &IamMutation<'_>,
     ) -> Result<(), PrepareError> {
         let tx = self.mutation_envelope(mutation).await?;
+        self.submit_envelope(tx).await
+    }
+
+    pub(super) async fn submit_envelope(
+        &self,
+        tx: UnsignedIamTransaction,
+    ) -> Result<(), PrepareError> {
         let signed = tx.signed(self.signing_key.as_ref().ok_or(PrepareError::Invalid)?)?;
         let expected = keccak256(&signed);
         let body = json!({"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction",

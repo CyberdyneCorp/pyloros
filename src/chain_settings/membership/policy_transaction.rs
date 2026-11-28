@@ -54,7 +54,6 @@ pub(crate) enum IamMutation<'a> {
         policy: Option<Uuid>,
     },
     CreatePolicy(&'a Value),
-    ReplacePolicy(Uuid, &'a Value),
     DeletePolicy(Uuid),
     DeleteGroup(Uuid),
     GroupMember {
@@ -116,6 +115,31 @@ impl PolicyFields {
     }
 }
 
+fn replacement(
+    prior: CatalogEntry,
+    body: &Value,
+) -> Result<(updatePolicyCall, OperatorPolicy), PrepareError> {
+    let prior_id = prior.id;
+    let fields = PolicyFields::from_request(body, Some(&prior))?;
+    let mut response = OperatorPolicy::from(prior);
+    response.name = fields.name.clone();
+    if let Some(description) = body["description"].as_str() {
+        response.description = Some(description.to_owned());
+    }
+    response.statements = body["statements"]
+        .as_array()
+        .ok_or(PrepareError::Invalid)?
+        .clone();
+    response.version += 1;
+    let call = updatePolicyCall {
+        id: prior_id,
+        name: fields.name,
+        description: fields.description,
+        statements: fields.statements,
+    };
+    Ok((call, response))
+}
+
 impl IamMutation<'_> {
     async fn calldata(&self, chain: &Chain) -> Result<Vec<u8>, PrepareError> {
         match self {
@@ -126,27 +150,6 @@ impl IamMutation<'_> {
                     statements,
                 } = PolicyFields::from_request(body, None)?;
                 Ok(createPolicyCall {
-                    name,
-                    description,
-                    statements,
-                }
-                .abi_encode())
-            }
-            Self::ReplacePolicy(id, body) => {
-                let target = chain.required_policy(*id).await?.id;
-                // Re-read metadata immediately before encoding a replacement.
-                let prior = chain
-                    .policy_entry(*id)
-                    .await
-                    .map_err(PrepareError::Catalog)?
-                    .ok_or(PrepareError::Invalid)?;
-                let PolicyFields {
-                    name,
-                    description,
-                    statements,
-                } = PolicyFields::from_request(body, Some(&prior))?;
-                Ok(updatePolicyCall {
-                    id: target,
                     name,
                     description,
                     statements,
@@ -329,6 +332,26 @@ impl Chain {
         }
         Ok(group)
     }
+    pub(crate) async fn replace_policy(
+        &self,
+        id: Uuid,
+        body: &Value,
+    ) -> Result<OperatorPolicy, PrepareError> {
+        self.required_policy(id).await?;
+        // The provider resolves the ID before reading the metadata used for omitted fields.
+        let prior = self
+            .policy_entry(id)
+            .await
+            .map_err(PrepareError::Catalog)?
+            .ok_or(PrepareError::Invalid)?;
+        let (call, response) = replacement(prior, body)?;
+        let tx = self
+            .prepare_envelope(self.policy.as_deref(), call.abi_encode())
+            .await?;
+        self.submit_envelope(tx).await?;
+        Ok(response)
+    }
+
     async fn required_policy(&self, id: Uuid) -> Result<CatalogEntry, PrepareError> {
         self.policy_entry(id)
             .await
@@ -794,6 +817,30 @@ mod tests {
             "6ec4655fff2e7eaa5a791cfff266bcd970dfcb97b6b696326b17f4d9b93c4d37"
         );
         server.abort();
+    }
+
+    #[test]
+    fn replacement_distinguishes_an_explicit_empty_description_from_a_missing_one() {
+        for (description, expected) in [(Value::Null, None), (json!(""), Some(""))] {
+            let prior = CatalogEntry {
+                id: TokenId::MAX,
+                name: "policy".into(),
+                description: String::new(),
+                creator: Default::default(),
+                count: TokenId::ZERO,
+                active: true,
+                createdAt: TokenId::ZERO,
+            };
+            let body = json!({"description":description,"statements":[{"effect":"deny","actions":["edit"],
+                "resources":["item"],"conditions":[],"sid":null}]});
+            let (call, result) = replacement(prior, &body).ok().unwrap();
+            assert_eq!(call.id, TokenId::MAX);
+            assert_eq!(call.description, "");
+            assert_eq!(call.statements[0].sid, "");
+            assert_eq!(result.description.as_deref(), expected);
+            assert_eq!(result.version, 2);
+            assert_eq!(result.statements[0], body["statements"][0]);
+        }
     }
 
     #[test]

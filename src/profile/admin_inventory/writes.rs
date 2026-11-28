@@ -33,7 +33,7 @@ async fn write(
         Ok(v) => v,
         Err(r) => return *r,
     };
-    let (tx, actor, email) = match administrator::operator(state, headers).await {
+    let (mut tx, actor, email) = match administrator::operator(state, headers).await {
         Ok(v) => v,
         Err(r) => return *r,
     };
@@ -48,18 +48,34 @@ async fn write(
         Ok(v) => v,
         Err(r) => return *r,
     };
-    if let Some(chain) = chain {
-        let mutation = match id {
-            Some(id) => IamMutation::ReplacePolicy(id, &policy),
-            None => IamMutation::CreatePolicy(&policy),
-        };
-        return prepare_chain_write(tx, &chain, mutation).await;
-    }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(headers, peer.ip(), state.proxies),
         user_agent: crate::token_http::header(headers, "user-agent"),
     };
-    store(tx, id, &policy, (actor, email.as_deref()), origin)
+    let actor = (actor, email.as_deref());
+    if let Some(chain) = chain {
+        let Some(id) = id else {
+            return prepare_chain_write(tx, &chain, IamMutation::CreatePolicy(&policy)).await;
+        };
+        if chain.lock_signer(&mut tx).await.is_err() {
+            return internal();
+        }
+        let stored = match chain.replace_policy(id, &policy).await {
+            Ok(stored) => stored,
+            Err(error) => return standard_preparation_error(error),
+        };
+        return finish(
+            tx,
+            id,
+            (StatusCode::OK, "iam.policy.update"),
+            actor,
+            origin,
+            stored,
+        )
+        .await
+        .unwrap_or_else(|_| internal());
+    }
+    store(tx, id, &policy, actor, origin)
         .await
         .unwrap_or_else(|_| internal())
 }
@@ -88,8 +104,26 @@ pub(super) async fn prepare_chain_write(
 pub(super) fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError) -> Response {
     match error {
         PrepareError::MissingGroup(_) | PrepareError::MissingPolicy(_)
-            if matches!(mutation, IamMutation::GroupPolicy { attach: false, .. }) => internal(),
-        PrepareError::MissingIdentity(_) if matches!(mutation,IamMutation::Boundary{policy:None,..})=>internal(),
+            if matches!(mutation, IamMutation::GroupPolicy { attach: false, .. }) =>
+        {
+            internal()
+        }
+        PrepareError::MissingIdentity(_)
+            if matches!(mutation, IamMutation::Boundary { policy: None, .. }) =>
+        {
+            internal()
+        }
+        PrepareError::Unavailable | PrepareError::Rpc(_) | PrepareError::Reverted(_)
+            if matches!(mutation, IamMutation::CreatePolicy(_)) =>
+        {
+            internal()
+        }
+        other => standard_preparation_error(other),
+    }
+}
+
+fn standard_preparation_error(error: PrepareError) -> Response {
+    match error {
         PrepareError::MissingIdentity(id)=>crate::login_http::problem(StatusCode::NOT_FOUND,&id.to_string()),
         PrepareError::MissingGroup(id) => delete_group::missing(id),
         PrepareError::MissingPolicy(id) => missing(id),
@@ -97,7 +131,6 @@ pub(super) fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError)
         PrepareError::ProtectedGroup => delete_group::protected(),
         PrepareError::Catalog(error) => admin_client_roles::chain_error(error),
         PrepareError::Invalid | PrepareError::Argument(_) => internal(),
-        PrepareError::Unavailable | PrepareError::Rpc(_) | PrepareError::Reverted(_) if matches!(mutation, IamMutation::CreatePolicy(_)) => internal(),
         PrepareError::Reverted(detail) => (
             StatusCode::BAD_GATEWAY,
             Json(json!({"status":502, "type":"about:blank", "title":"Chain transaction failed", "detail":detail})),
@@ -140,6 +173,17 @@ async fn store(
         .await?
         .pop()
         .ok_or(sqlx::Error::RowNotFound)?;
+    finish(tx, id, (status, action), actor, origin, stored).await
+}
+
+async fn finish<T: Serialize>(
+    mut tx: Transaction<'_, Postgres>,
+    id: Uuid,
+    (status, action): (StatusCode, &str),
+    actor: (Uuid, Option<&str>),
+    origin: SessionOrigin<'_>,
+    stored: T,
+) -> Result<Response, sqlx::Error> {
     crate::admin_audit::append(
         &mut tx,
         action,
