@@ -5,3 +5,4 @@
 - [x] Serialize operator policy preparations by signer across Rust processes sharing PostgreSQL and verify that waiting requests read the nonce after lock acquisition.
 - [ ] Implement submission, nonce coordination, receipt validation and error mapping.
 - [ ] Wire policy mutations, audit their results and compare the original clients.
+- [x] Verify a known receipt against an expected IAM contract address.

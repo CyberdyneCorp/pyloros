@@ -177,13 +177,19 @@ async fn inspect_receipt(
 ) -> Result<ExitCode, Box<dyn Error>> {
     let hash = receipt.next().ok_or("expected one transaction hash")?;
     let hash = hash.to_str().ok_or("invalid transaction hash")?;
-    let report = match (receipt.next().as_deref(), receipt.next()) {
-        (None, None) => pyloros::chain_settings::inspect_receipt(hash).await?,
-        (Some(flag), None) if flag == "--wait" => {
-            pyloros::chain_settings::wait_for_receipt(hash).await?
+    let mut wait = false;
+    let mut contract = None;
+    while let Some(flag) = receipt.next() {
+        match flag.to_str() {
+            Some("--wait") if !wait => wait = true,
+            Some("--contract") if contract.is_none() => {
+                let value = receipt.next().ok_or("expected a contract address")?;
+                contract = Some(value.to_str().ok_or("invalid contract address")?.parse()?);
+            }
+            _ => return Err("expected optional --wait and --contract ADDRESS".into()),
         }
-        _ => return Err("expected a transaction hash and optional --wait".into()),
-    };
+    }
+    let report = pyloros::chain_settings::inspect_receipt_for(hash, contract, wait).await?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(if report.outcome == "reported_success" {
         ExitCode::SUCCESS

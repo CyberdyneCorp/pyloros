@@ -56,3 +56,15 @@ The service SHALL preserve unsigned transaction quantities up to 256 bits while 
 
 - **WHEN** the priority-fee RPC returns a provider error and the fallback history contains differently encoded block rewards
 - **THEN** calculate the bounded priority fee from the decoded rewards and use it with the latest block's base fee.
+
+### Requirement: Check the destination of a recorded IAM mutation
+
+The receipt inspector SHALL optionally compare the receipt destination with an operator-supplied contract address before accepting reported success.
+
+#### Scenario: Receipt belongs to another destination
+- **WHEN** a matching transaction hash and successful status arrive with a different, absent or malformed destination
+- **THEN** a destination-constrained inspection exits 2 and reports why the destination check failed
+
+#### Scenario: Receipt matches the intended contract
+- **WHEN** the requested hash, contract address and successful status all match
+- **THEN** the inspector reports success and includes the requested contract in the report
