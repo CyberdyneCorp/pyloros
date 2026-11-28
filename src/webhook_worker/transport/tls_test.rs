@@ -19,6 +19,12 @@ async fn trusted_receiver() {
         return;
     };
 
+    let isolated = env::var_os("PYLOROS_TEST_ISOLATED_NETWORK").is_some();
+    let (address, hostname) = if isolated {
+        ("192.0.0.9", "receiver.test")
+    } else {
+        ("127.0.0.1", "localhost")
+    };
     let key = KeyEncryptionKey::new("fixture").unwrap();
     let subscription = Uuid::new_v4();
     let aad = format!("webhook-secret:{subscription}");
@@ -32,7 +38,7 @@ async fn trusted_receiver() {
             .unwrap(),
         previous: None,
         attempts: 0,
-        url: format!("https://127.0.0.1:{port}/events"),
+        url: format!("https://{address}:{port}/events"),
     };
     let settings = Settings {
         poll: Duration::from_secs(1),
@@ -40,13 +46,22 @@ async fn trusted_receiver() {
         lease: chrono::Duration::seconds(30),
         batch: 1,
         concurrency: 1,
-        insecure: true, // Allow a loopback fixture. HTTPS still requires a valid certificate.
+        insecure: !isolated,
     };
     let refused = send(&delivery, Some(&key), Utc::now(), &settings).await;
     assert_eq!(refused.code, None);
     assert!(refused.error.unwrap().starts_with("ConnectError:"));
 
-    delivery.url = format!("https://localhost:{port}/events");
+    if isolated {
+        delivery.url = format!("https://127.0.0.1:{port}/events");
+        let local = send(&delivery, Some(&key), Utc::now(), &settings).await;
+        assert_eq!(local.code, None);
+        assert_eq!(
+            local.error.as_deref(),
+            Some("destination refused: 127.0.0.1 resolves to a non-public address")
+        );
+    }
+    delivery.url = format!("https://{hostname}:{port}/events");
     for (code, error) in [(503, Some("HTTP 503")), (202, None)] {
         let result = send(&delivery, Some(&key), Utc::now(), &settings).await;
         assert_eq!(result.code, Some(code), "{:?}", result.error);

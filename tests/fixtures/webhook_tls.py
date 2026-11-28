@@ -1,4 +1,5 @@
 """Serve a signed webhook fixture with a CA trusted only by the child test."""
+from contextlib import ExitStack
 import base64
 import hashlib
 import hmac
@@ -24,7 +25,7 @@ class Receiver(BaseHTTPRequestHandler):
         assert self.headers["webhook-signature"] == "v1," + mac
         assert self.path == "/events" and body == b'{"event":"fixture"}'
         assert message == "msg_" + "0" * 32
-        assert self.headers["Host"] == f"localhost:{self.server.server_port}"
+        assert self.headers["Host"] == f"{self.server.hostname}:{self.server.server_port}"
         self.send_response(503 if len(self.server.deliveries) == 1 else 202)
         self.end_headers()
         self.wfile.write(b"received")
@@ -34,12 +35,16 @@ def exercise(root, command):
     def openssl(*args):
         subprocess.run(["openssl", *args], cwd=root, check=True, capture_output=True)
 
+    isolated = "PYLOROS_TEST_ISOLATED_NETWORK" in os.environ
+    address, hostname = ("192.0.0.9", "receiver.test") if isolated else ("127.0.0.1", "localhost")
+    if isolated:
+        assert [name for _, name in socket.if_nameindex()] == ["lo"]
     openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
             "-subj", "/CN=Fixture CA", "-addext", "basicConstraints=critical,CA:TRUE",
             "-keyout", "ca.key", "-out", "ca.pem")
-    openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=localhost",
+    openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", f"/CN={hostname}",
             "-keyout", "server.key", "-out", "server.csr")
-    (root / "server.ext").write_text("subjectAltName=DNS:localhost\nextendedKeyUsage=serverAuth\n")
+    (root / "server.ext").write_text(f"subjectAltName=DNS:{hostname}\nextendedKeyUsage=serverAuth\n")
     openssl("x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key",
             "-CAcreateserial", "-days", "1", "-extfile", "server.ext", "-out", "server.pem")
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -48,21 +53,27 @@ def exercise(root, command):
     class IPv6Server(ThreadingHTTPServer):
         address_family = socket.AF_INET6
 
-    with ThreadingHTTPServer(("127.0.0.1", 0), Receiver) as ipv4:
+    sni_names = []
+    context.set_servername_callback(lambda sock, name, ctx: sni_names.append(name))
+    with ExitStack() as stack:
+        ipv4 = stack.enter_context(ThreadingHTTPServer((address, 0), Receiver))
         port = ipv4.server_port
-        with IPv6Server(("::1", port), Receiver) as ipv6:
-            deliveries = []
-            for server in (ipv4, ipv6):
-                server.deliveries = deliveries
-                server.socket = context.wrap_socket(server.socket, server_side=True)
-                threading.Thread(target=server.serve_forever, daemon=True).start()
-            subprocess.run(command, check=True, timeout=45, env={
-                **os.environ, "SSL_CERT_FILE": str(root / "ca.pem"),
-                "PYLOROS_TEST_TLS_PORT": str(port),
-            })
-            assert len(deliveries) == 2
-            for server in (ipv4, ipv6):
-                server.shutdown()
+        servers = [ipv4]
+        if not isolated:
+            servers.append(stack.enter_context(IPv6Server(("::1", port), Receiver)))
+        deliveries = []
+        for server in servers:
+            server.deliveries = deliveries
+            server.hostname = hostname
+            server.socket = context.wrap_socket(server.socket, server_side=True)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            stack.callback(server.shutdown)
+        subprocess.run(command, check=True, timeout=45, env={
+            **os.environ, "SSL_CERT_FILE": str(root / "ca.pem"),
+            "PYLOROS_TEST_TLS_PORT": str(port),
+        })
+        assert len(deliveries) == 2
+        assert sni_names == [None, hostname, hostname], sni_names
 
 
 if __name__ == "__main__":
