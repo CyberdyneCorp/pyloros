@@ -1,0 +1,105 @@
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use sqlx::PgPool;
+use std::process::{Command, Output};
+use url::Url;
+use uuid::Uuid;
+
+fn inventory(url: &Url) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_pyloros"))
+        .arg("--check-hook-bindings")
+        .env("DATABASE_URL", url.as_str())
+        .env("BIND_ADDR", "invalid") // Inventory must run without starting HTTP.
+        .output()
+        .unwrap()
+}
+
+fn report(url: &Url, code: i32) -> Value {
+    let output = inventory(url);
+    assert_eq!(
+        output.status.code(),
+        Some(code),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn inventory_tracks_active_hooks_across_binding_migration() -> sqlx::Result<()> {
+    let dsn = std::env::var("DATABASE_URL").unwrap();
+    let pool = PgPool::connect(&dsn).await?;
+    let mut conn = pool.acquire().await?;
+    let schema = format!("inventory_{}", Uuid::new_v4().simple());
+    sqlx::raw_sql(&format!(
+        "CREATE SCHEMA {schema}; SET search_path TO {schema}"
+    ))
+    .execute(&mut *conn)
+    .await?;
+    let mut url = Url::parse(&dsn).unwrap();
+    url.query_pairs_mut().append_pair(
+        "options",
+        &format!("-c search_path={schema} -c default_transaction_read_only=on"),
+    );
+
+    let missing = inventory(&url);
+    assert_eq!(missing.status.code(), Some(1));
+    assert!(missing.stdout.is_empty());
+    sqlx::raw_sql("CREATE TABLE hooks (id uuid PRIMARY KEY, name text, event_type text, is_active boolean, code text)")
+        .execute(&mut *conn).await?;
+    assert_eq!(report(&url, 0), json!({"active_unbound":0,"hooks":[]}));
+    let active = Uuid::from_u128(1);
+    let inactive = Uuid::from_u128(2);
+    let source = "fixture π";
+    sqlx::query("INSERT INTO hooks VALUES ($2,'archived','event',false,'old'), ($1,'enabled','event',true,$3)")
+        .bind(active).bind(inactive).bind(source).execute(&mut *conn).await?;
+    let before = report(&url, 2);
+    assert_eq!(before["active_unbound"], 1);
+    assert_eq!(
+        before["hooks"][0],
+        json!({
+            "id":active, "name":"enabled", "event":"event", "active":true,
+            "source_sha256":format!("{:x}",Sha256::digest(source.as_bytes())), "component_sha256":null
+        })
+    );
+    assert_eq!(before["hooks"][1]["id"], inactive.to_string());
+
+    sqlx::raw_sql("CREATE TABLE pyloros_hook_artifacts (sha256 text PRIMARY KEY)")
+        .execute(&mut *conn)
+        .await?;
+    sqlx::raw_sql(include_str!("../migrations/002_hook_bindings.sql"))
+        .execute(&mut *conn)
+        .await?;
+    assert_eq!(report(&url, 2), before);
+    sqlx::raw_sql(
+        "INSERT INTO pyloros_hook_artifacts VALUES (repeat('c',64));
+        INSERT INTO pyloros_hook_bindings SELECT id,repeat('c',64) FROM hooks WHERE is_active",
+    )
+    .execute(&mut *conn)
+    .await?;
+    let bound = report(&url, 0);
+    assert_eq!(bound["active_unbound"], 0);
+    assert_eq!(bound["hooks"][0]["component_sha256"], "c".repeat(64));
+    assert_eq!(bound["hooks"][1], before["hooks"][1]);
+    sqlx::raw_sql(include_str!(
+        "../migrations/004_invalidate_edited_hook_bindings.sql"
+    ))
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query("UPDATE hooks SET code='review again' WHERE id=$1")
+        .bind(active)
+        .execute(&mut *conn)
+        .await?;
+    let edited = report(&url, 2);
+    assert_eq!(edited["active_unbound"], 1);
+    assert!(edited["hooks"][0]["component_sha256"].is_null());
+    assert_ne!(
+        edited["hooks"][0]["source_sha256"],
+        before["hooks"][0]["source_sha256"]
+    );
+    sqlx::raw_sql(&format!("DROP SCHEMA {schema} CASCADE"))
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}

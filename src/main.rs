@@ -1,21 +1,32 @@
-use std::{env, error::Error, time::Duration};
+mod hook_inventory;
+
+use std::{env, error::Error, process::ExitCode, time::Duration};
 
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<ExitCode, Box<dyn Error>> {
     if env::args_os().skip(1).eq(["--print-build-scope-catalog"]) {
         println!(
             "{}",
             serde_json::to_string(&pyloros::config::build_scope_catalog())?
         );
-        return Ok(());
+        return Ok(ExitCode::SUCCESS);
     }
     let pool = PgPoolOptions::new()
         .max_connections(15)
         .acquire_timeout(Duration::from_secs(2))
         .connect_lazy(&env::var("DATABASE_URL")?)?;
+    if env::args_os().skip(1).eq(["--check-hook-bindings"]) {
+        let report = hook_inventory::read(&pool).await?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(if report.active_unbound == 0 {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(2)
+        });
+    }
     let listener =
         TcpListener::bind(env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8000".into()))
             .await?;
@@ -42,5 +53,5 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let _ = tokio::signal::ctrl_c().await;
     })
     .await?;
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }

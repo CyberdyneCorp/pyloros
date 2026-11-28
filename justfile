@@ -35,6 +35,10 @@ hook-worker:
 build-hook-example:
     cargo component build --release --locked --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
 
+# List hook bindings and check coverage for active definitions.
+hook-inventory:
+    cargo run --quiet --locked -- --check-hook-bindings
+
 # Build the silent guest for hooks that produce no output or other effects.
 build-silent-hook:
     cargo component build --release --locked --example silent_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml

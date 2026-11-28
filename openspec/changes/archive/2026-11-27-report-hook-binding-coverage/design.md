@@ -1,0 +1,1 @@
+Read installed definitions and optional selections through one repeatable-read, read-only PostgreSQL transaction. Print JSON ordered by hook ID. This check measures binding coverage. Component behavior, producer configuration and queue handoff require separate verification.

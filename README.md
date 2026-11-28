@@ -333,6 +333,8 @@ The component is written to
 `target/hook-examples/wasm32-unknown-unknown/release/event_name_hook.wasm`.
 Stage it and exercise it with synthetic events before selecting it for a hook.
 
+Before switching hook producers, run `just hook-inventory` or `pyloros --check-hook-bindings` with `DATABASE_URL` set to a read-only PostgreSQL login. The JSON report lists each hook, its source digest and its selected component digest. Before the binding migration, every selection is null. Exit code 0 means every active hook has a selection (including an empty inventory), 2 means active hooks still need bindings, and 1 means the inventory could not be read. Check component behavior and queue ownership separately before enabling delivery.
+
 The [silent example](examples/event-name-hook/examples/silent_hook.rs) completes an event without side effects or output. Run `just build-silent-hook` to produce `target/hook-examples/wasm32-unknown-unknown/release/examples/silent_hook.wasm`. Use it for a reviewed source hook whose only behavior is to complete successfully. The v1 manual test and execution history report null for silent output and retain up to 10,000 characters when a hook writes output.
 
 ### Stage a hook artifact

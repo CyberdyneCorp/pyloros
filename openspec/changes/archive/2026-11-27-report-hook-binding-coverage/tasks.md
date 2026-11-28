@@ -1,0 +1,2 @@
+- [x] Implement the read-only command and just recipe.
+- [x] Exercise old and migrated schemas and document exit codes.
