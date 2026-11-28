@@ -1,0 +1,2 @@
+- [x] Compare pinned provider exchanges and add regression coverage for both response stages.
+- [x] Normalize identity layers, verify document limits and validate the spec.

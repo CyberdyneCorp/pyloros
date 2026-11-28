@@ -1,6 +1,9 @@
 //! Bounded decoding for complete HTTP documents and receiver response excerpts.
 use flate2::{Decompress, FlushDecompress, Status};
-use reqwest::{Response, header::CONTENT_ENCODING};
+use reqwest::{
+    Response,
+    header::{CONTENT_ENCODING, HeaderMap},
+};
 use std::{error::Error, io};
 
 #[derive(Debug, thiserror::Error)]
@@ -55,12 +58,23 @@ impl ReadLimit {
     }
 }
 
+fn effective_coding(headers: &HeaderMap) -> &[u8] {
+    let mut codings = headers
+        .get_all(CONTENT_ENCODING)
+        .iter()
+        .flat_map(|field| field.as_bytes().split(|byte| *byte == b','))
+        .map(<[u8]>::trim_ascii)
+        .filter(|coding| !coding.eq_ignore_ascii_case(b"identity"));
+    match (codings.next(), codings.next()) {
+        (Some(coding), None) => coding,
+        _ => headers
+            .get(CONTENT_ENCODING)
+            .map_or(&[], |field| field.as_bytes()),
+    }
+}
+
 pub(crate) async fn read(mut response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
-    let coding = response
-        .headers()
-        .get(CONTENT_ENCODING)
-        .map(|value| value.as_bytes())
-        .unwrap_or_default();
+    let coding = effective_coding(response.headers());
     if coding.eq_ignore_ascii_case(b"gzip") {
         return read_compressed(response, limit, Decompress::new_gzip(15), None).await;
     }

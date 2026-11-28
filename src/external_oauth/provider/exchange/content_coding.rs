@@ -19,17 +19,19 @@ enum Coding {
     Gzip,
     Deflate,
     RawDeflate,
+    IdentityGzip,
+    IdentityRawDeflate,
 }
 
 fn encoded(document: &[u8], coding: Coding, headers: HeaderMap) -> HttpResponse {
     let (name, compressed) = match coding {
         Coding::Identity => return document.to_owned().into_response(),
-        Coding::Gzip => {
+        Coding::Gzip | Coding::IdentityGzip => {
             let mut enc = GzEncoder::new(Vec::new(), Compression::fast());
             enc.write_all(document).unwrap();
             ("gzip", enc.finish().unwrap())
         }
-        Coding::RawDeflate => {
+        Coding::RawDeflate | Coding::IdentityRawDeflate => {
             let mut enc = DeflateEncoder::new(Vec::new(), Compression::fast());
             enc.write_all(document).unwrap();
             ("deflate", enc.finish().unwrap())
@@ -48,9 +50,22 @@ fn encoded(document: &[u8], coding: Coding, headers: HeaderMap) -> HttpResponse 
             .any(|encoding| encoding.trim() == name)
     );
     let mut response = compressed.into_response();
+    if matches!(coding, Coding::IdentityGzip) {
+        response.headers_mut().insert(
+            header::CONTENT_ENCODING,
+            HeaderValue::from_static("identity, gzip"),
+        );
+        return response;
+    }
+    if matches!(coding, Coding::IdentityRawDeflate) {
+        response.headers_mut().append(
+            header::CONTENT_ENCODING,
+            HeaderValue::from_static("identity"),
+        );
+    }
     response
         .headers_mut()
-        .insert(header::CONTENT_ENCODING, HeaderValue::from_static(name));
+        .append(header::CONTENT_ENCODING, HeaderValue::from_static(name));
     response
 }
 
@@ -113,6 +128,8 @@ async fn provider_documents_can_use_independent_content_codings() {
         Coding::Gzip,
         Coding::Deflate,
         Coding::RawDeflate,
+        Coding::IdentityGzip,
+        Coding::IdentityRawDeflate,
     ];
     for kind in [Kind::Google, Kind::Microsoft] {
         for token in codings {
@@ -131,7 +148,13 @@ async fn limit_applies_to_each_decoded_provider_document() {
         (LIMIT + 1, 0, false),
         (0, LIMIT + 1, false),
     ] {
-        for coding in [Coding::Gzip, Coding::Deflate, Coding::RawDeflate] {
+        for coding in [
+            Coding::Gzip,
+            Coding::Deflate,
+            Coding::RawDeflate,
+            Coding::IdentityGzip,
+            Coding::IdentityRawDeflate,
+        ] {
             assert_eq!(
                 exchange(Kind::Google, coding, coding, token_len, profile_len)
                     .await

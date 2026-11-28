@@ -1,0 +1,1 @@
+Parse the content coding list in wire order and discard identity layers. Use the existing bounded decoder for a single effective gzip or deflate layer. Retain the current handling of other coding sequences.
