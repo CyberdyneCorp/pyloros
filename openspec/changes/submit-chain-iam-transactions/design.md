@@ -21,3 +21,9 @@ Run `just inspect-iam-receipt HASH` with `BLOCKCHAIN_RPC_ENDPOINT` pointing at t
 Preparation produces the type-2 transaction prefix followed by the RLP list of chain ID, pending nonce, priority fee, maximum fee, gas limit, destination, zero value, call data and an empty access list. Preserve full-width quantities from the provider. The sender address selects the pending nonce and gas estimate and is excluded from the signing payload.
 
 With `--wait`, poll while the receipt is absent. Apply a single 60-second deadline across provider calls, transport retries and polling delays. Return immediately when the provider supplies a receipt or rejects the read. A timeout leaves the transaction outcome unresolved.
+
+## Coordinate policy preparation across Rust replicas
+
+Policy and related operator IAM mutations take a PostgreSQL transaction-scoped advisory lock for the configured signer before preparing the contract call. Replicas sharing the database serialize preparations for the same address, including when RPC endpoint URLs differ. Reusing the signer on independent chains also serializes these preparations. Commit, rollback and connection loss release the lock. Each waiter reads the provider's pending nonce after acquiring the lock.
+
+The preflight currently ends before submission. The sender must retain ownership through submission and reconcile an uncertain broadcast before permitting reuse of that nonce. Other writers, including the migration reference, require a single-owner rollout or compatible coordination.

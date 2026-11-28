@@ -345,6 +345,20 @@ impl Chain {
         }
     }
 
+    pub(crate) async fn lock_signer(&self, tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
+        let signer = self
+            .signer
+            .as_deref()
+            .ok_or_else(|| sqlx::Error::Configuration("invalid chain signer".into()))?;
+        // Endpoint aliases can refer to the same chain. Use the address across all
+        // chain configurations sharing this database.
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext('iam-signer'), hashtext(lower($1)))")
+            .bind(signer)
+            .execute(&mut **tx)
+            .await?;
+        Ok(())
+    }
+
     pub(crate) async fn prepare_mutation(
         &self,
         mutation: &IamMutation<'_>,
@@ -544,6 +558,42 @@ fn history_priority_fee(history: &Value) -> Result<TokenId, PrepareError> {
 mod tests {
     use super::*;
     use axum::{Json, Router, routing::post};
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn signer_lock_spans_connections_and_releases_on_transaction_end() {
+        let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut first = Chain::for_health_test("http://first".into());
+        first.signer = Some("0x00000000000000000000000000000000000000Ab".into());
+        let mut alias = Chain::for_health_test("http://alias".into());
+        alias.signer = first.signer.as_ref().map(|s| s.to_ascii_lowercase());
+        let mut other = Chain::for_health_test("http://first".into());
+        other.signer = Some("0x0000000000000000000000000000000000000001".into());
+        for commit in [true, false] {
+            let mut owner = pool.begin().await.unwrap();
+            first.lock_signer(&mut owner).await.unwrap();
+            let mut waiter = pool.begin().await.unwrap();
+            other.lock_signer(&mut waiter).await.unwrap();
+            let waiting = alias.lock_signer(&mut waiter);
+            tokio::pin!(waiting);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), &mut waiting)
+                    .await
+                    .is_err()
+            );
+            if commit {
+                owner.commit().await.unwrap();
+            } else {
+                owner.rollback().await.unwrap();
+            }
+            tokio::time::timeout(Duration::from_secs(2), waiting)
+                .await
+                .unwrap()
+                .unwrap();
+        }
+    }
 
     #[test]
     fn unsigned_payload_preserves_rlp_boundaries_and_full_width_quantities() {

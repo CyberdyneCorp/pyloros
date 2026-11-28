@@ -49,14 +49,11 @@ async fn write(
         Err(r) => return *r,
     };
     if let Some(chain) = chain {
-        if tx.commit().await.is_err() {
-            return internal();
-        }
         let mutation = match id {
             Some(id) => IamMutation::ReplacePolicy(id, &policy),
             None => IamMutation::CreatePolicy(&policy),
         };
-        return prepare_chain_write(&chain, mutation).await;
+        return prepare_chain_write(tx, &chain, mutation).await;
     }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(headers, peer.ip(), state.proxies),
@@ -67,14 +64,25 @@ async fn write(
         .unwrap_or_else(|_| internal())
 }
 
-pub(super) async fn prepare_chain_write(chain: &Chain, mutation: IamMutation<'_>) -> Response {
-    match chain.prepare_mutation(&mutation).await {
+pub(super) async fn prepare_chain_write(
+    mut tx: Transaction<'_, Postgres>,
+    chain: &Chain,
+    mutation: IamMutation<'_>,
+) -> Response {
+    if chain.lock_signer(&mut tx).await.is_err() {
+        return internal();
+    }
+    let response = match chain.prepare_mutation(&mutation).await {
         Ok(_) => crate::login_http::problem(
             StatusCode::SERVICE_UNAVAILABLE,
             "Blockchain transaction submission unavailable",
         ),
         Err(error) => preparation_error(&mutation, error),
+    };
+    if tx.commit().await.is_err() {
+        return internal();
     }
+    response
 }
 
 fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError) -> Response {

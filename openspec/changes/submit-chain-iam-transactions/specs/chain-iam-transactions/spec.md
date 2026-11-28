@@ -19,6 +19,11 @@ The service SHALL submit operator policy changes to the configured IAM provider 
 - **WHEN** concurrent operations use the same signer and chain
 - **THEN** coordinate submission so the service does not inadvertently replace its own pending transaction
 
+#### Scenario: Two Rust replicas prepare policy changes for one signer
+
+- **WHEN** two operators request chain policy mutations through Rust replicas sharing PostgreSQL and a signer
+- **THEN** the second preparation waits for the first to release its signer lock before looking up the pending nonce. A rolled-back preparation also releases the lock.
+
 ### Requirement: Observe a pending IAM transaction
 
 The operator receipt check SHALL support waiting for a known transaction hash on the configured provider for up to 60 seconds.

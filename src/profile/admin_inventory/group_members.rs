@@ -22,10 +22,8 @@ pub(super) async fn prepare_chain(
         Ok(token) => token,
         Err(error) => return *error,
     };
-    if tx.commit().await.is_err() {
-        return internal();
-    }
     writes::prepare_chain_write(
+        tx,
         chain,
         IamMutation::GroupMember {
             group,

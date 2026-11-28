@@ -20,10 +20,8 @@ pub(in crate::profile) async fn remove(
         Err(issue) => return passkeys::validation(vec![issue]),
     };
     if let Some(chain) = chain {
-        if tx.commit().await.is_err() {
-            return internal();
-        }
         return writes::prepare_chain_write(
+            tx,
             &chain,
             crate::chain_settings::IamMutation::DeletePolicy(id),
         )

@@ -16,10 +16,8 @@ pub(super) async fn prepare_chain(
         Ok(token) => token,
         Err(response) => return *response,
     };
-    if tx.commit().await.is_err() {
-        return internal();
-    }
     writes::prepare_chain_write(
+        tx,
         chain,
         IamMutation::UserPolicy {
             identity,

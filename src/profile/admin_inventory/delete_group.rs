@@ -28,10 +28,7 @@ pub(in crate::profile) async fn delete_group(
         Err(issue) => return passkeys::validation(vec![issue]),
     };
     if let Some(chain) = chain {
-        if tx.commit().await.is_err() {
-            return internal();
-        }
-        return writes::prepare_chain_write(&chain, IamMutation::DeleteGroup(id)).await;
+        return writes::prepare_chain_write(tx, &chain, IamMutation::DeleteGroup(id)).await;
     }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),

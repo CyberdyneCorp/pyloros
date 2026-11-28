@@ -103,10 +103,7 @@ async fn change(
         Err(error) => return *error,
     };
     if let Some(chain) = chain {
-        if tx.commit().await.is_err() {
-            return internal();
-        }
-        return writes::prepare_chain_write(&chain, IamMutation::Boundary { identity, policy })
+        return writes::prepare_chain_write(tx, &chain, IamMutation::Boundary { identity, policy })
             .await;
     }
     let origin = SessionOrigin {

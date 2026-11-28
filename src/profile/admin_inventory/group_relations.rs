@@ -241,10 +241,7 @@ async fn change(
                 attach: add,
             },
         };
-        if tx.commit().await.is_err() {
-            return internal();
-        }
-        return writes::prepare_chain_write(&chain, mutation).await;
+        return writes::prepare_chain_write(tx, &chain, mutation).await;
     }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(headers, peer.ip(), state.proxies),
