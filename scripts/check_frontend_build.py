@@ -16,19 +16,23 @@ def build_files(directory: Path):
             yield path
 
 
+def file_digest(path: Path) -> bytes:
+    content = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            content.update(chunk)
+    return content.digest()
+
+
 def build_digest(root: Path) -> str:
     tree = hashlib.sha256()
     count = 0
     if root.is_symlink() or not root.is_dir():
         raise ValueError("expected a frontend build directory")
     for path in build_files(root):
-        content = hashlib.sha256()
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1 << 20), b""):
-                content.update(chunk)
         tree.update(path.relative_to(root).as_posix().encode("utf-8"))
         tree.update(b"\0")
-        tree.update(content.digest())
+        tree.update(file_digest(path))
         count += 1
     if not count:
         raise ValueError("frontend build contains no files")

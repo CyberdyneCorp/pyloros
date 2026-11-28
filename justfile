@@ -93,6 +93,11 @@ test-db:
 check-frontend-build directory *expected:
     python3 scripts/check_frontend_build.py "$@"
 
+# Record a packaged console runtime or compare it with a reviewed manifest.
+[positional-arguments]
+check-frontend-runtime directory *expected:
+    python3 scripts/check_frontend_runtime.py "$@"
+
 # Validate the published ReBAC contract and its JSON examples.
 check-rebac-contract:
     uv run --script scripts/check_rebac_contract.py
