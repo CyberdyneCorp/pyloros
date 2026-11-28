@@ -55,7 +55,7 @@ The service SHALL use committed customer mappings and billing event records afte
 - **THEN** record the event as processed, report handled as false and preserve the grants
 
 ### Requirement: Select subscription metadata and expiry
-For subscription grants, the service SHALL use the product and optional plan from the first item's price metadata when that metadata identifies a product. Otherwise it SHALL use subscription metadata. The service SHALL prefer the subscription's integer period end, then the first item's integer period end, and otherwise store a null expiry.
+For subscription grants, the service SHALL use the product and optional plan from the first item's price metadata when that metadata identifies a product. Otherwise it SHALL use subscription metadata. For period-end selection, the service SHALL interpret the historical Boolean values false and true as the integers zero and one respectively. The service SHALL prefer the subscription's integer period end, then the first item's integer period end, and otherwise store a null expiry.
 
 #### Scenario: Subscription and item supply different dates
 - **WHEN** both dates are integers and the first item's price metadata identifies a product
@@ -68,6 +68,14 @@ For subscription grants, the service SHALL use the product and optional plan fro
 #### Scenario: A later item supplies a date
 - **WHEN** neither the subscription nor the first item supplies an integer date
 - **THEN** leave the expiry null even if a subsequent item supplies a date
+
+#### Scenario: A subscription carries a historical Boolean
+- **WHEN** the subscription period end is false and the first item carries a later timestamp
+- **THEN** the entitlement expires at the Unix epoch
+
+#### Scenario: The first item supplies the expiry
+- **WHEN** the subscription has no period end and the first item's period end is true
+- **THEN** the entitlement expires one second after the Unix epoch
 
 ### Requirement: Sample webhook routing during cutover
 An operator SHALL be able to sample the webhook ingress without a signing key. For each request the probe SHALL report whether the handler refused the unsigned payload and whether the ingress-reported upstream belongs to the expected pool.

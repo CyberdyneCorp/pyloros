@@ -125,12 +125,16 @@ impl Event {
             })
     }
     fn expires(&self) -> sqlx::Result<Option<DateTime<Utc>>> {
+        fn period_seconds(value: &Value) -> Option<i64> {
+            value.as_i64().or_else(|| value.as_bool().map(i64::from))
+        }
+
         let seconds = self
             .data
             .object
             .get("current_period_end")
-            .and_then(Value::as_i64)
-            .or_else(|| self.item()?.get("current_period_end")?.as_i64());
+            .and_then(period_seconds)
+            .or_else(|| period_seconds(self.item()?.get("current_period_end")?));
         seconds
             .map(|s| {
                 DateTime::from_timestamp(s, 0)
@@ -195,6 +199,22 @@ mod tests {
                 "subscription",
                 Some("base"),
                 Some(123),
+            ),
+            (
+                json!(false),
+                json!(123),
+                json!({}),
+                "subscription",
+                Some("base"),
+                Some(0),
+            ),
+            (
+                Value::Null,
+                json!(true),
+                json!({}),
+                "subscription",
+                Some("base"),
+                Some(1),
             ),
             (
                 json!(0.5),
