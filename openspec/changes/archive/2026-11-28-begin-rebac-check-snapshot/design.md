@@ -1,0 +1,1 @@
+Use SQLx transaction management with a custom BEGIN statement. Preserve the recovery check, client eligibility, model validation, graph traversal and existing commit or rollback paths within the same snapshot.

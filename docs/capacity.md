@@ -127,3 +127,19 @@ Two Rust replicas and PostgreSQL 17 shared an Apple M3 Pro with the HTTP driver.
 | 2 | 15.61 ms | 12.16 ms | 13.99 ms | 88,807 |
 
 All 1,200 scheduled direct checks during the two load windows returned the expected decision. Direct latency includes driver scheduling delay. The before and after windows lasted 12 seconds each. These loopback measurements cover one graph shape with two clients and no concurrent writes. Deployment sizing still needs its own graph distribution, client mix and latency budget.
+
+### Starting a ReBAC permission snapshot
+
+Each permission check opens a read-only repeatable-read transaction. Opening it with both modes in the initial SQL statement removes one round trip to PostgreSQL. Statement traces confirmed the change on direct, inherited and wide-graph checks.
+
+Two loopback trials per version added 2 ms of delay per database response chunk. Each trial sent 32 sequential requests per graph shape, alternating between two API processes. The table gives the range of trial medians.
+
+| Permission check | Separate transaction setup | Single-statement setup |
+|---|---:|---:|
+| Direct team membership | 34.0–34.4 ms | 31.5–35.0 ms |
+| Inherited document access | 45.7–47.7 ms | 42.9–46.3 ms |
+| Denial across 32 parent folders and their teams | 158.8–159.8 ms | 155.4–157.1 ms |
+
+The direct and inherited latency ranges overlap. Measure on the deployment's network and graph before estimating its latency savings.
+
+In a separate 60-second run without injected delay, one tenant alternated 60 grants and 60 revocations while eight readers checked another tenant's wide graph. Both tenants used the same document, team and user identifiers. All 960 checks issued after acknowledged writes returned the expected inherited decision on both replicas. The unchanged tenant retained access throughout. The background readers completed 78,041 wide checks including warmup and drain. Each write had one audit entry. The p99 time from write acknowledgement until all eight decisions returned was 41.8 ms on this host.

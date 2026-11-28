@@ -53,9 +53,8 @@ fn decision(allowed: bool) -> Response {
 
 impl Check {
     async fn evaluate(&self, pool: &PgPool, client: &str, owner: Uuid) -> sqlx::Result<Response> {
-        let mut tx = pool.begin().await?;
-        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            .execute(&mut *tx)
+        let mut tx = pool
+            .begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             .await?;
         let (primary, granted): (bool,bool) = sqlx::query_as(
             "SELECT NOT pg_is_in_recovery(), EXISTS(SELECT 1 FROM oauth_clients WHERE id=$1 AND client_id=$2

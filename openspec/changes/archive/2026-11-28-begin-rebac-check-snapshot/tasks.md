@@ -1,0 +1,2 @@
+- [x] Set isolation and read-only mode on transaction start.
+- [x] Verify the database statements and cross-replica decisions under load.
