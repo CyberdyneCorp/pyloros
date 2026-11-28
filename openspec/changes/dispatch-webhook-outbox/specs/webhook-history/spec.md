@@ -7,6 +7,14 @@ When webhook delivery is enabled, the service SHALL deliver queued notifications
 - **WHEN** a worker claims a due delivery for an active subscription
 - **THEN** send its stored body with a stable event identifier, attempt timestamp and signature for each active signing key
 
+#### Scenario: Another worker retries after key rotation
+- **WHEN** a subscription rotates its signing key after a failed attempt and another worker claims the retry during the overlap
+- **THEN** sign the original message ID and body with the retry timestamp and supply signatures from both the current and previous keys
+
+#### Scenario: Another worker retries after the overlap expires
+- **WHEN** the retry is claimed after the previous key expires
+- **THEN** send the same message ID and body with a signature from the current key alone
+
 #### Scenario: Recover or retry
 - **WHEN** a delivery fails or its worker stops
 - **THEN** record completed attempts atomically, retry within the attempt budget and make abandoned leases eligible for another worker
