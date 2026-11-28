@@ -1,0 +1,2 @@
+- [x] Implement and test enabled and disabled documentation routes.
+- [x] Compare page bytes, methods, redirects, browser policies and the independent schema on both services.

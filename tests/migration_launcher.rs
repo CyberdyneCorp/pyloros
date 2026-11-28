@@ -17,7 +17,7 @@ fn migration_launcher_resolves_packaged_assets_and_preserves_overrides() {
     fs::write(&binary, r#"#!/bin/sh
 printf '%s\n' "$PYLOROS_SIGNED_OUT_HTML_PATH" "$PYLOROS_CONSENT_UI_PATH" "$PYLOROS_DEVICE_UI_PATH" "$PYLOROS_ERASURE_REPORT_PATH" "$PYLOROS_OPENAPI_PATH" "$PYLOROS_OPENAPI_CSP" "${PYLOROS_REGISTRATION_TIME_ZONE-unset}" "$@"
 "#).unwrap();
-    fs::set_permissions(binary, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::set_permissions(&binary, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(
         package.join("migration-openapi.csp"),
         "default-src 'none'\n",
@@ -79,4 +79,19 @@ printf '%s\n' "$PYLOROS_SIGNED_OUT_HTML_PATH" "$PYLOROS_CONSENT_UI_PATH" "$PYLOR
             .collect::<Vec<_>>(),
         expected
     );
+
+    fs::write(
+        &binary,
+        "#!/bin/sh\nprintf '%s' \"${PYLOROS_API_DOCS_PATH-unset}\"\n",
+    )
+    .unwrap();
+    assert_eq!(cmd.output().unwrap().stdout, b"unset");
+    let pages = package.join("api-docs.json");
+    fs::write(&pages, "{}").unwrap();
+    assert_eq!(
+        cmd.output().unwrap().stdout,
+        pages.as_os_str().as_encoded_bytes()
+    );
+    cmd.env("PYLOROS_API_DOCS_PATH", "/alternate/docs.json");
+    assert_eq!(cmd.output().unwrap().stdout, b"/alternate/docs.json");
 }

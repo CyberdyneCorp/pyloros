@@ -100,6 +100,7 @@ pub async fn application(
         login_http::routes_with_redirects(pool.clone(), &environment, redirects, blockchain)?;
     let methods = login_methods::routes(&environment)?;
     let proxy = hook_egress::Proxy::configured().await?;
+    let (description, policy) = api_description::configured(production)?;
     let app = health_router(environment, pool.clone(), proxy)
         .merge(profile)
         .merge(token)
@@ -107,8 +108,9 @@ pub async fn application(
         .merge(methods)
         .merge(email_link_http::routes(pool)?)
         .merge(discovery::routes(provider))
-        .merge(api_description::configured()?);
-    cors::apply_origins(foundation::canonical_paths(app), cors_origins)
+        .merge(description);
+    let app = cors::apply_origins(foundation::canonical_paths(app), cors_origins)?;
+    Ok(api_description::apply_policy(app, policy))
 }
 
 pub fn router(environment: String, pool: PgPool) -> Router {

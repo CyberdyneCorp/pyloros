@@ -7,6 +7,9 @@ package_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${PYLOROS_DEVICE_UI_PATH:=$package_dir/device-ui.json}"
 : "${PYLOROS_ERASURE_REPORT_PATH:=$package_dir/erasure-report.json}"
 : "${PYLOROS_OPENAPI_PATH:=$package_dir/migration-openapi.json}"
+if [ -z "${PYLOROS_API_DOCS_PATH:-}" ] && [ -f "$package_dir/api-docs.json" ]; then
+    export PYLOROS_API_DOCS_PATH="$package_dir/api-docs.json"
+fi
 if [ -z "${PYLOROS_OPENAPI_CSP:-}" ]; then
     PYLOROS_OPENAPI_CSP=$(cat "$package_dir/migration-openapi.csp")
 fi

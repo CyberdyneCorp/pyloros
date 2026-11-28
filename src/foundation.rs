@@ -44,7 +44,7 @@ pub(crate) fn canonical_paths(router: Router) -> Router {
             let path = req.uri().path();
             let canonical = path.trim_end_matches('/');
             if canonical.is_empty() || canonical == path {
-                return crate::login_http::problem(StatusCode::NOT_FOUND, "Not Found");
+                return missing_route();
             }
             let probe = Request::builder()
                 .uri(canonical)
@@ -52,11 +52,21 @@ pub(crate) fn canonical_paths(router: Router) -> Router {
                 .expect("path from parsed URI");
             let matched = paths.oneshot(probe).await.expect("infallible router");
             if matched.status() != StatusCode::NO_CONTENT {
-                return crate::login_http::problem(StatusCode::NOT_FOUND, "Not Found");
+                return missing_route();
             }
             Redirect::temporary(&canonical_location(&req, canonical, &peers)).into_response()
         }
     })
+}
+
+fn missing_route() -> axum::response::Response {
+    use axum::response::IntoResponse;
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        [(header::CONTENT_TYPE, "application/json")],
+        r#"{"type":"about:blank","title":"Not Found","status":404,"detail":"Not Found"}"#,
+    )
+        .into_response()
 }
 
 fn canonical_location(req: &Request, path: &str, peers: &[ipnet::IpNet]) -> String {
