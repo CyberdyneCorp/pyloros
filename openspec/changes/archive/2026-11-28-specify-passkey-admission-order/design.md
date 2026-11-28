@@ -1,0 +1,1 @@
+Check admission through the HTTP endpoint with a one-request allowance. Observe the response and the number of persisted ceremonies after each request. For a successful issuance, compare the response challenge with the stored challenge for the returned ceremony ID. Exercise both fixed-length and chunked bodies.

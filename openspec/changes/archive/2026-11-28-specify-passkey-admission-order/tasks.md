@@ -1,0 +1,3 @@
+- [x] Compare preflight, oversized, accepted and rate-limited login options requests with both upload formats.
+- [x] Verify ceremony creation and challenge identity on successful admission.
+- [x] Document admission order in the passkey capability.
