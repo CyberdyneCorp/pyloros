@@ -10,14 +10,21 @@ from check_frontend_build import file_digest
 from check_frontend_runtime import payload_manifest, verify_manifest
 
 
-def docker(*args):
-    return subprocess.check_output(["docker", *args], text=True).strip()
+def docker(*args, timeout=None):
+    return subprocess.check_output(["docker", *args], text=True, timeout=timeout).strip()
+
+
+def local_image_id(image):
+    try:
+        return docker("image", "inspect", "--format", "{{.Id}}", image, timeout=10)
+    except subprocess.TimeoutExpired as error:
+        raise ValueError("Docker image lookup timed out after 10 seconds") from error
 
 
 @contextmanager
 def container(image):
     # Pin the local ID so a tag update cannot change the image between checks.
-    image_id = docker("image", "inspect", "--format", "{{.Id}}", image)
+    image_id = local_image_id(image)
     cid = docker("create", "--network", "none", "--entrypoint", "node", image_id,
                  "-p", "JSON.stringify([process.version, process.platform, process.arch])")
     try:

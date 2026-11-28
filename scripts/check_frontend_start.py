@@ -4,7 +4,7 @@ import json
 from time import monotonic, sleep
 import subprocess
 
-from check_frontend_image import docker
+from check_frontend_image import docker, local_image_id
 
 
 PROBE = """
@@ -18,7 +18,7 @@ if (response.status !== 200 || !/^text\\/html(?:;|$)/i.test(type)
 
 
 def check(image):
-    image_id = docker("image", "inspect", "--format", "{{.Id}}", image)
+    image_id = local_image_id(image)
     cid = docker("create", "--network", "none", image_id)
     try:
         docker("start", cid)
