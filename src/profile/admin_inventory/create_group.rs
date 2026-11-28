@@ -35,16 +35,9 @@ pub(in crate::profile) async fn create_group(
     }
     let description = group["description"].as_str();
     if let Some(chain) = chain {
-        if tx.commit().await.is_err() {
-            return internal();
-        }
-        return match chain.prepare_group_creation(name, description).await {
-            Ok(_) => problem(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Blockchain transaction submission unavailable",
-            ),
-            Err(_) => internal(),
-        };
+        return prepare_chain_group(tx, &chain, name, description)
+            .await
+            .unwrap_or_else(|_| internal());
     }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
@@ -53,6 +46,24 @@ pub(in crate::profile) async fn create_group(
     insert(tx, name, description, (actor, email.as_deref()), origin)
         .await
         .unwrap_or_else(|_| internal())
+}
+
+async fn prepare_chain_group(
+    mut tx: Transaction<'_, Postgres>,
+    chain: &crate::chain_settings::Chain,
+    name: &str,
+    description: Option<&str>,
+) -> Result<Response, sqlx::Error> {
+    chain.lock_signer(&mut tx).await?;
+    let result = chain.prepare_group_creation(name, description).await;
+    tx.commit().await?;
+    Ok(match result {
+        Ok(_) => problem(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Blockchain transaction submission unavailable",
+        ),
+        Err(_) => internal(),
+    })
 }
 
 async fn insert(
@@ -128,5 +139,38 @@ mod tests {
             .await?;
         assert_eq!(count, 0);
         Ok(())
+    }
+
+    use std::time::Duration;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn group_preparation_waits_for_the_signer_and_releases_it_on_error() {
+        let db = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let chain = crate::chain_settings::Chain::for_health_test("http://localhost".into());
+        let mut owner = db.begin().await.unwrap();
+        chain.lock_signer(&mut owner).await.unwrap();
+        let tx = db.begin().await.unwrap();
+        let preparing = prepare_chain_group(tx, &chain, "reports", None);
+        tokio::pin!(preparing);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut preparing)
+                .await
+                .is_err()
+        );
+        owner.rollback().await.unwrap();
+        // The fixture has no group contract, so preparation ends before any network call.
+        let response = tokio::time::timeout(Duration::from_secs(2), preparing)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let mut next = db.begin().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), chain.lock_signer(&mut next))
+            .await
+            .unwrap()
+            .unwrap();
     }
 }

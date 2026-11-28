@@ -1,0 +1,3 @@
+- [x] Route operator group creation through signer coordination.
+- [x] Verify group preparation waits behind an existing signer lock.
+- [x] Exercise group and policy creation on separate replicas in both arrival orders.

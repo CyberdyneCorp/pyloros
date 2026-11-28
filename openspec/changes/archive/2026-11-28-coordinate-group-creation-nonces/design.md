@@ -1,0 +1,1 @@
+Reuse the operator transaction and signer lock for the duration of group preparation. End the transaction after the provider returns. Continue to report the submission boundary to the caller. Lock ownership expires with the PostgreSQL transaction, including when a preparation fails.

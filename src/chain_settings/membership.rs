@@ -237,7 +237,7 @@ fn validate_address(address: &str) -> Result<(), ReadError> {
 
 impl Chain {
     #[cfg(test)]
-    pub(super) fn for_health_test(endpoint: String) -> Self {
+    pub(crate) fn for_health_test(endpoint: String) -> Self {
         Self {
             endpoint,
             identity: Some("deployment".into()),
