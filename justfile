@@ -63,6 +63,18 @@ inspect-iam-receipt hash *flags:
 hook-inventory *event:
     cargo run --quiet --locked -- --check-hook-bindings "$@"
 
+# Require complete coverage and an exact match with the reviewed report.
+[positional-arguments]
+verify-hook-inventory reviewed *event:
+    #!/bin/sh
+    set -eu
+    reviewed=$1
+    shift
+    current=$(mktemp)
+    trap 'rm -f "$current"' EXIT
+    just hook-inventory "$@" > "$current"
+    cmp "$current" - < "$reviewed"
+
 # Check how many committed component deliveries remain for these events.
 [positional-arguments]
 hook-queue *event:

@@ -1,0 +1,2 @@
+- [x] Add and document the comparison recipe.
+- [x] Verify coverage failure and drift with a read-only PostgreSQL connection.

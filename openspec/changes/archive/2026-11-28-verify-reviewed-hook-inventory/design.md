@@ -1,0 +1,1 @@
+Invoke the existing read-only inventory command using the supplied event filters. Compare its deterministic output with the original report file. Require both successful coverage and an exact file match. Store intermediate output in a temporary file and remove it on exit.
