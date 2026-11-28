@@ -216,6 +216,9 @@ impl Search {
             if node.direct(tx, owner, user, rules).await? {
                 return Ok(Some(true));
             }
+            let edges = edges
+                .for_rules(tx, owner, &node, rules, self.remaining + 1)
+                .await?;
             for rule in rules {
                 if let Proof::Inherited { via, permission } = rule {
                     let rows = edges
@@ -265,10 +268,47 @@ impl Search {
 #[derive(Clone)]
 enum Outgoing {
     Individual,
-    Complete(Vec<(String, String, String)>),
+    Cached(Vec<(String, String, String)>),
 }
 
 impl Outgoing {
+    async fn for_rules(
+        self,
+        tx: &mut Transaction<'_, Postgres>,
+        owner: Uuid,
+        node: &Node,
+        rules: &[Proof],
+        limit: usize,
+    ) -> sqlx::Result<Self> {
+        let (
+            Self::Individual,
+            [
+                Proof::Inherited { via: first, .. },
+                Proof::Inherited { via: second, .. },
+            ],
+        ) = (&self, rules)
+        else {
+            return Ok(self);
+        };
+        let rows = sqlx::query_as(
+            "SELECT r.relation,e.subject_type,e.subject_id
+             FROM (SELECT DISTINCT unnest($4::text[]) AS relation) r
+             CROSS JOIN LATERAL (
+                 SELECT subject_type,subject_id FROM pyloros_object_relationships
+                 WHERE client_id=$1 AND object_type=$2 AND object_id=$3 AND relation=r.relation
+                 ORDER BY subject_type,subject_id LIMIT $5
+             ) e ORDER BY r.relation,e.subject_type,e.subject_id",
+        )
+        .bind(owner)
+        .bind(&node.kind)
+        .bind(&node.id)
+        .bind([first, second].map(String::as_str).as_slice())
+        .bind(limit as i64)
+        .fetch_all(&mut **tx)
+        .await?;
+        Ok(Self::Cached(rows))
+    }
+
     async fn destinations(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -279,7 +319,7 @@ impl Outgoing {
     ) -> sqlx::Result<Vec<(String, String)>> {
         match self {
             Self::Individual => node.destinations(tx, owner, via, limit).await,
-            Self::Complete(edges) => Ok(edges
+            Self::Cached(edges) => Ok(edges
                 .iter()
                 .filter(|(relation, _, _)| relation == via)
                 .take(limit)
@@ -325,7 +365,7 @@ async fn read_batch(
         .into_iter()
         .map(|edges| {
             if edges.len() <= INLINE_EDGES {
-                Outgoing::Complete(edges)
+                Outgoing::Cached(edges)
             } else {
                 Outgoing::Individual
             }
@@ -379,6 +419,54 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn paired_proofs_keep_rule_order_and_charge_for_repeated_relations() -> sqlx::Result<()> {
+        let pool = PgPool::connect(&env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = pool.begin().await?;
+        sqlx::raw_sql("CREATE TEMP TABLE pyloros_user_relationships(client_id uuid,object_type text,object_id text,relation text,user_id uuid);
+            CREATE TEMP TABLE pyloros_object_relationships(client_id uuid,object_type text,object_id text,relation text,subject_type text,subject_id text);")
+            .execute(&mut *tx).await?;
+        let owner = Uuid::new_v4();
+        let user = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO pyloros_object_relationships VALUES
+            ($1,'folder','root','a','team','empty'),($1,'folder','root','z','team','assigned')",
+        )
+        .bind(owner)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO pyloros_user_relationships VALUES($1,'team','assigned','member',$2)",
+        )
+        .bind(owner)
+        .bind(user)
+        .execute(&mut *tx)
+        .await?;
+        for (first, permission, second, budget, expected) in [
+            ("z", "read", "a", 5, Some(true)),
+            ("a", "read", "z", 5, None),
+            ("a", "read", "z", 6, Some(true)),
+            ("z", "edit", "z", 5, None),
+            ("z", "edit", "z", 6, Some(true)),
+        ] {
+            let model = serde_json::from_value(json!({"types":{
+                "folder":{"relations":{"a":["team"],"z":["team"]},"permissions":{"read":[
+                    {"via":first,"permission":permission},{"via":second,"permission":"read"}]}},
+                "team":{"relations":{"member":["user"],"editor":["user"]},"permissions":{
+                    "read":[{"relation":"member"}],"edit":[{"relation":"editor"}]}}}}))
+            .unwrap();
+            let mut search = Search::new(Node {
+                kind: "folder".into(),
+                id: "root".into(),
+                permission: "read".into(),
+            });
+            search.remaining = budget;
+            assert_eq!(search.run(&mut tx, &model, owner, user).await?, expected);
+        }
+        tx.rollback().await
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]

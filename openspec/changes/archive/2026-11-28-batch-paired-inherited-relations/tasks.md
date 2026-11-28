@@ -1,0 +1,2 @@
+- [x] Batch paired destination reads.
+- [x] Verify ordered traversal, bounded reads and cross-replica results.

@@ -222,6 +222,12 @@ A relay forwarded PostgreSQL responses immediately or slept for 1 ms per respons
 
 These single-request measurements show the cost of checking a second relation over a delayed connection. Production sizing still requires the deployed database path, graph and concurrent workload.
 
+### Reading two inherited relations together
+
+After batching the two indexed destination lookups, a repeat of the statement profile counted 7,200 destination statements for 7,200 checks at 1,800 offered checks/s. The earlier implementation issued 14,400. The combined statement averaged 29.5 µs of PostgreSQL execution time, compared with 9.6 µs per individual statement in the earlier trial. Both forced plans retained the primary-key index-only scan.
+
+In two fresh relay trials, all 1,024 measured decisions matched. With 1 ms of delay per response chunk, both the one-rule and two-rule permissions used 11–12 chunks. The median gap between those permissions fell from about 1.65 ms in each earlier trial to 0.04 ms and 0.01 ms. The change trades more database execution time per check for one fewer network exchange on this graph. Production throughput remains unmeasured.
+
 ### Starting a ReBAC permission snapshot
 
 Each permission check opens a read-only repeatable-read transaction. Opening it with both modes in the initial SQL statement removes one round trip to PostgreSQL. Statement traces confirmed the change on direct, inherited and wide-graph checks.

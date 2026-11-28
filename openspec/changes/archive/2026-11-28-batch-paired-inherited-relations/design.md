@@ -1,0 +1,1 @@
+Use an indexed lateral subquery per distinct relation, limiting each prefix to the remaining edge budget plus one. Feed the prefixes through the existing rule traversal in declaration order. A repeated relation can serve different destination permissions.
