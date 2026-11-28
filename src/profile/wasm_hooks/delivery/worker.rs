@@ -131,24 +131,65 @@ async fn retry(mut tx: Transaction<'_, Postgres>, id: Uuid) -> sqlx::Result<()> 
 }
 
 fn history(value: &Value) -> (&'static str, Option<String>, Option<String>) {
-    let text = |key: &str| value[key].as_str().map(|s| s.replace('\0', "�"));
-    match value["status"].as_str() {
-        Some("success") => (
-            "success",
-            value["output"]
-                .as_str()
-                .and_then(super::super::v1_output)
-                .map(|s| s.replace('\0', "�")),
-            None,
-        ),
-        Some("error") => ("failed", None, text("output")),
-        _ => ("failed", None, text("error")),
+    if value["status"] == "success" {
+        let output = value["output"]
+            .as_str()
+            .and_then(super::super::v1_output)
+            .map(|s| s.replace('\0', "�"));
+        return ("success", output, None);
     }
+    let key = if value["status"] == "error" {
+        "output"
+    } else {
+        "error"
+    };
+    let error = value[key].as_str().map(|s| s.replace('\0', "�"));
+    let status = if error
+        .as_deref()
+        .is_some_and(|message| message.to_ascii_lowercase().contains("timeout"))
+    {
+        "timeout"
+    } else {
+        "failed"
+    };
+    (status, None, error)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_distinguishes_reported_timeouts_from_other_errors() {
+        for (result, status, message) in [
+            (
+                json!({"status":"error","output":"ValueError: service TIMEOUT"}),
+                "timeout",
+                "ValueError: service TIMEOUT",
+            ),
+            (
+                json!({"status":"error","output":"timed out"}),
+                "failed",
+                "timed out",
+            ),
+            (
+                json!({"status":"failed","error":"Timeout waiting"}),
+                "timeout",
+                "Timeout waiting",
+            ),
+            (
+                json!({"status":"failed","error":"Hook execution failed"}),
+                "failed",
+                "Hook execution failed",
+            ),
+        ] {
+            assert_eq!(history(&result), (status, None, Some(message.into())));
+        }
+        assert_eq!(
+            history(&json!({"status":"success","output":"timeout"})),
+            ("success", Some("timeout".into()), None)
+        );
+    }
 
     #[test]
     fn successful_history_preserves_whitespace_and_limits_output_by_character() {
