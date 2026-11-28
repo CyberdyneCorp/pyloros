@@ -51,3 +51,17 @@ Two repetitions at revision `1d42455` measured the login, refresh and introspect
 | 64 | 81.80–82.03 | 511/512 | 1 | 17.01–17.38 |
 
 All 3,072 measured requests succeeded. Including warmup, each database contained 400 sessions and 800 refresh-token rows. These short phases establish a repeatable local latency baseline for this workload. The tested Rust executable had SHA-256 `6c97706df5af72943a2dc1f2b143fb64d81ea128aec51472d0ccfaa8be88dd15`.
+
+## Mixed-backend canary rehearsal
+
+At revision `a4af506`, one Pyloros process and one migration reference process shared a PostgreSQL primary, RS256 keys and an issuer. Each of 16 synthetic accounts alternated between the two processes on successive requests. Two trials started with fresh databases and each offered 512 requests per phase. The driver included queueing and drain time in response latency.
+
+| Offered requests/s | End-to-end p99 (ms) | Finished within arrival window (of 512) |
+|---:|---:|---:|
+| 32 | 1,223–1,565 | 502–504 |
+| 48 | 4,863–5,850 | 304–378 |
+| 64 | 8,257–8,644 | 241–246 |
+
+All 3,072 measured requests succeeded. Across both trials, 519 refreshes rotated a credential issued by the other backend, and 1,040 introspections confirmed the account of a token issued by the other backend. Both directions succeeded at every rate. Each database ended with 400 sessions and 800 refresh-token rows, including warmup.
+
+At 64 requests/s the mixed pair completed fewer than half the requests within the eight-second arrival window in both trials. This local result measures short periods of alternating traffic with hooks disabled. A production canary still needs measurements with its own traffic split, ingress, background work and latency budget.
