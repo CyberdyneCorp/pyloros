@@ -187,6 +187,51 @@ mod tests {
         assert!(!account.email_verified);
     }
 
+    #[test]
+    fn optional_profile_fields_follow_each_provider_mapping() {
+        let mail = "alias@example.org";
+        let principal = "fallback@example.org";
+        for kind in [Kind::Google, Kind::Microsoft] {
+            let google = matches!(kind, Kind::Google);
+            let (subject_key, email_key, name_key) = if google {
+                ("sub", "email", "name")
+            } else {
+                ("id", "mail", "displayName")
+            };
+            for (field, fallback, expected_google, expected_ms) in [
+                (None, None, None, None),
+                (Some(Value::Null), None, None, None),
+                (Some(json!("")), None, Some(""), None),
+                (Some(json!(mail)), None, Some(mail), Some(mail)),
+                (Some(json!("")), Some(principal), Some(""), Some(principal)),
+                (Some(json!(mail)), Some(principal), Some(mail), Some(mail)),
+            ] {
+                let mut document = json!({(subject_key): "stable-π"});
+                let optional_text = field.as_ref().and_then(Value::as_str);
+                if let Some(value) = &field {
+                    for key in [email_key, name_key, "picture"] {
+                        document[key] = value.clone();
+                    }
+                }
+                if let Some(upn) = fallback {
+                    document["userPrincipalName"] = json!(upn);
+                }
+                let account = profile(kind, document, None).unwrap();
+                assert_eq!(account.subject, "stable-π");
+                assert_eq!(
+                    account.email.as_deref(),
+                    if google { expected_google } else { expected_ms }
+                );
+                assert_eq!(account.name.as_deref(), optional_text);
+                assert_eq!(
+                    account.picture.as_deref(),
+                    if google { optional_text } else { None }
+                );
+                assert!(!account.email_verified);
+            }
+        }
+    }
+
     #[tokio::test]
     async fn development_profiles_preserve_the_provider_identity() {
         for kind in [Kind::Google, Kind::Microsoft] {
