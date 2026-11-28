@@ -17,6 +17,7 @@ WITH targets(relation, attribute) AS (
     VALUES ('google_purchases', 'purchase_token'), ('entitlements', 'external_ref')
 )
 SELECT t.relation, t.attribute, n.nspname AS schema, c.data_type,
+       c.domain_schema, c.domain_name,
        c.character_maximum_length AS max_characters,
        coalesce(c.domain_name IS NULL AND c.data_type IN ('text', 'character varying')
            AND (c.character_maximum_length IS NULL OR c.character_maximum_length >= 512),
