@@ -1,0 +1,1 @@
+Run one fixture per invocation. Forward the event bytes to the existing isolated worker with the dry-run deadline. Compare the guest status and output string with the recorded expectation. Execution failures and invalid fixtures fail the check. Only print the digest on success so fixture contents stay local.

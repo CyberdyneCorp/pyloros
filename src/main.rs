@@ -14,6 +14,16 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
         );
         return Ok(ExitCode::SUCCESS);
     }
+    let mut fixture = env::args_os().skip(1);
+    if fixture.next().as_deref() == Some(std::ffi::OsStr::new("--check-hook-fixture")) {
+        let paths: Vec<std::path::PathBuf> = fixture.map(Into::into).collect();
+        let [component, event, expected] = paths.as_slice() else {
+            return Err("expected component, event JSON, and expected outcome paths".into());
+        };
+        let digest = pyloros::profile::check_hook_fixture(component, event, expected).await?;
+        println!("{digest}");
+        return Ok(ExitCode::SUCCESS);
+    }
     let pool = PgPoolOptions::new()
         .max_connections(15)
         .acquire_timeout(Duration::from_secs(2))

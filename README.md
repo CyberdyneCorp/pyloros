@@ -367,6 +367,20 @@ and media type as validation. A first upload returns 201. Repeating it returns 2
 and the same SHA-256 digest. Administrators can download the exact component from
 `GET /api/v2/admin/hooks/artifacts/{sha256}`. Staged components are inactive.
 
+### Verify a port locally
+
+Run `just check-hook-fixture component.wasm event.json expected.json` before
+uploading a reviewed component. Supply the exact event JSON bytes and the
+expected worker result. For example, a silent hook returns
+`{"status":"success","output":""}`. A guest-declared error uses status
+`error` and its exact output string. Whitespace inside output strings matters.
+
+The command builds the release worker, applies the dry-run deadline and prints
+the component SHA-256 on success. A mismatch, invalid input or worker failure
+exits unsuccessfully. Each invocation checks one fixture and works without a
+database or API credentials. Run the command for each behavior you expect
+from the source hook, including guest errors where applicable.
+
 ### Dry-run a staged hook
 
 Send synthetic event JSON to `POST /api/v2/admin/hooks/artifacts/{sha256}/test`

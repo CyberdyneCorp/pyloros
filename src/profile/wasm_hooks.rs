@@ -24,6 +24,8 @@ pub(super) mod binding;
 pub(super) mod delivery;
 pub use delivery::worker::ComponentHookWorker;
 mod dry_run;
+mod fixture;
+pub use fixture::check_hook_fixture;
 pub(super) mod manual;
 mod source;
 pub(super) use dry_run::dry_run;

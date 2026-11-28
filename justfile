@@ -40,6 +40,12 @@ build-hook-example:
 hook-inventory *event:
     cargo run --quiet --locked -- --check-hook-bindings "$@"
 
+# Compare a candidate guest with a recorded outcome before uploading it.
+[positional-arguments]
+check-hook-fixture component event expected:
+    cargo build --release --locked --manifest-path hook-worker/Cargo.toml --target-dir "${CARGO_TARGET_DIR:-target}"
+    cargo run --release --locked --bin pyloros -- --check-hook-fixture "$@"
+
 # Build the silent guest for hooks that produce no output or other effects.
 build-silent-hook:
     cargo component build --release --locked --example silent_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml

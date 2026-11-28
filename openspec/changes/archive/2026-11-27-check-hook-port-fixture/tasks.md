@@ -1,0 +1,2 @@
+- [x] Implement the offline command and just recipe.
+- [x] Check valid and mismatched fixtures against real components and document the command.
