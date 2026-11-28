@@ -1,0 +1,3 @@
+- [x] Compare source and compiled results on a wide event for both example hooks.
+- [x] Verify the original and replacement results across upgrade and rollback on separate replicas, including audit and history effects.
+- [x] Document when to start a manual test of the newly selected component.

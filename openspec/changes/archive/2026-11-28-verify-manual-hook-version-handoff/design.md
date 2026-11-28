@@ -1,0 +1,1 @@
+The manual execution path reads the selected component bytes before invoking the worker. A later binding update changes subsequent selections. Verify the distinction by holding one worker after dispatch, updating the binding through a peer, and running a second test before releasing the first.

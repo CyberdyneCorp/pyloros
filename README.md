@@ -545,6 +545,18 @@ HTTP 409 means the source changed. Read the definition again and verify the
 component against the new source before retrying. A successful change records
 the supplied source digest in its audit entry.
 
+To verify a component replacement, wait for the binding PUT to succeed, then
+start a fresh v1 manual test with the same context used in the source review.
+A test already dispatched to a worker can return later with the previous
+component's result. To roll back, select the prior staged digest with the
+reviewed source hash and repeat the test after that PUT succeeds.
+
+In a two-replica rehearsal, the old event-name and counter components failed
+on a context with 5,800 ascending fields. The replacements matched the source
+outputs. During upgrade and rollback, a request started after the switch
+returned first and used the newly selected digest. Both manual tests recorded
+their own success flags. Neither added an automatic execution history entry.
+
 A source edit can commit just after a guarded selection returns HTTP 200.
 The edit clears that selection. If the edit commits first, selection using
 the earlier source digest returns HTTP 409. In either order, run
