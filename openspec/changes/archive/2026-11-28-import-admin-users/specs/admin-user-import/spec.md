@@ -43,3 +43,9 @@ The API SHALL accept administrative user imports with email and password columns
 
 - **WHEN** a multipart part names the file field and includes a filename parameter
 - **THEN** recognize it as an upload even when the filename is empty or contains legacy-encoded bytes. Match parameter names case-insensitively, ignore parameter-like text inside quoted values, and use the last supplied field name.
+
+#### Scenario: Retry an import after a registration hook changes
+
+- **WHEN** an active registration hook lacks a binding for its current source
+- **THEN** return HTTP 503 and roll back the batch, including new accounts, account events, the operator audit and queued hook deliveries.
+- **AND** after the reviewed replacement is bound, allow the same file to be imported. Record the original CSV row for each created account and dispatch the registration hook once for that account.
