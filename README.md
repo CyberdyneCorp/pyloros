@@ -111,6 +111,8 @@ Each unsigned POST sends an empty JSON object. A sample passes when the upstream
 
 A subscription update can arrive before checkout maps the customer. Redelivery after checkout applies the new plan and its expiry. An `invoice.created` event is informational and returns `handled: false`. A refund for a separate one-time payment revokes only the grants tied to that payment reference.
 
+If two signed checkouts claim the same Stripe customer for different accounts, the first committed claim establishes the customer mapping. The competing event appears in `just db-stripe-deferred` with the reason `customer belongs to another user`. Compare the checkout’s account reference with the existing customer mapping before redelivery. Redelivery preserves the committed owner and access while the conflict remains.
+
 If a full refund reaches the writer before checkout creates the entitlement, the refund returns HTTP 200 with `handled: false`. Checkout can then grant access. Run `just db-stripe-deferred` against the writer database to list committed deferred event IDs and reasons. The command requires schema access and `SELECT (event_id, status, reason)` on `stripe_events`. It exits 2 when events are pending and 0 when the list is empty. Once the purchase exists, request redelivery of the original refund event and confirm its ID clears from the list. A processed replay also returns `handled: false`, so use the ledger to distinguish the two outcomes.
 
 ## App Store purchases

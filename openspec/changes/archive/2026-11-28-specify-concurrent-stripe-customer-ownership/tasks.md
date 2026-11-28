@@ -1,0 +1,2 @@
+- [x] Verify both replica orders, failed commit, committed mapping, grant and retry outcomes.
+- [x] Document the reconciliation behavior.

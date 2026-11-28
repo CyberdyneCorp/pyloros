@@ -1,0 +1,1 @@
+Exercise independent event and payment identifiers against the same customer on two API replicas. Hold the customer lock until both requests are waiting. Check the committed customer, grants and ledger after both responses and after redelivery. Reject the first commit in a separate trial to distinguish lock acquisition from persisted ownership.
