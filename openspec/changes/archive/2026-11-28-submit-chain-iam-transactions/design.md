@@ -10,7 +10,7 @@ Compare unsigned call data and identifier handling using independent fixtures. E
 
 ## Open compatibility decisions
 
-Determine the response and audit outcome for a receipt with an absent or nonstandard status, a hash that differs from the submitted transaction, or a confirmed creation whose identifier cannot be decoded. Verify against the deployment contract before enabling retries or marking chain creation compatible.
+Missing or nonstandard status and mismatched hashes produce an error without a success audit. For a mined creation, check the first log against the contract, transaction and block. A binary unsigned word or ASCII hexadecimal ID must identify exactly one new entry with the submitted metadata at the canonical receipt block. Unverifiable creations return HTTP 500. Deployment event encoding and block-hash lookup remain rollout checks.
 
 ## Receipt inspection during reconciliation
 
@@ -28,7 +28,7 @@ With `--wait`, poll while the receipt is absent. Apply a single 60-second deadli
 
 Policy and related operator IAM mutations take a PostgreSQL transaction-scoped advisory lock for the configured signer before preparing the contract call. Replicas sharing the database serialize preparations for the same address, including when RPC endpoint URLs differ. Reusing the signer on independent chains also serializes these preparations. Commit, rollback and connection loss release the lock. Each waiter reads the provider's pending nonce after acquiring the lock.
 
-For policy mutations, the preflight currently ends before submission. The sender must retain ownership through submission and reconcile an uncertain broadcast before permitting reuse of that nonce. Other writers, including the migration reference, require a single-owner rollout or compatible coordination.
+The policy writer holds the signer lock through submission, bounded receipt reconciliation and the audit commit. If confirmation times out, inspect the locally computed hash before issuing another request. Other writers, including the migration reference, require a single-owner rollout or compatible coordination.
 
 With `--contract ADDRESS`, compare the twenty address bytes in the receipt’s `to` field before accepting its status. The option also works while polling. Contract event interpretation and block finality require additional evidence.
 

@@ -114,7 +114,7 @@ pub(crate) struct OperatorGroup {
 
 #[derive(serde::Serialize)]
 pub(crate) struct OperatorPolicy {
-    id: Uuid,
+    pub(crate) id: Uuid,
     name: String,
     description: Option<String>,
     version: u32,

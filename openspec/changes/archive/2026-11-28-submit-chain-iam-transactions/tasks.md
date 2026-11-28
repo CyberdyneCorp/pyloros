@@ -3,8 +3,8 @@
 - [x] Encode the unsigned type-2 signing payload and compare its bytes with an independent encoder.
 - [x] Inspect a known transaction hash through read-only RPC and distinguish matching, reverted, missing and ambiguous receipt results.
 - [x] Serialize operator policy preparations by signer across Rust processes sharing PostgreSQL and verify that waiting requests read the nonce after lock acquisition.
-- [ ] Implement submission, nonce coordination, receipt validation and error mapping.
-- [ ] Wire policy mutations, audit their results and compare the original clients.
+- [x] Implement submission, nonce coordination, receipt validation and error mapping.
+- [x] Wire policy mutations, audit their results and compare the original clients.
 - [x] Verify a known receipt against an expected IAM contract address.
 - [x] Submit ordinary group membership changes and audit confirmed receipts.
 - [x] Reconcile a lost submission response by reading the receipt for the locally computed hash.

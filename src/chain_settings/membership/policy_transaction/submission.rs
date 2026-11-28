@@ -51,13 +51,13 @@ impl Chain {
         mutation: &IamMutation<'_>,
     ) -> Result<(), PrepareError> {
         let tx = self.mutation_envelope(mutation).await?;
-        self.submit_envelope(tx).await
+        self.submit_envelope(tx).await.map(|_| ())
     }
 
     pub(super) async fn submit_envelope(
         &self,
         tx: UnsignedIamTransaction,
-    ) -> Result<(), PrepareError> {
+    ) -> Result<Value, PrepareError> {
         let signed = tx.signed(self.signing_key.as_ref().ok_or(PrepareError::Invalid)?)?;
         let expected = keccak256(&signed);
         let body = json!({"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction",
@@ -72,8 +72,8 @@ impl Chain {
             .wait_for_receipt(expected, Some(tx.to), Duration::from_secs(60))
             .await
         {
-            Ok("reported_success") => Ok(()),
-            Ok("reported_revert") => Err(PrepareError::Reverted(format!(
+            Ok(("reported_success", receipt)) => Ok(receipt),
+            Ok(("reported_revert", _)) => Err(PrepareError::Reverted(format!(
                 "transaction reverted (tx={expected})"
             ))),
             _ => {

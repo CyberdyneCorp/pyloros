@@ -1,7 +1,7 @@
 - [x] Implement PostgreSQL policy creation with nested request validation and atomic auditing.
 - [x] Implement PostgreSQL policy replacement with validation and atomic auditing.
 - [x] Implement chain policy replacement and verify the receipt, statement order, optional metadata and both original clients.
-- [ ] Implement policy creation using the selected chain provider and verify the assigned policy identifier.
+- [x] Implement policy creation using the selected chain provider and verify the assigned policy identifier.
 - [ ] Compare concurrency, rollback and existing CLI and console behavior with the reference.
 - [ ] Resolve how overlapping replacements affect the stored version and statement set.
 - [x] Verify replacement and rollback for historical rule data, including opposite-writer retry.

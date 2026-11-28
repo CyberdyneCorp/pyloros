@@ -1,4 +1,9 @@
-## ADDED Requirements
+# chain-iam-transactions Specification
+
+## Purpose
+Define how operator policy and group membership writes select the contract and nonce, verify execution, and commit their audit.
+
+## Requirements
 
 ### Requirement: Confirm chain-backed IAM policy changes
 
@@ -29,6 +34,12 @@ The service SHALL submit operator policy changes to the configured IAM provider 
 - **THEN** commit the policy deletion audit and return an empty HTTP 204 response
 - **WHEN** the policy is absent from the provider inventory
 - **THEN** return HTTP 404 without submitting a transaction or recording a deletion audit
+
+#### Scenario: Confirm the policy ID assigned during creation
+- **WHEN** a policy creation receipt identifies the new policy in the configured contract's first log and its catalog confirms the entry at the receipt block
+- **THEN** return HTTP 201 with the assigned identity and submitted statements after committing the creation audit
+- **WHEN** execution succeeds but the identifier cannot be verified
+- **THEN** return an error and omit the success audit
 
 #### Scenario: Replace an existing chain policy
 - **WHEN** an operator replaces an existing policy with ordered statements

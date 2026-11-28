@@ -33,7 +33,7 @@ async fn write(
         Ok(v) => v,
         Err(r) => return *r,
     };
-    let (mut tx, actor, email) = match administrator::operator(state, headers).await {
+    let (tx, actor, email) = match administrator::operator(state, headers).await {
         Ok(v) => v,
         Err(r) => return *r,
     };
@@ -54,28 +54,35 @@ async fn write(
     };
     let actor = (actor, email.as_deref());
     if let Some(chain) = chain {
-        let Some(id) = id else {
-            return prepare_chain_write(tx, &chain, IamMutation::CreatePolicy(&policy)).await;
-        };
-        if chain.lock_signer(&mut tx).await.is_err() {
-            return internal();
-        }
-        let stored = match chain.replace_policy(id, &policy).await {
-            Ok(stored) => stored,
-            Err(error) => return standard_preparation_error(error),
-        };
-        return finish(
-            tx,
-            id,
-            (StatusCode::OK, "iam.policy.update"),
-            actor,
-            origin,
-            stored,
-        )
-        .await
-        .unwrap_or_else(|_| internal());
+        return write_chain(tx, &chain, id, &policy, actor, origin).await;
     }
     store(tx, id, &policy, actor, origin)
+        .await
+        .unwrap_or_else(|_| internal())
+}
+
+async fn write_chain(
+    mut tx: Transaction<'_, Postgres>,
+    chain: &Chain,
+    id: Option<Uuid>,
+    policy: &Value,
+    actor: (Uuid, Option<&str>),
+    origin: SessionOrigin<'_>,
+) -> Response {
+    if chain.lock_signer(&mut tx).await.is_err() {
+        return internal();
+    }
+    let (stored, status, action) = match id {
+        Some(id) => match chain.replace_policy(id, policy).await {
+            Ok(stored) => (stored, StatusCode::OK, "iam.policy.update"),
+            Err(error) => return standard_preparation_error(error),
+        },
+        None => match chain.create_policy(policy).await {
+            Ok(stored) => (stored, StatusCode::CREATED, "iam.policy.create"),
+            Err(_) => return internal(),
+        },
+    };
+    finish(tx, stored.id, (status, action), actor, origin, stored)
         .await
         .unwrap_or_else(|_| internal())
 }
@@ -110,11 +117,6 @@ pub(super) fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError)
         }
         PrepareError::MissingIdentity(_)
             if matches!(mutation, IamMutation::Boundary { policy: None, .. }) =>
-        {
-            internal()
-        }
-        PrepareError::Unavailable | PrepareError::Rpc(_) | PrepareError::Reverted(_)
-            if matches!(mutation, IamMutation::CreatePolicy(_)) =>
         {
             internal()
         }

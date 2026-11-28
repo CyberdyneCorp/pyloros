@@ -50,7 +50,7 @@ impl Chain {
         hash: B256,
         contract: Option<Address>,
         poll: bool,
-    ) -> Result<&'static str, &'static str> {
+    ) -> Result<(&'static str, Value), &'static str> {
         loop {
             let receipt = self
                 .rpc("eth_getTransactionReceipt", json!([hash]))
@@ -59,7 +59,7 @@ impl Chain {
                     |_| "Could not read transaction receipt from the configured RPC endpoint",
                 )?;
             if !poll || !receipt.is_null() {
-                return Ok(outcome(hash, contract, &receipt));
+                return Ok((outcome(hash, contract, &receipt), receipt));
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
@@ -70,10 +70,10 @@ impl Chain {
         hash: B256,
         contract: Option<Address>,
         limit: Duration,
-    ) -> Result<&'static str, &'static str> {
+    ) -> Result<(&'static str, Value), &'static str> {
         tokio::time::timeout(limit, self.observe_receipt(hash, contract, true))
             .await
-            .unwrap_or(Ok("receipt_timeout"))
+            .unwrap_or(Ok(("receipt_timeout", Value::Null)))
     }
 }
 
@@ -92,7 +92,7 @@ pub async fn inspect_receipt_for(
 ) -> Result<ReceiptObservation, Box<dyn Error>> {
     let requested_hash = hash.parse::<B256>()?;
     let chain = inspection_chain()?;
-    let outcome = if wait {
+    let (outcome, _) = if wait {
         chain
             .wait_for_receipt(requested_hash, contract, Duration::from_secs(60))
             .await?
@@ -127,7 +127,7 @@ mod tests {
             .await
             .unwrap();
         server.abort();
-        assert_eq!(outcome, "receipt_timeout");
+        assert_eq!(outcome, ("receipt_timeout", Value::Null));
     }
 
     #[test]
