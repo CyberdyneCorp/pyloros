@@ -1,0 +1,2 @@
+- [x] Exercise export, erasure, reprovisioning and explicit regrant through the API.
+- [x] Document the observed behavior for operators.
