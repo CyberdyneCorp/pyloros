@@ -55,6 +55,10 @@ For a two-stage Node image that installs the console in `/app`, tag the reviewed
 
 Load the console routes against each upstream with the same authenticated account. Compare the final URLs, page headings, API methods, paths and response statuses, and check for uncaught browser errors. Exercise writes and their stored effects separately.
 
+For an HTTPS cutover rehearsal, keep the same browser context and public origin throughout. Set the console’s `ORIGIN` to that origin and `PUBLIC_API_URL` to its `/api/v1` URL. Terminate TLS at the ingress, preserve the public host, and route API traffic to the selected backend. Sign in using the console form. After switching to Rust, rotate the session with the browser’s refresh cookie. Switch back and rotate again. Check that both responses set a new Secure, HttpOnly refresh cookie for the same session. Retain the route, method, path and status when reporting any browser trace difference.
+
+Two local Chromium rehearsals using the reviewed Node runtime and four API processes verified both rotations. In each rehearsal all 28 console pages loaded on the reference, on Rust, and after rollback. The 119 browser API calls per phase matched across all three phases. These runs exercised local TLS ingress on macOS. Release-image startup and deployed ingress have separate checks.
+
 Set `CORS_ALLOWED_ORIGINS` to the frontend origins that may make credentialed requests, as a comma-separated list or JSON array. The default is `http://localhost:3001`. Active PostgreSQL web origins enabled for CORS also take effect on the registry refresh interval. Responses to allowed origins expose `X-CSRF-Token`.
 
 For cookie-authenticated writes, the browser echoes the CSRF cookie in the `X-CSRF-Token` request header. The cookie name defaults to `csrf` and can be set with `CSRF_COOKIE_NAME`. When TLS terminates at a proxy, include the public frontend origin in the origin registry. The OAuth token endpoint authenticates grants separately and accepts its standard form submissions.
