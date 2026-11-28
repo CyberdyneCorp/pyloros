@@ -1,0 +1,2 @@
+- [x] Batch retained activity writes.
+- [x] Compare statement counts, canonical hashes and rollback beyond the first batch.

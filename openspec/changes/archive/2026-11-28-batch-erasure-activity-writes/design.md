@@ -1,0 +1,1 @@
+Use the existing ordered, locked selection of up to 500 event IDs. Canonicalize and hash each rewritten document before adding its hash, then bind the batch to one PostgreSQL update. Keep selection and writes in the existing erasure transaction.
