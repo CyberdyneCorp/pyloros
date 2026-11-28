@@ -42,8 +42,17 @@ async fn only_valid_cli_requests_persist_callback_state() {
     let invalid = request("return_mode=cli&cli_port=8000&code_challenge=oops".into()).await;
     assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
     let challenge = "a".repeat(43);
+    for (port, status) in [
+        ("0-_2", StatusCode::BAD_REQUEST),
+        ("0__65536", StatusCode::BAD_REQUEST),
+        ("9__001", StatusCode::UNPROCESSABLE_ENTITY),
+    ] {
+        let query =
+            format!("return_mode=cli&cli_port=8000&cli_port={port}&code_challenge={challenge}");
+        assert_eq!(request(query).await.status(), status, "{port}");
+    }
     let response = request(format!(
-        "return_mode=cli&cli_port=8000&code_challenge={challenge}"
+        "return_mode=cli&cli_port=invalid&cli_port=%2B00__8000.00&code_challenge={challenge}"
     ))
     .await;
     assert_eq!(response.status(), StatusCode::OK);
