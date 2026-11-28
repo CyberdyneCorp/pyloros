@@ -115,7 +115,7 @@ To sample the deployed webhook route, use an ingress response header that identi
 just check-stripe-route "$WEBHOOK_URL" --upstream-header X-Upstream --expect billing-a --expect billing-b --attempts 4
 ```
 
-Each unsigned POST sends an empty JSON object. A sample passes when the upstream belongs to the expected pool and the handler returns HTTP 400 for an invalid signature. The report includes a request ID for correlation with ingress logs. This checks the sampled requests. Verify deployed hook bindings separately with the reviewed inventory.
+Each unsigned POST sends an empty JSON object. A sample passes when the upstream belongs to the expected pool and the handler returns HTTP 400 for an invalid signature. The report includes a request ID for correlation with ingress logs. Add `--require-all` to require a passing sample from every named replica. The command lists any missing replicas on standard error and exits 1. Choose enough attempts for the ingress balancing policy. Verify deployed hook bindings separately with the reviewed inventory.
 
 An account can have multiple Stripe customer IDs. Hosted checkout can select any ID mapped to that account, and PostgreSQL can return a different one after reorganizing the table. For cancellation or refund reconciliation, use the external reference on the entitlement. When purchases under two customer IDs grant the same product and plan, the grant retains the latest purchase reference. Purchases for distinct plans with separate subscription references can be cancelled independently.
 

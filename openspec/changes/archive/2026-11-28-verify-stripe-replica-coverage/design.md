@@ -1,0 +1,1 @@
+Collect the identifiers from successful samples and compare them with the expected set after the final request. Preserve the JSON sample list for existing tooling. Write any missing identifiers to standard error.

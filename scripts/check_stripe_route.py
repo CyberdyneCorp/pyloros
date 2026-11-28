@@ -3,6 +3,7 @@
 import argparse
 from http.client import HTTPConnection, HTTPSConnection, HTTPException
 import json
+import sys
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -65,6 +66,10 @@ def main():
         help="Accepted upstream identifier (repeat for a pool)",
     )
     parser.add_argument("--attempts", type=int, default=1)
+    parser.add_argument(
+        "--require-all", action="store_true",
+        help="Require a successful sample from every expected upstream",
+    )
     args = parser.parse_args()
     url = urlsplit(args.url)
     if url.scheme not in ("https", "http") or not url.hostname:
@@ -75,6 +80,12 @@ def main():
         sample(url, args.upstream_header, args.expect) for _ in range(args.attempts)
     ]
     print(json.dumps(samples, indent=2))
+    if args.require_all:
+        observed = {s["upstream"] for s in samples if s["matches"]}
+        missing = sorted(set(args.expect) - observed)
+        if missing:
+            print("Missing upstreams: " + ", ".join(missing), file=sys.stderr)
+            return 1
     return 0 if all(s["matches"] for s in samples) else 1
 
 
