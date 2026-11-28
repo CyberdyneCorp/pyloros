@@ -1,0 +1,2 @@
+- [x] 1. Cover old, partial and current schemas through the CLI on PostgreSQL.
+- [x] 2. Report the stored settings and verify them against an independent inventory.

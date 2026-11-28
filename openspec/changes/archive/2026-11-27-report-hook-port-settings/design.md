@@ -1,0 +1,1 @@
+Inspect the visible hooks table in the report transaction. Project available settings by name and emit null for each column absent from an older schema. Do not infer the effective sandbox permissions from these values.

@@ -22,11 +22,25 @@ pub async fn read(pool: &PgPool) -> sqlx::Result<Report> {
     } else {
         "SELECT NULL::uuid AS hook_id, NULL::text AS sha256 WHERE false"
     };
+    let columns: Vec<String> = sqlx::query_scalar(
+        "SELECT attname::text FROM pg_attribute
+         WHERE attrelid='hooks'::regclass AND attnum > 0 AND NOT attisdropped",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let settings = ["timeout_seconds", "allow_network", "receive_pii"].map(|name| {
+        if columns.iter().any(|column| column == name) {
+            format!("'{name}', h.{name}")
+        } else {
+            format!("'{name}', NULL")
+        }
+    });
+    let settings = settings.join(", ");
     let query = format!(
         "SELECT h.is_active AND b.sha256 IS NULL, jsonb_build_object(
             'id', h.id, 'name', h.name, 'event', h.event_type, 'active', h.is_active,
             'source_sha256', encode(sha256(convert_to(h.code, 'UTF8')), 'hex'),
-            'component_sha256', b.sha256)
+            'component_sha256', b.sha256, {settings})
          FROM hooks h LEFT JOIN ({selections}) b ON h.id = b.hook_id ORDER BY h.id"
     );
     let rows: Vec<(bool, Value)> = sqlx::query_as(&query).fetch_all(&mut *tx).await?;

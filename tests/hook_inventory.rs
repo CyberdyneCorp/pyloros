@@ -60,7 +60,8 @@ async fn inventory_tracks_active_hooks_across_binding_migration() -> sqlx::Resul
         before["hooks"][0],
         json!({
             "id":active, "name":"enabled", "event":"event", "active":true,
-            "source_sha256":format!("{:x}",Sha256::digest(source.as_bytes())), "component_sha256":null
+            "source_sha256":format!("{:x}",Sha256::digest(source.as_bytes())), "component_sha256":null,
+            "timeout_seconds":null,"allow_network":null,"receive_pii":null
         })
     );
     assert_eq!(before["hooks"][1]["id"], inactive.to_string());
@@ -82,6 +83,21 @@ async fn inventory_tracks_active_hooks_across_binding_migration() -> sqlx::Resul
     assert_eq!(bound["active_unbound"], 0);
     assert_eq!(bound["hooks"][0]["component_sha256"], "c".repeat(64));
     assert_eq!(bound["hooks"][1], before["hooks"][1]);
+    sqlx::raw_sql("ALTER TABLE hooks ADD COLUMN timeout_seconds integer DEFAULT 7, ADD COLUMN allow_network boolean DEFAULT false")
+        .execute(&mut *conn).await?;
+    let partial = report(&url, 0);
+    assert_eq!(partial["hooks"][0]["timeout_seconds"], 7);
+    assert_eq!(partial["hooks"][0]["allow_network"], false);
+    assert_eq!(partial["hooks"][0].get("receive_pii"), Some(&Value::Null));
+
+    sqlx::raw_sql("ALTER TABLE hooks ADD COLUMN receive_pii boolean DEFAULT false;
+        UPDATE hooks SET allow_network=true, receive_pii=true, timeout_seconds=13 WHERE NOT is_active")
+        .execute(&mut *conn).await?;
+    let current = report(&url, 0);
+    assert_eq!(current["hooks"][0]["receive_pii"], false);
+    assert_eq!(current["hooks"][1]["receive_pii"], true);
+    assert_eq!(current["hooks"][1]["allow_network"], true);
+    assert_eq!(current["hooks"][1]["timeout_seconds"], 13);
     sqlx::raw_sql(include_str!(
         "../migrations/004_invalidate_edited_hook_bindings.sql"
     ))
