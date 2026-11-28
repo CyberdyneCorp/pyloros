@@ -186,7 +186,9 @@ mod tests {
         let revoke = r#"{"product_key": "books", "plan": null, "entitlement_id": "grant", "event_type": "entitlement_revoked", "user_id": "subject"}"#;
         let role_grant = r#"{"client_id": "client", "role_key": "reader", "organization_id": "org", "event_type": "role_granted", "user_id": "subject"}"#;
         let role_revoke = r#"{"client_id": "client", "role_key": "reader", "event_type": "role_revoked", "user_id": "subject"}"#;
+        let deletion = r#"{"event_type" : "user_deleted", "user_id" : "00000000-0000-0000-0000-000000000001"}"#;
         for (event, public, private) in [
+            ("user_deleted", deletion, deletion),
             registrations,
             logins,
             ("entitlement_granted", grant, grant),
@@ -200,12 +202,16 @@ mod tests {
                 (public, true, public),
                 (public, false, public),
             ] {
-                sqlx::query("UPDATE pyloros_hook_deliveries SET event_type=$1, payload=$2::jsonb")
-                    .bind(event)
-                    .bind(stored)
-                    .execute(&mut *tx)
-                    .await
-                    .unwrap();
+                sqlx::query(
+                    r#"UPDATE pyloros_hook_deliveries SET event_type=$1, payload=$2::jsonb ||
+                        CASE WHEN $1='user_deleted' THEN '{"email":"erased@example.org"}'::jsonb
+                             ELSE '{}'::jsonb END"#,
+                )
+                .bind(event)
+                .bind(stored)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
                 sqlx::query("UPDATE hooks SET receive_pii=$1")
                     .bind(enabled)
                     .execute(&mut *tx)

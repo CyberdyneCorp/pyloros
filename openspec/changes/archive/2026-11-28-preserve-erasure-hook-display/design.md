@@ -1,0 +1,1 @@
+Build the deletion context from the queue event type and the subject identifier preserved in its payload. A JSON object constructor retains argument order. Selecting the two fields directly also enforces the erasure privacy boundary when reading existing queue rows.

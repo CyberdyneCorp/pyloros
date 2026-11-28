@@ -1,0 +1,2 @@
+- [x] Construct an ordered deletion envelope and cover both hook privacy settings on PostgreSQL.
+- [x] Compare printed output and history for deletions committed by each migration backend.

@@ -366,3 +366,10 @@ The worker SHALL deliver role grant and withdrawal fields in the same order for 
 #### Scenario: Organization assignment
 - **WHEN** the worker claims an organization role grant or withdrawal
 - **THEN** the organization ID appears between the role key and event type
+
+### Requirement: Preserve displayed erasure context order
+A deletion hook SHALL receive the event type first and the erased user ID second. These two fields form its complete context at either privacy setting.
+
+#### Scenario: Read execution history after deletion
+- **WHEN** a component prints the context of a committed account deletion
+- **THEN** its execution history shows the event type followed by the erased subject identifier

@@ -2,6 +2,8 @@ SELECT q.id, q.hook_id, q.hook_name, q.event_type,
        CASE WHEN q.event_type = 'user_deleted' THEN (q.payload->>'user_id')::uuid
             ELSE q.user_id END AS user_id,
        CASE
+           WHEN q.event_type = 'user_deleted' THEN
+               json_build_object('event_type', q.event_type, 'user_id', q.payload->'user_id')::text
            WHEN q.event_type IN ('user_registered', 'user_logged_in', 'entitlement_granted',
                                'entitlement_revoked', 'role_granted', 'role_revoked') THEN (
                -- JSONB does not retain source member order. Order only the fields
