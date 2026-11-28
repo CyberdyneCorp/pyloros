@@ -365,6 +365,83 @@ mod tests {
         }
     }
 
+    async fn create_webhook_tables(connection: &mut sqlx::PgConnection) {
+        sqlx::raw_sql("CREATE TEMP TABLE webhook_subscriptions(id uuid,is_active boolean,event_types jsonb);
+            CREATE TEMP TABLE webhook_events(id uuid,type text,body text,occurred_at timestamptz);
+            CREATE TEMP TABLE webhook_deliveries(id uuid,event_id uuid,subscription_id uuid,next_attempt_at timestamptz)")
+            .execute(connection).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn role_events_preserve_their_original_recipients() {
+        use sqlx::Connection;
+        let mut db = sqlx::PgConnection::connect(&env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        create_webhook_tables(&mut db).await;
+        let a = Uuid::from_u128(1);
+        let b = Uuid::from_u128(2);
+        sqlx::query(
+            r#"INSERT INTO webhook_subscriptions VALUES
+            ($1,true,'["role.granted"]'), ($2,true,'["role.granted"]')"#,
+        )
+        .bind(a)
+        .bind(b)
+        .execute(&mut db)
+        .await
+        .unwrap();
+
+        let now = Utc::now();
+        let data = json!({"client_id":"portal","role_key":"reader","user_id":Uuid::new_v4()});
+        for (step, kind) in [
+            "role.granted",
+            "role.granted",
+            "role.revoked",
+            "role.granted",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            match step {
+                1 => {
+                    sqlx::query(r#"UPDATE webhook_subscriptions SET event_types='["role.revoked"]' WHERE id=$1"#)
+                    .bind(b).execute(&mut db).await.unwrap();
+                }
+                2 | 3 => {
+                    sqlx::query("UPDATE webhook_subscriptions SET is_active=false WHERE id=$1")
+                        .bind(if step == 2 { a } else { b })
+                        .execute(&mut db)
+                        .await
+                        .unwrap();
+                }
+                _ => {}
+            }
+            let mut tx = db.begin().await.unwrap();
+            enqueue_event(
+                &mut tx,
+                kind,
+                data.clone(),
+                now + chrono::Duration::seconds(step as i64),
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+        }
+        let history = sqlx::query_as::<_,(String,Vec<Uuid>)>(
+            "SELECT e.type, ARRAY(SELECT subscription_id FROM webhook_deliveries WHERE event_id=e.id ORDER BY subscription_id)
+             FROM webhook_events e ORDER BY e.occurred_at")
+            .fetch_all(&mut db).await.unwrap();
+        assert_eq!(
+            history,
+            vec![
+                ("role.granted".into(), vec![a, b]),
+                ("role.granted".into(), vec![a]),
+                ("role.revoked".into(), vec![b]),
+            ]
+        );
+    }
+
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]
     async fn only_matching_subscriptions_share_one_registration_event() {
@@ -374,10 +451,7 @@ mod tests {
             .await
             .unwrap();
         let mut tx = pool.begin().await.unwrap();
-        sqlx::raw_sql("CREATE TEMP TABLE webhook_subscriptions(id uuid,is_active boolean,event_types jsonb);
-            CREATE TEMP TABLE webhook_events(id uuid,type text,body text,occurred_at timestamptz);
-            CREATE TEMP TABLE webhook_deliveries(id uuid,event_id uuid,subscription_id uuid,next_attempt_at timestamptz)")
-            .execute(&mut *tx).await.unwrap();
+        create_webhook_tables(&mut tx).await;
         let user = Uuid::new_v4();
         let now = Utc::now();
         enqueue_webhooks(&mut tx, user, now).await.unwrap();
