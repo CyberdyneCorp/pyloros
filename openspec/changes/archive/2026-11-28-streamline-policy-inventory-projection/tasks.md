@@ -1,0 +1,3 @@
+- [x] Measure both PostgreSQL projections with the same large policy directory.
+- [x] Update the shared query and compare directory and export documents across both backends.
+- [x] Validate import-refresh tests and the OpenSpec collection.

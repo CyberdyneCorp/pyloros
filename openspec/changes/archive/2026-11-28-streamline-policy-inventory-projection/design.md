@@ -1,0 +1,1 @@
+Build the outer statement array as JSON. Keep the original JSONB values for actions, resources and conditions until PostgreSQL serializes them into the result. The existing Rust readers continue to apply the distinct directory, export and import rules. Keep the aggregate ordering clause and the empty-array fallback.

@@ -202,9 +202,9 @@ async fn records(
 ) -> Result<Vec<(Value, DateTime<Utc>, String)>, sqlx::Error> {
     let mut query=sqlx::QueryBuilder::<Postgres>::new("SELECT jsonb_build_object('id',p.id,'name',p.name,'description',p.description,'version',p.version,
             'is_active',p.is_active,'chain_policy_id',p.chain_policy_id),p.created_at,
-            COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'sid',s.sid,'effect',s.effect,'actions',s.actions,
+            COALESCE((SELECT json_agg(json_build_object('id',s.id,'sid',s.sid,'effect',s.effect,'actions',s.actions,
             'resources',s.resources,'conditions',s.conditions) ORDER BY s.sort_order)
-            FROM iam_policy_statements s WHERE s.policy_id=p.id),'[]'::jsonb)::text
+            FROM iam_policy_statements s WHERE s.policy_id=p.id),'[]'::json)::text
             FROM iam_policies p");
     if let Some(ids) = ids {
         query.push(" JOIN unnest(").push_bind(ids).push("::uuid[]) WITH ORDINALITY requested(id,position) ON requested.id=p.id ORDER BY requested.position");

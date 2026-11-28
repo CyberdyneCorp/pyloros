@@ -180,3 +180,10 @@ The read-only inventory SHALL optionally count chain-linked policies with repeat
 #### Scenario: Different identifiers or content
 - **WHEN** two rules differ in SID, effect, actions, resources or conditions, or belong to different policies
 - **THEN** they do not form a repeated group together
+
+### Requirement: Preserve policy directory shape across statement counts
+The PostgreSQL policy directory SHALL include each policy in name order, including policies with no statements. Within each policy it SHALL present statements in stored sort order.
+
+#### Scenario: Empty and populated policies share the directory
+- **WHEN** an operator lists a directory containing empty and multi-statement policies
+- **THEN** the empty policies contain empty statement arrays and the populated policies retain their statement identifiers, effects, actions, resources and conditions
