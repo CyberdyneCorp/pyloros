@@ -2,6 +2,7 @@ use super::input::{Rejection, bad};
 use super::internal;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 
+const MAX_FIELD_CHARS: usize = 131_072;
 const COLUMNS_ERROR: &str = "CSV must have \"email\" and \"password\" header columns";
 fn io_error(error: io::Error) -> Rejection {
     if error.kind() == io::ErrorKind::InvalidData {
@@ -84,7 +85,7 @@ fn next(
         .map_err(|_| Box::new(internal()))?;
     let pos = reader.position().byte();
     if found
-        && (record.iter().any(|s| s.chars().count() > 131072)
+        && (record.iter().any(|s| s.chars().count() > MAX_FIELD_CHARS)
             || (bare_cr && invalid_terminator(reader.get_mut(), pos).map_err(io_error)?))
     {
         return Err(Box::new(internal()));
@@ -139,6 +140,31 @@ mod tests {
             parse(Cursor::new(invalid)).unwrap_err().status(),
             axum::http::StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    #[test]
+    fn field_limit_counts_decoded_characters_in_headers_and_data() {
+        for length in [131_072, 131_073] {
+            let header = "🌿".repeat(length);
+            let quotes = "\"\"".repeat(length);
+            for file in [
+                format!("email,password,{header}\na@example.org,example\n"),
+                format!("email,password,notes\na@example.org,example,ok\n,,\"{quotes}\"\n"),
+            ] {
+                let parsed = parse(Cursor::new(file));
+                if length == 131_072 {
+                    assert_eq!(
+                        parsed.unwrap()[0],
+                        ("a@example.org".into(), "example".into())
+                    );
+                } else {
+                    assert_eq!(
+                        parsed.unwrap_err().status(),
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                    );
+                }
+            }
+        }
     }
 
     #[test]

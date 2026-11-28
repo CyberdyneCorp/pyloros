@@ -1,0 +1,1 @@
+Test the field after CSV quoting and UTF-8 decoding. A doubled quote represents one character. Newline characters inside quoted fields contribute to the size. Exercise header and data cells separately and verify persistence through the HTTP endpoint on independently migrated databases.

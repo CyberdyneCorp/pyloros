@@ -1,0 +1,2 @@
+- [x] Compare header and data boundaries through both HTTP implementations.
+- [x] Add repeatable Rust parser checks and validate the updated spec.

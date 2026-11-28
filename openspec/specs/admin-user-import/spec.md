@@ -54,3 +54,14 @@ The API SHALL accept administrative user imports with email and password columns
 - **WHEN** an active registration hook lacks a binding for its current source
 - **THEN** return HTTP 503 and roll back the batch, including new accounts, account events, the operator audit and queued hook deliveries.
 - **AND** after the reviewed replacement is bound, allow the same file to be imported. Record the original CSV row for each created account and dispatch the registration hook once for that account.
+
+### Requirement: Enforce the decoded CSV field limit
+The importer SHALL accept header and data fields up to 131,072 Unicode scalar values under the usual import rules. It SHALL return HTTP 500 for an otherwise valid file with a larger field, including an unused column. Such a rejection SHALL create no accounts or batch audit entry.
+
+#### Scenario: Quoted or multibyte content reaches the limit
+- **WHEN** an unused field contains 131,072 characters after CSV quote decoding
+- **THEN** the importer processes the file, including when characters occupy multiple bytes in UTF-8
+
+#### Scenario: An oversized field follows a valid account row
+- **WHEN** a later CSV record contains a field of 131,073 characters
+- **THEN** the importer rejects the whole upload before persisting the earlier account
