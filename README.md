@@ -47,6 +47,8 @@ For a database failover rehearsal, give two service clients access to identicall
 
 Run the existing frontend build at one origin and switch its API upstream through deployment routing. Record the frontend source revision and build digest once. During cutover and rollback, fetch the browser assets through the deployment URL and compare their bytes to that build. For assets with an ETag, send the previous ETag in `If-None-Match` and verify that the server returns 304. This checks that browsers can reuse the files they cached before the switch.
 
+Record the original digest with `just check-frontend-build PATH_TO_BUILD`. Before starting the frontend from a relocated package, run `just check-frontend-build PATH_TO_BUILD EXPECTED_SHA256` against the digest recorded for the reviewed build. The check covers the server bundle and client assets. It hashes each relative path, a zero byte and the binary SHA-256 of the corresponding file in sorted path order. Record the lockfile digest, Node version and deployment platform separately for runtime dependencies.
+
 Load the console routes against each upstream with the same authenticated account. Compare the final URLs, page headings, API methods, paths and response statuses, and check for uncaught browser errors. Exercise writes and their stored effects separately.
 
 Set `CORS_ALLOWED_ORIGINS` to the frontend origins that may make credentialed requests, as a comma-separated list or JSON array. The default is `http://localhost:3001`. Active PostgreSQL web origins enabled for CORS also take effect on the registry refresh interval. Responses to allowed origins expose `X-CSRF-Token`.

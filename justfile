@@ -84,6 +84,11 @@ test:
 test-db:
     cargo test --locked --tests -- --ignored
 
+# Print the frontend build digest or compare it with the reviewed digest.
+[positional-arguments]
+check-frontend-build directory *expected:
+    python3 scripts/check_frontend_build.py "$@"
+
 # Validate the published ReBAC contract and its JSON examples.
 check-rebac-contract:
     uv run --script scripts/check_rebac_contract.py
