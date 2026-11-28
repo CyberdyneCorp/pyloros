@@ -1,0 +1,1 @@
+Group stored statements by local policy ID and sort order, restricting the scan to policies with a chain identifier. Aggregate groups larger than one in one SQL statement. The query needs only the policy identifiers and statement positions. Equal positions can occur with different rule content, so this report cannot establish the cause or identify rows for deletion.

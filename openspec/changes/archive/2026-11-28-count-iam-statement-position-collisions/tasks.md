@@ -1,0 +1,2 @@
+- [x] Provide the read-only inventory and document its column grants and interpretation.
+- [x] Verify scope, aggregation and transaction visibility on migrated PostgreSQL.
