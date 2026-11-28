@@ -64,8 +64,7 @@ pub(super) async fn apply(
         now,
     )
     .await?;
-    tx.commit().await?;
-    Ok(StatusCode::NO_CONTENT.into_response())
+    commit_response(tx, StatusCode::NO_CONTENT).await
 }
 
 #[cfg(test)]
@@ -150,5 +149,50 @@ mod tests {
                 .await
                 .unwrap()
         );
+
+        sqlx::raw_sql(
+            "DROP TABLE pg_temp.auth_events;
+            CREATE TEMP TABLE auth_events(activity text UNIQUE DEFERRABLE INITIALLY DEFERRED);
+            INSERT INTO auth_events VALUES ('passkey_revoke');",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let rejected = apply(
+            pool.begin().await.unwrap(),
+            &identity,
+            "app",
+            key,
+            origin,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(rejected.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let (active, events): (bool, i64) = sqlx::query_as(
+            "SELECT revoked_at IS NULL, (SELECT count(*) FROM auth_events) FROM passkeys WHERE id=$1"
+        ).bind(key).fetch_one(&pool).await.unwrap();
+        assert!(active);
+        assert_eq!(events, 1);
+        sqlx::query("DELETE FROM auth_events")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let retry = apply(
+            pool.begin().await.unwrap(),
+            &identity,
+            "app",
+            key,
+            origin,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(retry.status(), StatusCode::NO_CONTENT);
+        let (revoked, events): (bool, i64) = sqlx::query_as(
+            "SELECT revoked_at IS NOT NULL, (SELECT count(*) FROM auth_events WHERE activity='passkey_revoke') FROM passkeys WHERE id=$1"
+        ).bind(key).fetch_one(&pool).await.unwrap();
+        assert!(revoked);
+        assert_eq!(events, 1);
     }
 }

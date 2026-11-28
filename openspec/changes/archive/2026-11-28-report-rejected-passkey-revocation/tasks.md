@@ -1,0 +1,2 @@
+- [x] Return HTTP 500 on explicit commit rejection.
+- [x] Verify credential visibility, audit rollback and retry through each writer.

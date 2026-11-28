@@ -94,3 +94,10 @@ The service SHALL return HTTP 500 when PostgreSQL explicitly rejects a login, re
 #### Scenario: Issue options after recovery
 - **WHEN** the client retries after the database accepts writes
 - **THEN** return the challenge and binding for the newly committed ceremony
+
+### Requirement: Report explicit rejection of a passkey revocation
+The service SHALL return HTTP 500 when PostgreSQL explicitly rejects a passkey revocation at commit.
+
+#### Scenario: Retry revocation after rollback
+- **WHEN** a revocation fails at commit and the caller later retries after the failure clears
+- **THEN** the credential stays active until the retry commits, and the credential activity history records one successful revocation
