@@ -44,7 +44,7 @@ pub(crate) fn canonical_paths(router: Router) -> Router {
             let path = req.uri().path();
             let canonical = path.trim_end_matches('/');
             if canonical.is_empty() || canonical == path {
-                return StatusCode::NOT_FOUND.into_response();
+                return crate::login_http::problem(StatusCode::NOT_FOUND, "Not Found");
             }
             let probe = Request::builder()
                 .uri(canonical)
@@ -52,7 +52,7 @@ pub(crate) fn canonical_paths(router: Router) -> Router {
                 .expect("path from parsed URI");
             let matched = paths.oneshot(probe).await.expect("infallible router");
             if matched.status() != StatusCode::NO_CONTENT {
-                return StatusCode::NOT_FOUND.into_response();
+                return crate::login_http::problem(StatusCode::NOT_FOUND, "Not Found");
             }
             Redirect::temporary(&canonical_location(&req, canonical, &peers)).into_response()
         }
@@ -151,6 +151,37 @@ mod tests {
             app.oneshot(unknown).await.unwrap().status(),
             StatusCode::NOT_FOUND
         );
+    }
+
+    #[tokio::test]
+    async fn unknown_paths_return_the_not_found_document() {
+        use axum::{
+            body::{Body, to_bytes},
+            http::StatusCode,
+        };
+        use tower::ServiceExt;
+        let app = canonical_paths(Router::new().route("/known", get(|| async {})));
+        for path in ["/", "/unknown", "/unknown/"] {
+            for method in ["GET", "HEAD"] {
+                let request = Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .body(Body::empty())
+                    .unwrap();
+                let response = app.clone().oneshot(request).await.unwrap();
+                assert_eq!(response.status(), StatusCode::NOT_FOUND);
+                assert_eq!(response.headers()["content-type"], "application/json");
+                let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
+                if method == "HEAD" {
+                    assert!(bytes.is_empty());
+                } else {
+                    assert_eq!(
+                        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+                        serde_json::json!({"type":"about:blank","status":404,"title":"Not Found","detail":"Not Found"})
+                    );
+                }
+            }
+        }
     }
 
     #[test]

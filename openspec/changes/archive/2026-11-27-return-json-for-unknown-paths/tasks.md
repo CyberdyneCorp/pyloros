@@ -1,0 +1,2 @@
+- [x] 1. Cover JSON errors for unknown paths with and without a trailing slash.
+- [x] 2. Compare response status, content type and body over HTTP against the reference.
