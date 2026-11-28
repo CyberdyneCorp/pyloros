@@ -58,7 +58,7 @@ paths:
       security: [{service: ['rebac:manage']}]
       requestBody: {$ref: '#/components/requestBodies/Assignment'}
       responses:
-        '204': {description: Assignment is absent.}
+        '204': {description: The exact assignment is absent. Other granting paths remain effective.}
         '400': {$ref: '#/components/responses/Malformed'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -94,7 +94,12 @@ paths:
                 properties: {allowed: {type: boolean}}
               examples:
                 inherited: {value: {allowed: true}}
-                afterRevocation: {value: {allowed: false}}
+                afterPartialRevocation:
+                  summary: A second parent still grants the permission
+                  value: {allowed: true}
+                afterRevocation:
+                  summary: The last granting path was removed
+                  value: {allowed: false}
         '409': {$ref: '#/components/responses/MissingModel'}
         '400': {$ref: '#/components/responses/Malformed'}
         '401': {$ref: '#/components/responses/Unauthorized'}
