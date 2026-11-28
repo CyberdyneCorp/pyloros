@@ -520,6 +520,14 @@ HTTP 409 means the source changed. Read the definition again and verify the
 component against the new source before retrying. A successful change records
 the supplied source digest in its audit entry.
 
+A source edit can commit just after a guarded selection returns HTTP 200.
+The edit clears that selection. If the edit commits first, selection using
+the earlier source digest returns HTTP 409. In either order, run
+`just hook-inventory user_registered` after the edit. While the active hook
+is unbound, a Rust bulk import with registration dispatch enabled returns
+HTTP 503 and rolls back. After reviewing the new source and binding its
+component, retry the same CSV file.
+
 Several independently reviewed hooks may use the same component. Upload the
 artifact once and bind each hook ID using that definition’s own source digest.
 A local lifecycle rehearsal used one silent component for two distinct sources.
