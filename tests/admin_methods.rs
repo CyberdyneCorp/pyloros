@@ -262,3 +262,25 @@ async fn account_creation_authenticates_before_validating_large_numeric_fields()
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(response.headers().contains_key(header::WWW_AUTHENTICATE));
 }
+
+#[tokio::test]
+async fn padded_role_mappings_reach_authorization_on_both_routes() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    for path in [
+        "/api/v1/admin/clients/example/roles/reader/permissions",
+        "/api/v1/clients/me/roles/reader/permissions",
+    ] {
+        let mut json = br#"{"permissions":[]}"#.to_vec();
+        json.resize(2 * 1024 * 1024 + 1, b' ');
+        let request = Request::put(path)
+            .header(header::CONTENT_TYPE, "application/json")
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .body(Body::from(json))
+            .unwrap();
+        let response = routes.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
+}

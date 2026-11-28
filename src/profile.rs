@@ -549,7 +549,8 @@ fn build_routes(
         )
         .route(
             "/api/v1/clients/me/roles/{role_key}/permissions",
-            any(admin_client_roles::read).put(admin_client_roles::put),
+            any(admin_client_roles::read)
+                .put(admin_client_roles::put.layer(axum::extract::DefaultBodyLimit::disable())),
         )
         .route(
             "/api/v1/admin/clients/{client_id}/roles",
@@ -561,7 +562,8 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/clients/{client_id}/roles/{role_key}/permissions",
-            any(admin_client_roles::read).put(admin_client_roles::put),
+            any(admin_client_roles::read)
+                .put(admin_client_roles::put.layer(axum::extract::DefaultBodyLimit::disable())),
         )
         .route("/api/v1/admin/blockchain/health", any(blockchain::health))
         .route(

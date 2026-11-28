@@ -1,0 +1,1 @@
+Override the default byte extractor size limit for the two PUT handlers only. Reuse the existing Unicode decoder, catalog authorization, permission count validation and atomic replacement transaction.
