@@ -113,6 +113,17 @@ pub(crate) struct OperatorGroup {
 }
 
 #[derive(serde::Serialize)]
+pub(crate) struct OperatorRole {
+    pub(crate) id: Uuid,
+    name: String,
+    description: Option<String>,
+    chain_role_id: Box<serde_json::value::RawValue>,
+    max_session_duration_s: Box<serde_json::value::RawValue>,
+    is_active: bool,
+    created_at: Option<String>,
+}
+
+#[derive(serde::Serialize)]
 pub(crate) struct OperatorPolicy {
     pub(crate) id: Uuid,
     name: String,

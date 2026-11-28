@@ -1,3 +1,4 @@
 - [x] Implement and compare PostgreSQL role creation and audit rollback.
 - [x] Prepare role creation calldata for the configured provider.
-- [ ] Compare confirmed chain creation and auditing.
+- [x] Compare confirmed chain creation and auditing.
+- [ ] Verify the deployed policy contract’s role identifier encoding against its ABI or a sanitized role-creation receipt.

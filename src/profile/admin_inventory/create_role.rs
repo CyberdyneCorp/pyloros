@@ -1,6 +1,6 @@
 //! Create an IAM role and record its operator audit atomically.
 use super::*;
-use crate::{grant_response::SessionOrigin, login_http::problem, request_json::iam_document};
+use crate::{grant_response::SessionOrigin, request_json::iam_document};
 
 pub(in crate::profile) async fn create(
     State(state): State<Arc<Profile>>,
@@ -12,7 +12,7 @@ pub(in crate::profile) async fn create(
         Ok(raw) => raw,
         Err(error) => return *error,
     };
-    let (tx, actor, email) = match administrator::operator(&state, &headers).await {
+    let (mut tx, actor, email) = match administrator::operator(&state, &headers).await {
         Ok(operator) => operator,
         Err(error) => return *error,
     };
@@ -31,38 +31,28 @@ pub(in crate::profile) async fn create(
     let seconds = role["max_session_duration_s"]
         .as_str()
         .expect("validated duration");
-    if let Some(chain) = chain {
-        if tx.commit().await.is_err() {
-            return internal();
-        }
-        return match chain
-            .prepare_role_creation(name, description, seconds)
-            .await
-        {
-            Ok(_) => problem(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Blockchain transaction submission unavailable",
-            ),
-            Err(_) => internal(),
-        };
-    }
-    let Ok(duration) = seconds.parse::<i32>() else {
-        return internal();
-    };
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
-    insert(
-        tx,
-        name,
-        description,
-        duration,
-        (actor, email.as_deref()),
-        origin,
-    )
-    .await
-    .unwrap_or_else(|_| internal())
+    let actor = (actor, email.as_deref());
+    if let Some(chain) = chain {
+        if chain.lock_signer(&mut tx).await.is_err() {
+            return internal();
+        }
+        let Ok(role) = chain.create_role(name, description, seconds).await else {
+            return internal();
+        };
+        return finish(tx, role.id, actor, origin, role)
+            .await
+            .unwrap_or_else(|_| internal());
+    }
+    let Ok(duration) = seconds.parse::<i32>() else {
+        return internal();
+    };
+    insert(tx, name, description, duration, actor, origin)
+        .await
+        .unwrap_or_else(|_| internal())
 }
 
 async fn insert(
@@ -83,6 +73,18 @@ async fn insert(
     .bind(duration)
     .execute(&mut *tx)
     .await?;
+    let role = json!({"id":id,"name":name,"description":description,"is_active":true,"chain_role_id":null,
+            "max_session_duration_s":duration,"created_at":null});
+    finish(tx, id, actor, origin, role).await
+}
+
+async fn finish(
+    mut tx: Transaction<'_, Postgres>,
+    id: Uuid,
+    actor: (Uuid, Option<&str>),
+    origin: SessionOrigin<'_>,
+    role: impl serde::Serialize,
+) -> Result<Response, sqlx::Error> {
     crate::admin_audit::append(
         &mut tx,
         "iam.role.create",
@@ -93,15 +95,7 @@ async fn insert(
     )
     .await?;
     tx.commit().await?;
-    // Creation returns the new role before the inventory loads its database timestamp.
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({
-            "id":id,"name":name,"description":description,"is_active":true,"chain_role_id":null,
-            "max_session_duration_s":duration,"created_at":null
-        })),
-    )
-        .into_response())
+    Ok((StatusCode::CREATED, Json(role)).into_response())
 }
 
 #[cfg(test)]

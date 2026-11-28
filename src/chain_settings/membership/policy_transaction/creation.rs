@@ -2,7 +2,7 @@
 use super::*;
 use alloy_primitives::{Address, B256};
 
-fn creation_ids(receipt: &Value, contract: Address) -> Option<(Vec<TokenId>, B256)> {
+fn creation_data(receipt: &Value, contract: Address) -> Option<(Vec<u8>, B256)> {
     let block: B256 = receipt["blockHash"].as_str()?.parse().ok()?;
     let tx: B256 = receipt["transactionHash"].as_str()?.parse().ok()?;
     let log = receipt["logs"].as_array()?.first()?;
@@ -20,26 +20,70 @@ fn creation_ids(receipt: &Value, contract: Address) -> Option<(Vec<TokenId>, B25
         return None;
     }
     let bytes = HEXLOWER_PERMISSIVE.decode(word.as_bytes()).ok()?;
+    Some((bytes, block))
+}
+
+fn text_id(bytes: &[u8]) -> Option<TokenId> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let digits = text
+        .strip_prefix("0x")
+        .or_else(|| text.strip_prefix("0X"))
+        .unwrap_or(text);
+    TokenId::from_str_radix(digits, 16)
+        .ok()
+        .filter(|_| !digits.is_empty() && digits.bytes().all(|c| c.is_ascii_hexdigit()))
+}
+
+fn creation_ids(receipt: &Value, contract: Address) -> Option<(Vec<TokenId>, B256)> {
+    let (bytes, block) = creation_data(receipt, contract)?;
     let mut ids = Vec::new();
     if bytes.len() == 32 {
         ids.push(TokenId::from_be_slice(&bytes));
     }
-    if let Ok(text) = std::str::from_utf8(&bytes) {
-        let digits = text
-            .strip_prefix("0x")
-            .or_else(|| text.strip_prefix("0X"))
-            .unwrap_or(text);
-        if !digits.is_empty()
-            && digits.bytes().all(|digit| digit.is_ascii_hexdigit())
-            && let Ok(id) = TokenId::from_str_radix(digits, 16)
-        {
-            ids.push(id);
-        }
+    if let Some(id) = text_id(&bytes) {
+        ids.push(id);
     }
     (!ids.is_empty()).then_some((ids, block))
 }
 
 impl Chain {
+    pub(crate) async fn create_role(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        seconds: &str,
+    ) -> Result<OperatorRole, PrepareError> {
+        let duration = TokenId::from_str_radix(seconds, 10).map_err(|_| PrepareError::Invalid)?;
+        let call = createRoleCall {
+            name: name.into(),
+            description: description.unwrap_or_default().into(),
+            duration,
+        };
+        let envelope = self
+            .prepare_envelope(self.policy.as_deref(), call.abi_encode())
+            .await?;
+        let contract = envelope.to;
+        let receipt = self.submit_envelope(envelope).await?;
+        let id = creation_data(&receipt, contract)
+            .and_then(|(data, _)| text_id(&data))
+            .ok_or_else(|| {
+                eprintln!(
+                    "Could not verify role ID for confirmed transaction {} on {contract}",
+                    receipt["transactionHash"]
+                );
+                PrepareError::Invalid
+            })?;
+        Ok(OperatorRole {
+            id: chain_uuid("role", id),
+            name: name.into(),
+            description: description.map(str::to_owned),
+            chain_role_id: chain_number(id),
+            max_session_duration_s: chain_number(duration),
+            is_active: true,
+            created_at: None,
+        })
+    }
+
     pub(crate) async fn create_policy(&self, body: &Value) -> Result<OperatorPolicy, PrepareError> {
         let tx = self
             .mutation_envelope(&IamMutation::CreatePolicy(body))
@@ -144,6 +188,14 @@ impl Chain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn textual_role_ids_preserve_all_digits_and_reject_binary_words() {
+        assert_eq!(text_id(b"0x42"), Some(TokenId::from(66)));
+        assert_eq!(text_id(&[b'f'; 64]), Some(TokenId::MAX));
+        assert_eq!(text_id(&[0xff; 32]), None);
+        assert_eq!(text_id(b"0x"), None);
+    }
 
     #[test]
     fn reads_a_full_width_id_only_from_the_recorded_transaction_and_contract() {

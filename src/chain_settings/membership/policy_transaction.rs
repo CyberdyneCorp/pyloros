@@ -518,21 +518,6 @@ impl Chain {
             .await
     }
 
-    pub(crate) async fn prepare_role_creation(
-        &self,
-        name: &str,
-        description: Option<&str>,
-        seconds: &str,
-    ) -> Result<Vec<u8>, PrepareError> {
-        let call = createRoleCall {
-            name: name.into(),
-            description: description.unwrap_or_default().into(),
-            duration: TokenId::from_str_radix(seconds, 10).map_err(|_| PrepareError::Invalid)?,
-        };
-        self.prepare_contract(self.policy.as_deref(), call.abi_encode())
-            .await
-    }
-
     async fn require_role_group(&self, group_id: TokenId) -> Result<(), PrepareError> {
         let current = self.snapshot().await.map_err(PrepareError::Catalog)?;
         if !current.groups.iter().any(|group| group.id == group_id) {
