@@ -1,0 +1,1 @@
+Use a standalone OpenAPI 3.1 document with relative API paths and the service client-credentials flow. Share the assignment request across grant and revoke. Use a single collection graph across examples so a client can exercise direct and inherited access and observe revocation.

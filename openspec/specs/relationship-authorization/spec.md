@@ -105,3 +105,11 @@ The service SHALL group bounded outgoing object-edge reads for broad permission 
 #### Scenario: A populated branch exceeds the batch limit
 - **WHEN** the batched read returns a partial list of an object's outgoing relationships
 - **THEN** evaluation uses the full per-relation lookup within its decision budget, including eligible edges beyond the partial list
+
+### Requirement: Machine-readable relationship API contract
+The project SHALL publish an OpenAPI description of the model, assignment and permission-check operations, their service scopes and their response semantics.
+
+#### Scenario: Client follows a grant and revoke example
+- **WHEN** a service installs the example model, grants a user membership and links a child collection to the parent
+- **THEN** the example permission check allows the user on the child
+- **AND** withdrawing the membership makes the next check deny access

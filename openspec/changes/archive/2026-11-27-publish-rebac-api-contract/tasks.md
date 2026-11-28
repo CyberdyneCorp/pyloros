@@ -1,0 +1,2 @@
+- [x] Publish the contract and link it from the client documentation.
+- [x] Validate the document and exercise its examples against PostgreSQL through HTTP.
