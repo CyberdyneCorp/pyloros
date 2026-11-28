@@ -6,14 +6,26 @@ use crate::{
     login_http::problem,
 };
 use axum::extract::Path;
+use serde_json::value::RawValue;
 
 #[derive(Serialize)]
 struct Outcome {
     success: bool,
-    token_id: Option<usize>,
+    token_id: Option<Box<RawValue>>,
     tx_hash: Option<String>,
     error: Option<String>,
     nft_status: &'static str,
+}
+
+fn decimal_id(id: impl std::fmt::Display) -> Box<RawValue> {
+    RawValue::from_string(id.to_string()).expect("decimal token identifier")
+}
+
+#[derive(Serialize)]
+struct MintAudit<'a> {
+    error: Option<&'a str>,
+    success: bool,
+    token_id: Option<&'a RawValue>,
 }
 
 impl Outcome {
@@ -36,7 +48,7 @@ async fn mint(provider: TokenProvider, wallet: &str, key: &str) -> Result<Outcom
             let id = tokens.len();
             Ok(Outcome {
                 success: true,
-                token_id: Some(id),
+                token_id: Some(decimal_id(id)),
                 tx_hash: Some(format!("0xnull{id:064x}")),
                 nft_status: "minted",
                 error: None,
@@ -44,7 +56,14 @@ async fn mint(provider: TokenProvider, wallet: &str, key: &str) -> Result<Outcom
         }
         TokenProvider::Remote(chain, writes) => {
             let _write = writes.lock().await;
-            match chain.prepare_mint_retry(wallet, key).await {
+            match chain.mint_retry(wallet, key).await {
+                Ok((hash, id)) => Ok(Outcome {
+                    success: true,
+                    token_id: id.map(decimal_id),
+                    tx_hash: Some(hash),
+                    error: None,
+                    nft_status: "minted",
+                }),
                 Err(
                     PrepareError::Argument(detail)
                     | PrepareError::Rpc(detail)
@@ -104,6 +123,9 @@ async fn store(
     let normalized = admin_organizations::normalized_storage(&metadata)?;
     let outcome = match (wallet.as_deref(), key.as_deref()) {
         (Some(wallet), Some(key)) if !wallet.is_empty() && !key.is_empty() => {
+            if let TokenProvider::Remote(chain, _) = &provider {
+                chain.lock_signer(&mut tx).await?;
+            }
             let outcome = match mint(provider, wallet, key).await {
                 Ok(result) => result,
                 Err(response) => return Ok(*response),
@@ -119,12 +141,16 @@ async fn store(
         }
         _ => Outcome::failed("user has no wallet/keypair".into()),
     };
-    crate::admin_audit::append(
+    crate::admin_audit::append_sorted_record(
         &mut tx,
         "blockchain.nft_retry",
-        Some(actor),
-        ("user", &id.to_string()),
-        json!({"success":outcome.success,"token_id":outcome.token_id,"error":outcome.error}),
+        crate::admin_audit::Actor::User(Some(actor)),
+        Some(("user", Some(&id.to_string()))),
+        &MintAudit {
+            error: outcome.error.as_deref(),
+            success: outcome.success,
+            token_id: outcome.token_id.as_deref(),
+        },
         origin,
     )
     .await?;
@@ -139,18 +165,19 @@ async fn save_metadata(
     outcome: &Outcome,
 ) -> Result<(), sqlx::Error> {
     // A completed retry applies its outcome to the snapshot from before the provider call.
-    let patch = if outcome.success {
-        json!({"nft_status":outcome.nft_status,"nft_token_id":outcome.token_id,"nft_tx_hash":outcome.tx_hash})
-    } else {
-        json!({"nft_status":outcome.nft_status,"nft_error":outcome.error})
-    };
     sqlx::query(
-        "UPDATE users SET extra_metadata=(($2::text::jsonb - 'nft_error') || $3), updated_at=now()
-        WHERE id=$1 AND extra_metadata IS DISTINCT FROM (($2::text::jsonb - 'nft_error') || $3)",
+        "WITH patch AS (SELECT ($2::text::jsonb - 'nft_error') || CASE WHEN $3 THEN
+              jsonb_build_object('nft_status','minted','nft_token_id',$4::text::jsonb,'nft_tx_hash',$5::text)
+            ELSE jsonb_build_object('nft_status','failed','nft_error',$6::text) END AS value)
+         UPDATE users SET extra_metadata=patch.value, updated_at=now() FROM patch
+         WHERE id=$1 AND extra_metadata IS DISTINCT FROM patch.value",
     )
     .bind(id)
     .bind(metadata)
-    .bind(patch)
+    .bind(outcome.success)
+    .bind(outcome.token_id.as_deref().map(RawValue::get))
+    .bind(&outcome.tx_hash)
+    .bind(&outcome.error)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -167,7 +194,11 @@ mod tests {
         let earlier = settings.token_provider().await.unwrap();
         let mint_next = || async {
             let provider = settings.token_provider().await.unwrap();
-            mint(provider, "wallet", "key").await.unwrap().token_id
+            mint(provider, "wallet", "key")
+                .await
+                .unwrap()
+                .token_id
+                .map(|id| id.get().parse::<usize>().unwrap())
         };
         assert_eq!(mint_next().await, Some(1));
         assert_eq!(mint_next().await, Some(2));

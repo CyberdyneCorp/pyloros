@@ -2,7 +2,7 @@
 use super::*;
 use alloy_primitives::{Address, B256};
 
-fn creation_data(receipt: &Value, contract: Address) -> Option<(Vec<u8>, B256)> {
+fn creation_log(receipt: &Value, contract: Address) -> Option<(&Value, B256)> {
     let block: B256 = receipt["blockHash"].as_str()?.parse().ok()?;
     let tx: B256 = receipt["transactionHash"].as_str()?.parse().ok()?;
     let log = receipt["logs"].as_array()?.first()?;
@@ -15,6 +15,11 @@ fn creation_data(receipt: &Value, contract: Address) -> Option<(Vec<u8>, B256)> 
     {
         return None;
     }
+    Some((log, block))
+}
+
+fn creation_data(receipt: &Value, contract: Address) -> Option<(Vec<u8>, B256)> {
+    let (log, block) = creation_log(receipt, contract)?;
     let word = log["data"].as_str()?.strip_prefix("0x")?;
     if word.len() > 132 {
         return None;
@@ -44,6 +49,61 @@ fn creation_ids(receipt: &Value, contract: Address) -> Option<(Vec<TokenId>, B25
         ids.push(id);
     }
     (!ids.is_empty()).then_some((ids, block))
+}
+
+pub(super) fn mint_id(receipt: &Value, contract: Address) -> Result<Option<TokenId>, PrepareError> {
+    let logs = receipt["logs"].as_array().ok_or(PrepareError::Invalid)?;
+    if logs.is_empty() {
+        return Ok(None);
+    }
+    let (log, _) = creation_log(receipt, contract).ok_or(PrepareError::Invalid)?;
+    let Some(data) = log.get("data") else {
+        return Ok(Some(TokenId::ZERO));
+    };
+    let raw = data
+        .as_str()
+        .and_then(|s| s.strip_prefix("0x"))
+        .ok_or(PrepareError::Invalid)?;
+    let bytes = HEXLOWER_PERMISSIVE
+        .decode(raw.as_bytes())
+        .map_err(|_| PrepareError::Invalid)?;
+    let digits = bytes
+        .trim_ascii()
+        .strip_prefix(b"+")
+        .unwrap_or(bytes.trim_ascii());
+    text_id(digits)
+        .map(Some)
+        .ok_or_else(|| invalid_mint_id(&bytes))
+}
+
+fn invalid_mint_id(bytes: &[u8]) -> PrepareError {
+    use std::fmt::Write;
+    let quote = if bytes.contains(&b'\'') && !bytes.contains(&b'"') {
+        b'"'
+    } else {
+        b'\''
+    };
+    let mut literal = format!("b{}", char::from(quote));
+    for &byte in bytes {
+        if literal.len() >= 200 {
+            break;
+        }
+        match byte {
+            b'\n' => literal.push_str(r"\n"),
+            b'\r' => literal.push_str(r"\r"),
+            b'\t' => literal.push_str(r"\t"),
+            b'\\' => literal.push_str(r"\\"),
+            c if c == quote => {
+                literal.push('\\');
+                literal.push(char::from(c));
+            }
+            32..=126 => literal.push(char::from(byte)),
+            _ => write!(literal, "\\x{byte:02x}").expect("write to string"),
+        }
+    }
+    literal.push(char::from(quote));
+    literal.truncate(200);
+    PrepareError::Argument(format!("invalid literal for int() with base 16: {literal}"))
 }
 
 impl Chain {
@@ -188,6 +248,27 @@ impl Chain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn confirmed_mint_keeps_an_absent_id_distinct_from_zero() {
+        let contract = Address::repeat_byte(4);
+        let block = B256::repeat_byte(5);
+        let hash = B256::repeat_byte(6);
+        let mut receipt = json!({"blockHash":block,"transactionHash":hash,"logs":[]});
+        assert!(matches!(mint_id(&receipt, contract), Ok(None)));
+        receipt["logs"] = json!([{"blockHash":block,"transactionHash":hash,"address":contract}]);
+        assert!(matches!(mint_id(&receipt,contract),Ok(Some(id)) if id==TokenId::ZERO));
+        receipt["logs"][0]["data"] = json!(format!("0x{}", "66".repeat(64)));
+        assert!(matches!(mint_id(&receipt,contract),Ok(Some(id)) if id==TokenId::MAX));
+        receipt["logs"][0]["data"] = json!("0x");
+        assert!(
+            matches!(mint_id(&receipt,contract),Err(PrepareError::Argument(s)) if s.ends_with("b''"))
+        );
+        assert!(matches!(
+            mint_id(&receipt, Address::ZERO),
+            Err(PrepareError::Invalid)
+        ));
+    }
 
     #[test]
     fn textual_role_ids_preserve_all_digits_and_reject_binary_words() {

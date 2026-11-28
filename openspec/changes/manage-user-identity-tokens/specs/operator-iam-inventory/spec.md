@@ -84,3 +84,12 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 - **WHEN** the provider has accepted a status transaction but its receipt remains pending through the deadline
 - **THEN** return HTTP 200 with an unsuccessful result, null transaction hash and empty error string, and record the failed outcome
 - **AND** retain the previous stored status even if the transaction later confirms on chain
+
+#### Scenario: Remote mint retry confirms on the identity contract
+
+- **WHEN** a mint retry confirms and the first identity-contract log carries a hexadecimal text token ID
+- **THEN** return the confirmed transaction hash and preserve the full integer token ID in the response, user metadata and operator audit
+- **WHEN** the confirmed receipt has no logs
+- **THEN** report a successful mint with its transaction hash and a null token ID
+- **WHEN** the provider rejects minting or the first log contains an invalid integer
+- **THEN** return the failed provider result and persist the mint error with its operator audit

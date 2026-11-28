@@ -509,6 +509,18 @@ impl Chain {
         public_key: &str,
         metadata_uri: &str,
     ) -> Result<Vec<u8>, PrepareError> {
+        Ok(self
+            .identity_envelope(owner, public_key, metadata_uri)
+            .await?
+            .signing_payload())
+    }
+
+    async fn identity_envelope(
+        &self,
+        owner: &str,
+        public_key: &str,
+        metadata_uri: &str,
+    ) -> Result<UnsignedIamTransaction, PrepareError> {
         validate_address(owner).map_err(|_| PrepareError::Invalid)?;
         let call = mintCall {
             owner: owner.parse().map_err(|_| PrepareError::Invalid)?,
@@ -516,7 +528,7 @@ impl Chain {
             email: String::new(),
             metadataURI: metadata_uri.into(),
         };
-        self.prepare_contract(self.identity.as_deref(), call.abi_encode())
+        self.prepare_envelope(self.identity.as_deref(), call.abi_encode())
             .await
     }
 

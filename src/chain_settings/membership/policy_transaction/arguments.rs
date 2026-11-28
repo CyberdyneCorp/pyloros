@@ -22,13 +22,16 @@ pub(super) fn incompatible_first(
 }
 
 impl Chain {
-    pub(crate) async fn prepare_mint_retry(
+    pub(crate) async fn mint_retry(
         &self,
         owner: &str,
         public_key: &str,
-    ) -> Result<Vec<u8>, PrepareError> {
+    ) -> Result<(String, Option<TokenId>), PrepareError> {
         if validate_address(owner).is_ok() {
-            return self.prepare_identity_creation(owner, public_key, "").await;
+            let envelope = self.identity_envelope(owner, public_key, "").await?;
+            let contract = envelope.to;
+            let (hash, receipt) = self.submit_identity_token(envelope).await?;
+            return Ok((hash, super::creation::mint_id(&receipt, contract)?));
         }
         let digits = owner
             .strip_prefix("0x")
@@ -109,11 +112,11 @@ mod tests {
         };
         let server = tokio::spawn(async move { axum::serve(socket, app).await.unwrap() });
         assert!(
-            matches!(chain.prepare_mint_retry("0x123","key").await,Err(PrepareError::Argument(s)) if s.contains("Argument 1 value `0x123` is not compatible"))
+            matches!(chain.mint_retry("0x123","key").await,Err(PrepareError::Argument(s)) if s.contains("Argument 1 value `0x123` is not compatible"))
         );
         assert_eq!(calls.load(Ordering::Relaxed), 0);
         assert!(
-            matches!(chain.prepare_mint_retry(&format!("0x{}","ab".repeat(20)),"key").await,Err(PrepareError::Argument(s)) if s.contains("only accepts checksum addresses"))
+            matches!(chain.mint_retry(&format!("0x{}","ab".repeat(20)),"key").await,Err(PrepareError::Argument(s)) if s.contains("only accepts checksum addresses"))
         );
         assert_eq!(calls.load(Ordering::Relaxed), 1);
         server.abort();

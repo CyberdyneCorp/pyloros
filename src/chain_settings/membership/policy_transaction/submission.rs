@@ -53,9 +53,11 @@ enum Execution {
 
 impl Execution {
     // The token API uses an empty provider error when its receipt deadline expires.
-    fn token_status_hash(self) -> Result<Option<String>, PrepareError> {
+    fn token_result(self) -> Result<Option<(String, Value)>, PrepareError> {
         match self {
-            Self::Confirmed { hash, .. } => Ok(Some(HEXLOWER.encode(hash.as_slice()))),
+            Self::Confirmed { hash, receipt } => {
+                Ok(Some((HEXLOWER.encode(hash.as_slice()), receipt)))
+            }
             Self::Reverted(hash) => Err(PrepareError::Reverted(format!(
                 "transaction reverted (tx={})",
                 HEXLOWER.encode(hash.as_slice())
@@ -91,7 +93,21 @@ impl Chain {
         &self,
         tx: UnsignedIamTransaction,
     ) -> Result<Option<String>, PrepareError> {
-        self.execute_envelope(tx).await?.token_status_hash()
+        Ok(self
+            .execute_envelope(tx)
+            .await?
+            .token_result()?
+            .map(|(hash, _)| hash))
+    }
+
+    pub(super) async fn submit_identity_token(
+        &self,
+        tx: UnsignedIamTransaction,
+    ) -> Result<(String, Value), PrepareError> {
+        self.execute_envelope(tx)
+            .await?
+            .token_result()?
+            .ok_or_else(|| PrepareError::Rpc(String::new()))
     }
 
     async fn execute_envelope(
@@ -154,15 +170,12 @@ mod tests {
         let hash = B256::repeat_byte(0xab);
         let digits = "ab".repeat(32);
         assert!(
-            matches!(Execution::Confirmed { hash, receipt: Value::Null }.token_status_hash(), Ok(Some(value)) if value==digits)
+            matches!(Execution::Confirmed { hash, receipt: Value::Null }.token_result(), Ok(Some((value,Value::Null))) if value==digits)
         );
         assert!(
-            matches!(Execution::Reverted(hash).token_status_hash(),Err(PrepareError::Reverted(value)) if value==format!("transaction reverted (tx={digits})"))
+            matches!(Execution::Reverted(hash).token_result(),Err(PrepareError::Reverted(value)) if value==format!("transaction reverted (tx={digits})"))
         );
-        assert!(matches!(
-            Execution::ReceiptTimeout.token_status_hash(),
-            Ok(None)
-        ));
+        assert!(matches!(Execution::ReceiptTimeout.token_result(), Ok(None)));
     }
 
     #[test]

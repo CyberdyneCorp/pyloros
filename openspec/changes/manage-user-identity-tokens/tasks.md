@@ -6,4 +6,4 @@
 - [x] Compare remote status preparation, submission refusal, mined revert and receipt deadline against the reference provider.
 - [ ] Complete deployed provider comparisons for mint retry.
 - [x] Verify confirmed remote status changes, original clients, concurrent replicas and post-confirmation audit rejection.
-- [ ] Verify confirmed mint retry.
+- [x] Verify confirmed mint retry, original clients, overlapping requests, full-width token IDs and post-confirmation audit rejection.
