@@ -1,0 +1,1 @@
+Account resolution determines whether this callback created the user. Verify event creation using the stored event ID, user ID and signed delivery. Check account linking separately with a verified account that predates the first callback.
