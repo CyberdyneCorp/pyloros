@@ -23,3 +23,9 @@ The service SHALL let an authorized operator assign a policy-compliant password 
 
 - **WHEN** two operators successfully replace the same user's password while sessions are active
 - **THEN** the last committed reset supplies the current password, each successful reset records its audit events, and each session contributes to one revocation count.
+
+#### Scenario: Recover a legacy bcrypt account through an Argon2 writer
+
+- **WHEN** an operator resets a bcrypt-backed account through a replica configured for Argon2
+- **THEN** store an Argon2id version 19 hash for the replacement password and record one successful reset. An Argon2 peer accepts the replacement password.
+- **AND** with token revocation enforced, both backends reject the prior access token, refresh token and password.

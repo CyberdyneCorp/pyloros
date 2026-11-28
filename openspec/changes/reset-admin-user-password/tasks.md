@@ -1,4 +1,5 @@
 - [x] Implement operator reset, validation and audit writes.
 - [x] Compare HTTP errors, login, session behavior, concurrency and rollback.
 - [x] Exercise the unchanged operator console and CLI.
+- [x] Verify operator recovery from legacy bcrypt credentials through Argon2 writers on both backends and verify revocation on the peer.
 - [ ] Resolve the bcrypt compatibility gate for deployments whose existing password provider fails initialization.

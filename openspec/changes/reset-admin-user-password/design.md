@@ -1,1 +1,3 @@
 Apply the administrative request parser, operator authorization and password policy. Use the configured password hasher. Commit the new hash, credential cutoff, session revocations and both audit records in one transaction. Report the number of newly revoked sessions in account activity.
+
+An operator reset uses the writer's configured scheme without verifying the previous account password. This permits an explicit transition for an individual bcrypt-backed account to Argon2id. Route later password logins for that account to an Argon2-configured replica. A configuration change alone leaves the stored hash intact.

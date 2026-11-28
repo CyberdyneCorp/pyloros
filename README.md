@@ -197,7 +197,7 @@ Administrators can search accounts with `GET /api/v1/admin/users`. The directory
 
 Use `PUT /api/v1/admin/users/{user_id}/admin` with a JSON `is_admin` flag to grant or revoke administrator access. Operators cannot change their own role or a configuration-managed account. Demoting a stored administrator advances the account’s token cutoff.
 
-Use `PUT /api/v1/admin/users/{user_id}/password` with a JSON `new_password` to replace an account credential and revoke its sessions. The operator audit records the reset, and account activity records how many sessions it revoked. Argon2id and legacy bcrypt credential handoffs have been verified. Deployments with a failing bcrypt provider have an open compatibility decision because Pyloros can generate a replacement hash.
+Use `PUT /api/v1/admin/users/{user_id}/password` with a JSON `new_password` to replace an account credential and revoke its sessions. The operator audit records the reset, and account activity records how many sessions it revoked. For an individual account moving from bcrypt to Argon2, route the operator reset to a replica configured with `PASSWORD_SCHEME=argon2`. It stores an Argon2id version 19 hash for the replacement password. Route subsequent password logins for that account to Argon2 replicas. This recovery path was verified with legacy bcrypt prefixes `$2$`, `$2a$`, `$2b$` and `$2y$`. Deployments with a failing bcrypt provider have an open compatibility decision because Pyloros can generate a replacement hash.
 
 Use `DELETE /api/v1/admin/users/{user_id}/mfa` to recover an account after the user loses their authenticator. A reset clears the TOTP secret and recovery codes, keeps existing sessions valid, and records the operator and prior enrollment state.
 
