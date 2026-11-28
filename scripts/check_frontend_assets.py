@@ -8,11 +8,32 @@ from urllib.parse import quote, urlsplit
 from check_frontend_build import build_files
 
 
+# JavaScript MIME type essences from https://mimesniff.spec.whatwg.org/#javascript-mime-type
+JAVASCRIPT_TYPES = {
+    "application/ecmascript", "application/javascript", "application/x-ecmascript",
+    "application/x-javascript", "text/ecmascript", "text/javascript", "text/javascript1.0",
+    "text/javascript1.1", "text/javascript1.2", "text/javascript1.3", "text/javascript1.4",
+    "text/javascript1.5", "text/jscript", "text/livescript", "text/x-ecmascript", "text/x-javascript",
+}
+BROWSER_TYPES = {".js": JAVASCRIPT_TYPES, ".mjs": JAVASCRIPT_TYPES, ".css": {"text/css"}}
+
+
+def check_content_type(asset, suffix, headers):
+    accepted = BROWSER_TYPES.get(suffix.lower())
+    if accepted is None:
+        return
+    values = headers.get_all("Content-Type", [])
+    # Browsers use the last supplied Content-Type when a response repeats the field.
+    if not values or values[-1].partition(";")[0].strip().lower() not in accepted:
+        raise ValueError(f"{asset} has an invalid Content-Type for {suffix}: {values!r}")
+
+
 def compare_asset(client, target, path, asset):
     client.request("GET", target, headers={"Accept-Encoding": "identity"})
     with client.getresponse() as response:
         if response.status != 200:
             raise ValueError(f"{asset} returned HTTP {response.status}")
+        check_content_type(asset, path.suffix, response.headers)
         with path.open("rb") as reviewed:
             for chunk in iter(lambda: reviewed.read(65536), b""):
                 if response.read(len(chunk)) != chunk:
