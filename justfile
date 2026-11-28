@@ -78,6 +78,10 @@ test:
 test-db:
     cargo test --locked --tests -- --ignored
 
+# Validate the published ReBAC contract and its JSON examples.
+check-rebac-contract:
+    uv run --script scripts/check_rebac_contract.py
+
 # Run the usual pre-commit checks.
 check: lint test
 

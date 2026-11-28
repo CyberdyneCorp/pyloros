@@ -3,6 +3,12 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  rebac-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx run --spec uv==0.12.16 uv run --script scripts/check_rebac_contract.py
+
   check:
     runs-on: ubuntu-latest
     services:

@@ -10,6 +10,8 @@ Relationship-based access control (ReBAC) lets an application check access to a 
 
 Application object IDs belong to the calling client. Remove assignments involving a deleted application object before reusing its ID, including assignments where it appears as the subject. [OpenAPI contract and request examples](openapi/rebac.yaml) · [Typed operator CLI commands](integrations/operator-cli/README.md)
 
+Run `just check-rebac-contract` to validate the OpenAPI description and its JSON examples, including the inherited permission and revocation responses.
+
 The first ReBAC migration adds client-owned graph storage to an existing PostgreSQL database. It supports relationships to accounts and between application objects. Deleting an account removes its direct relationships. If an administrator provisions the same email address again, the replacement account has a new UUID. Grant membership to that UUID to restore its object access. Deleting a client removes its graph. [PostgreSQL migration](migrations/005_relationship_graphs.sql)
 
 An operator can register the custom OAuth scope `rebac:manage` and grant it to a confidential service client. Use the Pyloros client-credentials token endpoint to obtain a token for this scope. The token identifies the client registration by UUID so its authority expires if that registration is replaced. Call `PUT /api/v1/clients/me/rebac/model` with the bearer token and a JSON model. For example, this model lets an account read a collection through direct membership or a parent collection.
