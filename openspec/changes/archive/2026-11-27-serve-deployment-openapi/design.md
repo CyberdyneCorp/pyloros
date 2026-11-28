@@ -1,0 +1,1 @@
+Read the file once when building the router and serve the bytes from memory. Use the existing application policy layers for origins and security headers. A missing configuration leaves the route disabled. An explicitly configured invalid file is a startup error.

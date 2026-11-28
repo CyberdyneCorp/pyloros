@@ -1,4 +1,5 @@
 pub mod access_tokens;
+mod api_description;
 pub mod authorization_codes;
 pub mod browser_client;
 mod browser_http;
@@ -103,7 +104,8 @@ pub async fn application(
         .merge(login)
         .merge(methods)
         .merge(email_link_http::routes(pool)?)
-        .merge(discovery::routes(provider));
+        .merge(discovery::routes(provider))
+        .merge(api_description::configured()?);
     cors::apply_origins(foundation::canonical_paths(app), cors_origins)
 }
 

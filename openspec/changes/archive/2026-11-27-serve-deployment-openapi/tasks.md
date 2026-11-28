@@ -1,0 +1,2 @@
+- [x] Implement configured schema publication and cover methods, response bytes and invalid startup inputs.
+- [x] Compare both running services and verify the existing schema discovery scenario.
