@@ -2,4 +2,4 @@
 - [x] Verify owner and product validation, retained grant identity, persisted access and error responses against the reference.
 - [x] Verify the original browser and CLI and concurrent writes.
 - [x] Deliver the post-commit grant event to an active WebAssembly hook.
-- [ ] Verify HTTP 500 and entitlement rollback on explicit commit rejection.
+- [x] Verify HTTP 500 and entitlement rollback on explicit commit rejection.

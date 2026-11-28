@@ -12,3 +12,7 @@ Pyloros SHALL allow a first-party administrator to grant an eligible product to 
 - **WHEN** the owner already has the requested product and plan
 - **THEN** retain the grant identity and external reference, set its administrative grantor and requested expiry, and clear any revocation
 - **AND** return HTTP 201 and audit the refresh
+
+#### Scenario: PostgreSQL rejects the grant at commit
+- **WHEN** PostgreSQL explicitly rejects the transaction creating or refreshing a grant
+- **THEN** return HTTP 500 and preserve the prior grant, operator audit and component delivery state

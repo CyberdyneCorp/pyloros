@@ -676,6 +676,8 @@ after a successful organization withdrawal. Conversely, secondary organization
 membership alone does not expose the grant through `GET /api/v1/users/me/entitlements`.
 Use the owner-filtered record and its status to decide whether a retry is needed.
 
+During an administrator entitlement handoff, hold both `POST /api/v1/admin/entitlements` and `DELETE /api/v1/admin/entitlements/{entitlement_id}` at ingress, including both trailing-slash forms. Keep the owner-filtered entitlement directory available. Wait for admitted transactions on the outgoing pool to finish on the primary. Keep the hold in place while changing the write routes. Reopen them after checking the committed grant, audit and hook delivery state. Retry an admitted grant or withdrawal only after confirming its rollback. This procedure covers administrator writes; coordinate other producers that can change the same grant.
+
 When handing administrator entitlement writes back to the legacy service, pause new grants and withdrawals and let in-flight writes commit. If downstream consumers require earlier Rust hooks to finish before later legacy hooks, keep the component worker running until the pending grant and revoke deliveries finish, confirm their execution histories, then switch writers and resume. Switching writers first lets a later legacy hook finish while an earlier Rust delivery is still queued. Editing the hook source clears its binding for new Rust writes. Already queued deliveries retain their selected component.
 
 ### Assign a component delivery worker
