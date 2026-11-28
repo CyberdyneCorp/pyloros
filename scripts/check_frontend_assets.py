@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 from urllib.parse import quote, urlsplit
+from uuid import uuid4
 
 from check_frontend_build import build_files
 
@@ -29,11 +30,15 @@ def check_content_type(asset, suffix, headers):
         raise ValueError(f"{asset} has an invalid Content-Type for {suffix}: {values!r}")
 
 
-def compare_asset(client, target, path, asset):
-    client.request("GET", target, headers={"Accept-Encoding": "identity"})
+def compare_asset(client, target, path, asset, *, stale_tag=None):
+    headers = {"Accept-Encoding": "identity"}
+    if stale_tag is not None:
+        headers["If-None-Match"] = stale_tag
+    client.request("GET", target, headers=headers)
     with client.getresponse() as response:
         if response.status != 200:
-            raise ValueError(f"{asset} returned HTTP {response.status}")
+            context = " for a nonmatching ETag" if stale_tag is not None else ""
+            raise ValueError(f"{asset} returned HTTP {response.status}{context}")
         encodings = response.headers.get_all("Content-Encoding", [])
         for value in encodings:
             if any(coding.strip().lower() != "identity" for coding in value.split(",") if coding.strip()):
@@ -91,6 +96,7 @@ def check(directory: Path, base: str, *, record=False, baseline=None) -> dict:
             tags[asset] = compare_asset(client, target, path, asset)
             if baseline is not None and baseline.get(asset) is not None:
                 revalidate(client, target, baseline[asset], asset)
+                compare_asset(client, target, path, asset, stale_tag=f'"{uuid4()}"')
                 revalidated += 1
     finally:
         client.close()

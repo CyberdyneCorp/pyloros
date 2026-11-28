@@ -58,6 +58,30 @@ class ServedAssets(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "invalid Content-Type"):
                         check_content_type("fixture" + suffix, suffix, headers)
 
+    def test_replay_detects_ingress_that_accepts_every_validator(self):
+        class BrokenCache(QuietHandler):
+            def do_GET(self):
+                if self.headers.get("If-None-Match"):
+                    self.send_response(304)
+                    self.end_headers()
+                else:
+                    super().do_GET()
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.js").write_text("export default 1")
+            with ThreadingHTTPServer(("127.0.0.1", 0), partial(BrokenCache, directory=tmp)) as server:
+                thread = Thread(target=server.serve_forever)
+                thread.start()
+                try:
+                    base = f"http://127.0.0.1:{server.server_port}"
+                    tags = check(root, base, record=True)["asset_etags"]
+                    with self.assertRaisesRegex(ValueError, "app.js returned HTTP 304 for a nonmatching ETag"):
+                        check(root, base, baseline=tags)
+                finally:
+                    server.shutdown()
+                    thread.join()
+
     def test_compares_reviewed_files_below_a_mount_path(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
