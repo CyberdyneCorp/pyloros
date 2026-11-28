@@ -67,6 +67,31 @@ pub(in crate::profile) async fn enqueue(
     enqueue_with_private_fields(tx, producer, event, user, payload, json!({})).await
 }
 
+pub(in crate::profile) async fn registration_available(
+    tx: &mut Transaction<'_, Postgres>,
+) -> sqlx::Result<bool> {
+    if !registration::pending_hook(tx, "user_registered").await? {
+        return Ok(true);
+    }
+    if !Producer::Registration
+        .enabled()
+        .map_err(|e| sqlx::Error::Configuration(e.to_string().into()))?
+    {
+        return Ok(false);
+    }
+    registration_bindings_complete(tx).await
+}
+
+async fn registration_bindings_complete(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<bool> {
+    sqlx::query_scalar(
+        "SELECT NOT EXISTS (
+        SELECT FROM hooks h LEFT JOIN pyloros_hook_bindings b ON b.hook_id=h.id
+        WHERE h.is_active AND h.event_type='user_registered' AND b.sha256 IS NULL)",
+    )
+    .fetch_one(&mut **tx)
+    .await
+}
+
 pub(in crate::profile) async fn registered(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
@@ -172,6 +197,29 @@ mod tests {
                 .await
                 .unwrap();
         }
+        sqlx::query(
+            "INSERT INTO hooks VALUES(gen_random_uuid(),'first',3,'user_registered',true),
+                    (gen_random_uuid(),'second',3,'user_registered',true)",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO pyloros_hook_artifacts VALUES ('registration')")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO pyloros_hook_bindings SELECT id,'registration' FROM hooks WHERE name='first'")
+            .execute(&mut *tx).await.unwrap();
+        assert!(!registration_bindings_complete(&mut tx).await.unwrap());
+        sqlx::query("UPDATE hooks SET is_active=false WHERE name='second'")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(registration_bindings_complete(&mut tx).await.unwrap());
+        sqlx::query("DELETE FROM hooks WHERE event_type='user_registered'")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         let evt = "entitlement_granted";
         for _ in 0..2 {
             sqlx::query("INSERT INTO hooks VALUES(gen_random_uuid(),'test',3,$1,true)")

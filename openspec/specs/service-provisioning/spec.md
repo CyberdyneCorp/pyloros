@@ -1,4 +1,9 @@
-## ADDED Requirements
+# service-provisioning Specification
+
+## Purpose
+Define account invitations by service clients, including address quotas, inbox activation and registration hook delivery.
+
+## Requirements
 
 ### Requirement: Service account invitations
 
@@ -28,3 +33,9 @@ The service SHALL allow an active service client with the provisioning scope to 
 
 - **WHEN** the deployment enables an active registration hook while its dispatcher is unavailable
 - **THEN** respond with HTTP 503 for both new and existing addresses before consuming the address quota or mutating account records.
+
+#### Scenario: Registration hooks during backend handoff
+
+- **WHEN** a permitted service creates a new account and all active registration hooks have reviewed component bindings
+- **THEN** accept the invitation and execute each selected hook once for the new account.
+- **AND** an invitation for an existing account or a repeated invitation returns the accepted response without dispatching a registration hook.

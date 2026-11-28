@@ -125,6 +125,12 @@ async fn provision(
     };
     let wallet = ManagedWallet::generate(key)?;
     let mut tx = state.pool.begin().await?;
+    if state.registration.hooks && !wasm_hooks::delivery::registration_available(&mut tx).await? {
+        return Ok(problem(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Registration hook dispatcher unavailable",
+        ));
+    }
     let address = &invitation.email;
     let existing = sqlx::query_scalar::<_, Option<Uuid>>(
         "SELECT (SELECT id FROM users WHERE lower(primary_email)=$1)",
