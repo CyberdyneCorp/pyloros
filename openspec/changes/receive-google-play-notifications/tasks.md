@@ -2,4 +2,5 @@
 - [x] Apply verified subscription transitions and deduplicate deliveries atomically.
 - [x] Verify provider failures, replays, mixed backend reads and concurrent deliveries.
 - [x] Verify character limits for multibyte message IDs and purchase tokens.
-- [ ] Check live store delivery and entitlement hook dispatch before migration signoff.
+- [x] Verify renewal and expiry hook execution and processed-message replay across both backends.
+- [ ] Check live store delivery before migration signoff.

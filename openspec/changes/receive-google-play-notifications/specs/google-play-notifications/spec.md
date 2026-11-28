@@ -13,7 +13,7 @@ The service SHALL accept Google-authenticated notifications for its configured A
 
 #### Scenario: Handle redelivery
 - **WHEN** a previously processed message is delivered again
-- **THEN** acknowledge the delivery without applying another entitlement change
+- **THEN** acknowledge the delivery without applying another entitlement change or dispatching another entitlement hook, including when the other backend processed the original message
 
 #### Scenario: Store unavailable
 - **WHEN** the purchase state cannot be retrieved due to a transient provider failure
