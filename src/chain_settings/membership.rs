@@ -192,13 +192,14 @@ enum ReadError {
 #[derive(Clone, Copy)]
 enum RpcRead {
     Contract,
+    TransactionQuantity(policy_transaction::QuantityResult),
     Health,
 }
 
 impl RpcRead {
     fn limit(self) -> usize {
         match self {
-            Self::Contract => 16 * 1024 * 1024,
+            Self::Contract | Self::TransactionQuantity(_) => 16 * 1024 * 1024,
             Self::Health => 1024 * 1024,
         }
     }
@@ -523,7 +524,7 @@ impl Chain {
         {
             if piece.len() > read.limit() - body.len() {
                 return match read {
-                    RpcRead::Contract => Err(ReadError::Failure),
+                    RpcRead::Contract | RpcRead::TransactionQuantity(_) => Err(ReadError::Failure),
                     RpcRead::Health => {
                         large_health::read(&self.endpoint, response, &body, &piece).await
                     }

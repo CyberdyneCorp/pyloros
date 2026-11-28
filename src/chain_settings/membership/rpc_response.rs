@@ -29,7 +29,7 @@ pub(super) fn decode(body: &[u8], read: RpcRead) -> Result<Value, ReadError> {
         .get("jsonrpc")
         .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok());
     match read {
-        RpcRead::Contract
+        RpcRead::Contract | RpcRead::TransactionQuantity(_)
             if version.as_deref() != Some("2.0")
                 || fields.get("id").map(|r| r.get()) != Some("1") =>
         {
@@ -56,6 +56,9 @@ pub(super) fn decode(body: &[u8], read: RpcRead) -> Result<Value, ReadError> {
     let result = fields
         .get("result")
         .ok_or_else(|| bad_format(raw, r#"Response must include either "error" or "result"."#))?;
+    if let RpcRead::TransactionQuantity(kind) = read {
+        return kind.decode(result);
+    }
     serde_json::from_str(result.get()).map_err(|_| ReadError::Failure)
 }
 

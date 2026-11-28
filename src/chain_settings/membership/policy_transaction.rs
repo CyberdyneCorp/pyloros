@@ -2,7 +2,9 @@
 use super::*;
 use serde::Deserialize;
 mod arguments;
+mod quantities;
 mod revert;
+pub(super) use quantities::QuantityResult;
 
 sol! {
     #[derive(Deserialize)]
@@ -292,12 +294,7 @@ fn rpc_failure(error: ReadError) -> PrepareError {
 }
 
 fn quantity(value: &Value) -> Result<TokenId, PrepareError> {
-    let hex = value
-        .as_str()
-        .and_then(|s| s.strip_prefix("0x"))
-        .filter(|s| !s.is_empty())
-        .ok_or(PrepareError::Unavailable)?;
-    TokenId::from_str_radix(hex, 16).map_err(|_| PrepareError::Unavailable)
+    TokenId::deserialize(value).map_err(|_| PrepareError::Unavailable)
 }
 
 impl Chain {
@@ -327,16 +324,37 @@ impl Chain {
             .ok_or(PrepareError::MissingPolicy(id))
     }
 
+    async fn quantity_rpc(&self, method: &str, params: Value) -> Result<Value, ReadError> {
+        self.rpc_bounded(
+            method,
+            params,
+            RpcRead::TransactionQuantity(QuantityResult::Scalar),
+        )
+        .await
+    }
+
     async fn quantity(&self, method: &str, params: Value) -> Result<TokenId, PrepareError> {
-        quantity(&self.rpc(method, params).await.map_err(rpc_failure)?)
+        quantity(
+            &self
+                .quantity_rpc(method, params)
+                .await
+                .map_err(rpc_failure)?,
+        )
     }
 
     async fn priority_fee(&self) -> Result<TokenId, PrepareError> {
-        match self.rpc("eth_maxPriorityFeePerGas", json!([])).await {
+        match self
+            .quantity_rpc("eth_maxPriorityFeePerGas", json!([]))
+            .await
+        {
             Ok(fee) => quantity(&fee),
             Err(ReadError::Rpc(..)) => {
                 let history = self
-                    .rpc("eth_feeHistory", json!(["0xa", "pending", [5.0]]))
+                    .rpc_bounded(
+                        "eth_feeHistory",
+                        json!(["0xa", "pending", [5.0]]),
+                        RpcRead::TransactionQuantity(QuantityResult::History),
+                    )
                     .await
                     .map_err(rpc_failure)?;
                 history_priority_fee(&history)
@@ -503,7 +521,7 @@ impl Chain {
             .await?;
         let chain_id = self.quantity("eth_chainId", json!([])).await?;
         let estimate = self
-            .rpc(
+            .quantity_rpc(
                 "eth_estimateGas",
                 json!([{"from":from,"nonce":format!("{nonce:#x}"),"to":to,"data":&data},"latest"]),
             )
@@ -512,10 +530,14 @@ impl Chain {
         let gas = quantity(&estimate)?;
         let max_priority_fee_per_gas = self.priority_fee().await?;
         let block = self
-            .rpc("eth_getBlockByNumber", json!(["latest", false]))
+            .rpc_bounded(
+                "eth_getBlockByNumber",
+                json!(["latest", false]),
+                RpcRead::TransactionQuantity(QuantityResult::Block),
+            )
             .await
             .map_err(rpc_failure)?;
-        let base = quantity(&block["baseFeePerGas"])?;
+        let base = quantity(&block)?;
         let max_fee_per_gas = base
             .checked_mul(TokenId::from(2))
             .and_then(|v| v.checked_add(max_priority_fee_per_gas))
@@ -644,9 +666,9 @@ mod tests {
             let result = match req["method"].as_str().unwrap() {
                 "eth_getTransactionCount" => {
                     assert_eq!(req["params"], json!([SIGNER, "pending"]));
-                    json!("0x11")
+                    json!(17)
                 }
-                "eth_chainId" => json!("0x539"),
+                "eth_chainId" => json!("0X539"),
                 "eth_estimateGas" => {
                     let data = req["params"][0]["data"].as_str().unwrap();
                     let bytes = HEXLOWER.decode(&data.as_bytes()[2..]).unwrap();
@@ -656,7 +678,7 @@ mod tests {
                     assert_eq!(call.statements[0].sid, "");
                     assert_eq!(req["params"][0]["to"], CONTRACT);
                     assert_eq!(req["params"][0]["nonce"], "0x11");
-                    json!("0x7791")
+                    json!("7791")
                 }
                 "eth_maxPriorityFeePerGas" => {
                     return Json(
@@ -665,9 +687,9 @@ mod tests {
                 }
                 "eth_feeHistory" => {
                     assert_eq!(req["params"], json!(["0xa", "pending", [5.0]]));
-                    json!({"reward":[["0x0"]]})
+                    json!({"reward":[["0x0"],[1000000000],["0X3B9ACA00"]],"baseFeePerGas":[1,2,3,4]})
                 }
-                "eth_getBlockByNumber" => json!({"baseFeePerGas":"0x15"}),
+                "eth_getBlockByNumber" => json!({"baseFeePerGas":21}),
                 _ => panic!("unexpected RPC"),
             };
             Json(json!({"id":1,"jsonrpc":"2.0","result":result}))

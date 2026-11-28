@@ -42,3 +42,17 @@ The operator receipt check SHALL support waiting for a known transaction hash on
 
 - **WHEN** the provider returns a JSON-RPC error
 - **THEN** terminate the check with exit code 1.
+
+### Requirement: Preserve provider quantities in unsigned IAM calls
+
+The service SHALL preserve unsigned transaction quantities up to 256 bits while preparing a chain IAM mutation.
+
+#### Scenario: Mixed provider representations
+
+- **WHEN** the provider supplies nonce, gas, chain ID or fee values as unsigned JSON integers or hexadecimal strings with an optional `0x` or `0X` prefix
+- **THEN** interpret integers as decimal and strings as hexadecimal and preserve the exact value in the unsigned transaction.
+
+#### Scenario: Priority fee from block history
+
+- **WHEN** the priority-fee RPC returns a provider error and the fallback history contains differently encoded block rewards
+- **THEN** calculate the bounded priority fee from the decoded rewards and use it with the latest block's base fee.
