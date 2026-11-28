@@ -1,0 +1,1 @@
+Use a bound Boolean parameter to select the reporting scope. Keep policy IDs in each grouping so that equal positions or rule content on separate policies remain independent. Report aggregate counts from one read-only transaction.

@@ -1,0 +1,2 @@
+- [x] Extend and document the two reports with an all-policy scope.
+- [x] Verify counts during blocked edits, after commit or rollback, and after a complete replacement.

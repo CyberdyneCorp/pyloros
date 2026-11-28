@@ -44,7 +44,7 @@ db-stripe-deferred:
 db-client-id-overlaps *args:
     uv run --script scripts/client_id_overlaps.py "$@"
 
-# Count repeated statement positions in chain-linked IAM policies.
+# Count repeated IAM statement positions or rule content (chain-linked by default).
 [positional-arguments]
 db-iam-statement-positions *args:
     uv run --script scripts/iam_statement_positions.py "$@"
