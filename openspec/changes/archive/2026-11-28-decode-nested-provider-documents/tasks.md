@@ -1,0 +1,2 @@
+- [x] Compare independent token and profile encodings on both supported providers.
+- [x] Share bounded layered decoding and test truncation and size limits.

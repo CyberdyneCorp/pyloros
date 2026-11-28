@@ -1,9 +1,9 @@
 //! Bounded decoding for complete HTTP documents and receiver response excerpts.
+mod layered;
+pub(crate) use layered::read;
+
 use flate2::{Decompress, FlushDecompress, Status};
-use reqwest::{
-    Response,
-    header::{CONTENT_ENCODING, HeaderMap},
-};
+use reqwest::{Response, header::CONTENT_ENCODING};
 use std::{error::Error, io};
 
 #[derive(Debug, thiserror::Error)]
@@ -67,6 +67,10 @@ pub(crate) enum ReadLimit {
 }
 
 impl ReadLimit {
+    fn reached_prefix(self, size: usize) -> bool {
+        matches!(self, Self::Prefix(limit) if size >= limit)
+    }
+
     fn append(self, bytes: &mut Vec<u8>, piece: &[u8]) -> io::Result<bool> {
         match self {
             Self::Prefix(limit) => {
@@ -86,23 +90,11 @@ impl ReadLimit {
     }
 }
 
-fn effective_coding(headers: &HeaderMap) -> &[u8] {
-    let mut codings = headers
-        .get_all(CONTENT_ENCODING)
-        .iter()
-        .flat_map(|field| field.as_bytes().split(|byte| *byte == b','))
-        .map(<[u8]>::trim_ascii)
-        .filter(|coding| !coding.eq_ignore_ascii_case(b"identity"));
-    match (codings.next(), codings.next()) {
-        (Some(coding), None) => coding,
-        _ => headers
-            .get(CONTENT_ENCODING)
-            .map_or(&[], |field| field.as_bytes()),
-    }
-}
-
-pub(crate) async fn read(response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
-    let coding = effective_coding(response.headers());
+async fn read_single(response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
+    let coding = response
+        .headers()
+        .get(CONTENT_ENCODING)
+        .map_or(&[][..], |field| field.as_bytes().trim_ascii());
     if coding.eq_ignore_ascii_case(b"gzip") {
         return read_compressed(response, limit, Decompress::new_gzip(15), None).await;
     }
@@ -119,7 +111,7 @@ pub(crate) async fn read(response: Response, limit: ReadLimit) -> io::Result<Vec
     Ok(bytes)
 }
 
-pub(crate) async fn read_deflate(response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
+async fn read_deflate(response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
     // Raw deflate can start with a valid zlib header. Keep both viable
     // interpretations without buffering the wire body.
     read_compressed(

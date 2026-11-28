@@ -1,5 +1,3 @@
-#[path = "transport_codings.rs"]
-mod codings;
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use ring::hmac;
@@ -126,15 +124,17 @@ async fn post(
 }
 
 async fn receiver_excerpt(response: reqwest::Response) -> Result<Vec<u8>, String> {
-    codings::read(response).await.map_err(|error| {
-        match error
-            .get_ref()
-            .and_then(|e| e.downcast_ref::<crate::http_body::ShortBody>())
-        {
-            Some(short) => format!("RemoteProtocolError: {short}"),
-            None => "ReadError: response unavailable".to_owned(),
-        }
-    })
+    crate::http_body::read(response, crate::http_body::ReadLimit::Prefix(1024))
+        .await
+        .map_err(|error| {
+            match error
+                .get_ref()
+                .and_then(|e| e.downcast_ref::<crate::http_body::ShortBody>())
+            {
+                Some(short) => format!("RemoteProtocolError: {short}"),
+                None => "ReadError: response unavailable".to_owned(),
+            }
+        })
 }
 
 fn http_error(error: reqwest::Error) -> String {

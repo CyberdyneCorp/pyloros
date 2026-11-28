@@ -1,4 +1,5 @@
-//! Stream a receiver's nested HTTP content codings into the bounded history excerpt.
+//! Decode layered content codings in wire order with bounded output.
+use super::ReadLimit;
 use flate2::{Decompress, FlushDecompress, Status};
 use reqwest::{Response, header::CONTENT_ENCODING};
 use std::io;
@@ -9,9 +10,14 @@ enum Layer {
     End,
 }
 
-fn feed(layers: &mut [Layer], data: &[u8], excerpt: &mut Vec<u8>) -> io::Result<()> {
+fn feed(
+    layers: &mut [Layer],
+    data: &[u8],
+    limit: ReadLimit,
+    bytes: &mut Vec<u8>,
+) -> io::Result<()> {
     let Some((layer, rest)) = layers.split_first_mut() else {
-        excerpt.extend_from_slice(&data[..data.len().min(1024 - excerpt.len())]);
+        limit.append(bytes, data)?;
         return Ok(());
     };
     let mut input = data;
@@ -27,28 +33,29 @@ fn feed(layers: &mut [Layer], data: &[u8], excerpt: &mut Vec<u8>) -> io::Result<
             && header[0] >> 4 <= 7
             && u16::from_be_bytes(header).is_multiple_of(31);
         *layer = Layer::Active(Decompress::new(wrapped));
-        inflate(layer, rest, &header, excerpt)?;
+        inflate(layer, rest, &header, limit, bytes)?;
     }
-    inflate(layer, rest, input, excerpt)
+    inflate(layer, rest, input, limit, bytes)
 }
 
 fn inflate(
     layer: &mut Layer,
     rest: &mut [Layer],
     mut input: &[u8],
-    excerpt: &mut Vec<u8>,
+    limit: ReadLimit,
+    bytes: &mut Vec<u8>,
 ) -> io::Result<()> {
     let Layer::Active(decoder) = layer else {
         return Ok(());
     };
     let mut output = [0; 8192];
-    while excerpt.len() < 1024 {
+    while !limit.reached_prefix(bytes.len()) {
         let before = (decoder.total_in(), decoder.total_out());
         let status = decoder.decompress(input, &mut output, FlushDecompress::None)?;
         let consumed = (decoder.total_in() - before.0) as usize;
         let produced = (decoder.total_out() - before.1) as usize;
         if produced > 0 {
-            feed(rest, &output[..produced], excerpt)?;
+            feed(rest, &output[..produced], limit, bytes)?;
         }
         if status == Status::StreamEnd {
             *layer = Layer::End;
@@ -62,12 +69,12 @@ fn inflate(
     Ok(())
 }
 
-pub(super) async fn read(response: Response) -> io::Result<Vec<u8>> {
+pub(crate) async fn read(response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
     let encodings = response.headers().get_all(CONTENT_ENCODING);
     let mut fields = encodings.iter();
     let first = fields.next();
     if fields.next().is_none() && !first.is_some_and(|v| v.as_bytes().contains(&b',')) {
-        return crate::http_body::read(response, crate::http_body::ReadLimit::Prefix(1024)).await;
+        return super::read_single(response, limit).await;
     }
     let codings = encodings
         .iter()
@@ -89,19 +96,26 @@ pub(super) async fn read(response: Response) -> io::Result<Vec<u8>> {
         layers.push(layer);
     }
     if matches!(layers.as_slice(), [Layer::Deflate(_)]) {
-        return crate::http_body::read_deflate(response, crate::http_body::ReadLimit::Prefix(1024))
-            .await;
+        return super::read_deflate(response, limit).await;
     }
     layers.reverse();
-    let mut excerpt = Vec::new();
+    let mut bytes = Vec::new();
     let mut body = crate::http_body::WireBody::new(response);
     while let Some(chunk) = body.chunk().await? {
-        feed(&mut layers, &chunk, &mut excerpt)?;
-        if excerpt.len() == 1024 {
+        feed(&mut layers, &chunk, limit, &mut bytes)?;
+        if limit.reached_prefix(bytes.len()) {
             break;
         }
     }
-    Ok(excerpt)
+    if matches!(limit, ReadLimit::Complete(_))
+        && layers.iter().any(|layer| !matches!(layer, Layer::End))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "incomplete compressed document",
+        ));
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -135,7 +149,10 @@ mod tests {
                 reply = reply.header(CONTENT_ENCODING, header);
             }
             let response = reply.body(reqwest::Body::from(body)).unwrap().into();
-            assert_eq!(read(response).await.unwrap(), &text.as_bytes()[..1024]);
+            assert_eq!(
+                read(response, ReadLimit::Prefix(1024)).await.unwrap(),
+                &text.as_bytes()[..1024]
+            );
         }
     }
 
@@ -149,7 +166,12 @@ mod tests {
                 builder = builder.header(CONTENT_ENCODING, field);
             }
             let response = builder.body(reqwest::Body::from(body.to_vec())).unwrap();
-            assert_eq!(read(response.into()).await.unwrap(), b"ok");
+            assert_eq!(
+                read(response.into(), ReadLimit::Prefix(1024))
+                    .await
+                    .unwrap(),
+                b"ok"
+            );
         }
     }
 
@@ -160,17 +182,35 @@ mod tests {
             for _ in 0..count {
                 body = gzip(&body);
             }
+            for limit in [ReadLimit::Complete(2), ReadLimit::Prefix(1024)] {
+                let response = axum::http::Response::builder()
+                    .header(CONTENT_ENCODING, vec!["gzip"; count].join(", "))
+                    .body(reqwest::Body::from(body.clone()))
+                    .unwrap()
+                    .into();
+                let result = read(response, limit).await;
+                if count == 8 {
+                    assert_eq!(result.unwrap(), b"ok");
+                } else {
+                    assert!(result.is_err());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_document_requires_both_compression_trailers() {
+        let mut inner = gzip(b"{}");
+        let mut short_outer = gzip(&inner);
+        short_outer.pop();
+        inner.pop();
+        for body in [short_outer, gzip(&inner)] {
             let response = axum::http::Response::builder()
-                .header(CONTENT_ENCODING, vec!["gzip"; count].join(", "))
+                .header(CONTENT_ENCODING, "gzip, gzip")
                 .body(reqwest::Body::from(body))
                 .unwrap()
                 .into();
-            let result = read(response).await;
-            if count == 8 {
-                assert_eq!(result.unwrap(), b"ok");
-            } else {
-                assert!(result.is_err());
-            }
+            assert!(read(response, ReadLimit::Complete(1024)).await.is_err());
         }
     }
 
@@ -183,10 +223,10 @@ mod tests {
             Layer::Deflate(Vec::new()),
             Layer::Active(Decompress::new_gzip(15)),
         ];
-        let mut excerpt = Vec::new();
+        let mut bytes = Vec::new();
         for byte in data.finish().unwrap() {
-            feed(&mut layers, &[byte], &mut excerpt).unwrap();
+            feed(&mut layers, &[byte], ReadLimit::Prefix(1024), &mut bytes).unwrap();
         }
-        assert_eq!(excerpt, expected);
+        assert_eq!(bytes, expected);
     }
 }

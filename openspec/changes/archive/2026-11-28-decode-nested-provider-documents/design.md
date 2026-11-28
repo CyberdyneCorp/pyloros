@@ -1,0 +1,1 @@
+Move layered decoding into the HTTP body reader. Complete documents require every compression layer to reach its end and the final output to fit in the caller’s byte limit. Webhook history keeps its existing prefix semantics. Bound decoder depth at eight layers.
