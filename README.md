@@ -101,6 +101,10 @@ WHERE (table_name, column_name) IN (
 ORDER BY table_schema, table_name;
 ```
 
+If a deployment elects to widen the entitlement reference, drain requests from the reference replicas and close their database pools before applying the change. A reference login with a prepared entitlement query returned HTTP 500 after the column changed underneath its pool. Set a transaction-local lock timeout on the schema change. In the PostgreSQL 17 rehearsal, a held reader caused the change to time out and the column stayed at 128 characters. The change committed after the reader finished.
+
+With the reference offline, the already-running Rust process served a fresh login and read the existing entitlement using a reference-issued token after the change. After restarting the reference, each backend rotated a refresh token issued by the other before the change. Exercise these checks with the deployment's signing settings and actual connection pools before routing login traffic back.
+
 For subscription updates, configure an authenticated Google Pub/Sub push subscription to `POST /api/v1/webhooks/google`. Set `GOOGLE_PUBSUB_AUDIENCE` to its exact audience and `GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL` to its push identity. Pyloros verifies the sender and application, then checks current subscription state with Play. Canceled subscriptions retain access until the confirmed expiry. Processed message IDs are acknowledged on replay. An unknown purchase or product is recorded as deferred and can be resubmitted after the mapping exists. A temporary provider failure returns HTTP 503 so Pub/Sub can retry.
 
 ## Outbound webhooks
