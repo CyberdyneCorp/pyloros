@@ -141,6 +141,10 @@ build-message-hook message:
 build-context-hook:
     cargo component build --release --locked --example context_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
 
+# Build the context display guest with Unicode 15.0 character categories.
+build-context-hook-unicode15:
+    cargo component build --release --locked --example context_unicode15_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
+
 # Build the numeric counter guest.
 build-counter-hook:
     cargo component build --release --locked --example counter_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml

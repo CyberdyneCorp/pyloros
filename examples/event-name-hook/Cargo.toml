@@ -24,7 +24,8 @@ crate-type = ["cdylib"]
 [dev-dependencies]
 ryu = "1"
 indexmap = { version = "2", features = ["serde"] }
-unicode-general-category = "1"
+unicode-general-category = "=1.1.0"
+unicode-general-category-15 = { package = "unicode-general-category", version = "=0.6.0" }
 
 [[example]]
 name = "counter_hook"
@@ -39,4 +40,9 @@ crate-type = ["cdylib"]
 [[example]]
 name = "context_hook"
 path = "examples/context_hook.rs"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "context_unicode15_hook"
+path = "examples/context_unicode15_hook.rs"
 crate-type = ["cdylib"]

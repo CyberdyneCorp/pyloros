@@ -34,6 +34,11 @@ def main():
         ("examples/counter_hook", '{"n":1e16}', "success", "1e+16\n"),
         ("examples/counter_hook", "{}", "error", "KeyError: 'n'"),
     ]
+    character = chr(0x1FAE9)
+    event = json.dumps({character: ["雪", character]})
+    for name, rendered in [("context_hook", character), ("context_unicode15_hook", r"\U0001fae9")]:
+        expected = "{'" + rendered + "': ['雪', '" + rendered + "']}\n"
+        cases.append(("examples/" + name, event, "success", expected))
     wide = ",".join(f'"k{i:04d}":0' for i in range(5800))
     event = '{"n":0,"event_type":null,' + wide + r',"\u006e":41,"event_\u0074ype":"ready"}'
     cases.extend([

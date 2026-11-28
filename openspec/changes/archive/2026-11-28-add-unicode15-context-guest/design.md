@@ -1,0 +1,1 @@
+Compile the same renderer into two named artifacts with different Unicode category tables. Keep the existing artifact name for Unicode 16.0. Select the artifact by comparing captured source output in the worker.

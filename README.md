@@ -436,6 +436,8 @@ A first-party session can edit its phone with `PATCH /api/v1/users/me` or `cyber
 
 For a source hook that prints its context, build the Rust guest with `just build-context-hook`. The artifact is `target/hook-examples/wasm32-unknown-unknown/release/examples/context_hook.wasm`. It formats nested fields in insertion order and caps the displayed output at 10,000 characters including the newline. Before binding, compare representative inputs from that hook in the isolated worker. Verified inputs include arrays of 3,000 integers, 2,000 short fixed-point decimals, 800 one-field objects, 2,000 strings containing apostrophes and 2,000 integers written with a positive decimal exponent. The guest also handles dense fractional and scientific notation, including 4,000 copies of `1e-1` and 3,600 alternating values of `1e-6`, `1e16` and `1e-50`. To update a bound hook, verify the rebuilt component and select its new digest. Queued events retain the digest chosen at enqueue time. Execution cost depends on the input shape as well as its size.
 
+Match the context guest to the source runtime’s Unicode version. The default guest uses Unicode 16.0. For Unicode 15.0, including CPython 3.12, run `just build-context-hook-unicode15`. It produces `context_unicode15_hook.wasm` beside `context_hook.wasm`. A character introduced in Unicode 16.0 can appear literally in one guest and as a backslash escape in the other. Include such a character in a captured fixture when selecting the digest.
+
 Administrators can send `{"code":"print(context)"}` to
 `POST /api/v1/admin/hooks/validate`. The endpoint checks source without
 executing it. A completed check returns `valid` and `error`. Certain compiler

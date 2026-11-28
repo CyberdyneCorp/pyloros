@@ -1,4 +1,4 @@
-//! Display the caller's ordered context with the original literal formatting.
+// Display the caller's ordered context with the original literal formatting.
 #[path = "../src/float_literal.rs"]
 mod float_literal;
 #[path = "../../../shared/string_literal.rs"]
