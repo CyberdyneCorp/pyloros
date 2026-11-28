@@ -447,3 +447,28 @@ async fn token_and_passkey_method_dispatch_matches_the_public_routes() {
         );
     }
 }
+
+#[tokio::test]
+async fn role_grants_apply_iam_document_rules_before_authentication() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let routes = pyloros::profile::routes(pool, false).unwrap();
+    let oversized_integer = format!(r#"{{"extra":{}}}"#, "9".repeat(4301));
+    for route in ["admin/users", "clients/me/users"] {
+        for (body, status) in [
+            (r#"{"extra":NaN}"#, StatusCode::UNAUTHORIZED),
+            (&oversized_integer, StatusCode::BAD_REQUEST),
+        ] {
+            let request = Request::post(format!("/api/v1/{route}/invalid/roles"))
+                .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_owned()))
+                .unwrap();
+            assert_eq!(
+                routes.clone().oneshot(request).await.unwrap().status(),
+                status
+            );
+        }
+    }
+}

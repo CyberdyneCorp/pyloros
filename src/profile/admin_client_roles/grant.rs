@@ -1,11 +1,15 @@
 //! Operator assignment of an existing client role.
 use super::*;
-use crate::{grant_response::SessionOrigin, login_http::problem, request_json::fields};
+use crate::{
+    grant_response::SessionOrigin,
+    login_http::problem,
+    request_json::{fields, iam_document},
+};
 use serde_json::value::RawValue;
 
 fn input(path: &str, raw: &RawValue, owner: Option<&str>) -> Result<Assignment, Box<Response>> {
     let submitted = fields::object_fields(raw)?;
-    let value = fields::project(
+    let value = fields::project_scalars(
         raw,
         &submitted,
         &["client_id", "role_key", "organization_id"],
@@ -14,7 +18,7 @@ fn input(path: &str, raw: &RawValue, owner: Option<&str>) -> Result<Assignment, 
     let user = crate::query::path_uuid(path, "user_id");
     let mut issues = vec![];
     if let Err(issue) = &user {
-        issues.push(fields::field_issue(issue.clone(), &path_input));
+        issues.push((issue.clone(), path_input.as_ref()));
     }
     match admin_fields::object_field(&value) {
         Ok(body) => {
@@ -45,7 +49,7 @@ fn input(path: &str, raw: &RawValue, owner: Option<&str>) -> Result<Assignment, 
                     .and_then(|k| submitted.get(k))
                     .copied()
                     .unwrap_or(raw);
-                issues.push(fields::field_issue(issue, original));
+                issues.push((issue, original));
             }
             if let (Ok(user), Some(client), Some(key), Ok(org)) = (user, client, key, org)
                 && issues.is_empty()
@@ -58,19 +62,9 @@ fn input(path: &str, raw: &RawValue, owner: Option<&str>) -> Result<Assignment, 
                 });
             }
         }
-        Err(issue) => issues.push(fields::field_issue(issue, raw)),
+        Err(issue) => issues.push((issue, raw)),
     }
-    #[derive(Serialize)]
-    struct Errors<'a> {
-        detail: Vec<fields::FieldIssue<'a>>,
-    }
-    Err(Box::new(
-        (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(Errors { detail: issues }),
-        )
-            .into_response(),
-    ))
+    Err(fields::invalid(issues))
 }
 
 pub(in crate::profile) async fn grant<const DELEGATED: bool>(
@@ -80,7 +74,7 @@ pub(in crate::profile) async fn grant<const DELEGATED: bool>(
     Path(path): Path<String>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let body = match fields::document(&headers, &bytes) {
+    let body = match iam_document::document(&headers, &bytes) {
         Ok(body) => body,
         Err(error) => return *error,
     };
@@ -289,13 +283,15 @@ mod tests {
     #[test]
     fn invalid_organization_input_cannot_become_a_global_grant() {
         let path = Uuid::new_v4().to_string();
-        for value in [
-            "1e999",
-            "123456789012345678901234567890",
-            "{}",
-            "[]",
-            "false",
-        ] {
+        let overflow = RawValue::from_string(
+            r#"{"client_id":"c","role_key":"read","organization_id":1e999}"#.to_owned(),
+        )
+        .unwrap();
+        let Err(error) = input(&path, &overflow, None) else {
+            panic!("invalid organization accepted");
+        };
+        assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        for value in ["123456789012345678901234567890", "{}", "[]", "false"] {
             let text =
                 format!(r#"{{"client_id":"c","role_key":"read","organization_id":{value}}}"#);
             let body = RawValue::from_string(text).unwrap();

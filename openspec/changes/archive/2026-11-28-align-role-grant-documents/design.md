@@ -1,0 +1,1 @@
+Decode the document before authentication with the existing IAM parser. Project the scalar fields used by the assignment validator and retain the submitted tokens for its error response. Preserve path-before-body error ordering, client ownership and the existing grant transaction.
