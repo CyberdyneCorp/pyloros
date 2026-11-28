@@ -41,56 +41,58 @@ pub(in crate::profile) async fn create(
     if user_identity::validate_identity(&request.status, &request.transfer_mode).is_err() {
         return internal();
     }
-    if let Some(chain) = chain {
-        if tx.commit().await.is_err() {
-            return internal();
-        }
-        let prepared = chain
-            .prepare_identity_creation(
-                request.owner_address.as_deref().unwrap_or_default(),
-                request.public_key.as_deref().unwrap_or_default(),
-                request.metadata_uri.as_deref().unwrap_or_default(),
-            )
-            .await;
-        return match prepared {
-            Ok(_) => problem(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Blockchain transaction submission unavailable",
-            ),
-            Err(_) => problem(StatusCode::NOT_FOUND, "identity mint failed on chain"),
-        };
-    }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
-    store(tx, request, (actor, email.as_deref()), origin)
+    store(tx, chain, request, (actor, email.as_deref()), origin)
         .await
         .unwrap_or_else(|_| internal())
 }
 
 async fn store(
     mut tx: Transaction<'_, Postgres>,
-    request: Request,
+    chain: Option<crate::chain_settings::Chain>,
+    mut request: Request,
     actor: (Uuid, Option<&str>),
     origin: SessionOrigin<'_>,
 ) -> Result<Response, sqlx::Error> {
-    if let Some(user) = request.user_id
-        && user_identity::details(&mut tx, user_identity::Lookup::User(user))
-            .await?
-            .is_some()
-    {
-        return Ok(problem(
-            StatusCode::CONFLICT,
-            &format!("user {user} already has a linked IAM identity"),
-        ));
-    }
-    let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO iam_identities(id,user_id,owner_address,public_key,email,metadata_uri,status,transfer_mode)
+    let (id, chain_token_id) = if let Some(chain) = chain {
+        chain.lock_signer(&mut tx).await?;
+        let Ok((id, token)) = chain
+            .create_identity(
+                request.owner_address.as_deref().unwrap_or_default(),
+                request.public_key.as_deref().unwrap_or_default(),
+                request.metadata_uri.as_deref().unwrap_or_default(),
+            )
+            .await
+        else {
+            return Ok(problem(
+                StatusCode::NOT_FOUND,
+                "identity mint failed on chain",
+            ));
+        };
+        request.user_id = None;
+        (id, Some(token))
+    } else {
+        if let Some(user) = request.user_id
+            && user_identity::details(&mut tx, user_identity::Lookup::User(user))
+                .await?
+                .is_some()
+        {
+            return Ok(problem(
+                StatusCode::CONFLICT,
+                &format!("user {user} already has a linked IAM identity"),
+            ));
+        }
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO iam_identities(id,user_id,owner_address,public_key,email,metadata_uri,status,transfer_mode)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
         .bind(id).bind(request.user_id).bind(&request.owner_address).bind(&request.public_key)
         .bind(&request.email).bind(&request.metadata_uri).bind(&request.status).bind(&request.transfer_mode)
         .execute(&mut *tx).await?;
+        (id, None)
+    };
     crate::admin_audit::append(
         &mut tx,
         "iam.identity.create",
@@ -101,9 +103,53 @@ async fn store(
     )
     .await?;
     tx.commit().await?;
-    let mut identity = json!(request);
-    identity["id"] = json!(id);
-    identity["created_at"] = Value::Null;
-    identity["chain_token_id"] = Value::Null;
-    Ok((StatusCode::CREATED, Json(identity)).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(CreatedIdentity {
+            id,
+            chain_token_id,
+            request,
+            created_at: (),
+        }),
+    )
+        .into_response())
+}
+
+#[derive(Serialize)]
+struct CreatedIdentity {
+    id: Uuid,
+    chain_token_id: Option<Box<serde_json::value::RawValue>>,
+    #[serde(flatten)]
+    request: Request,
+    created_at: (),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn created_identity_preserves_full_width_chain_ids_and_nullable_fields() {
+        let digits = alloy_primitives::U256::MAX.to_string();
+        let identity = CreatedIdentity {
+            id: Uuid::nil(),
+            chain_token_id: Some(serde_json::value::RawValue::from_string(digits.clone()).unwrap()),
+            request: Request {
+                user_id: None,
+                owner_address: None,
+                public_key: None,
+                email: None,
+                metadata_uri: None,
+                status: "active".into(),
+                transfer_mode: "soulbound".into(),
+            },
+            created_at: (),
+        };
+        let wire = serde_json::to_string(&identity).unwrap();
+        let fields: std::collections::HashMap<&str, &serde_json::value::RawValue> =
+            serde_json::from_str(&wire).unwrap();
+        assert_eq!(fields["chain_token_id"].get(), digits);
+        assert_eq!(fields["user_id"].get(), "null");
+        assert_eq!(fields["created_at"].get(), "null");
+    }
 }

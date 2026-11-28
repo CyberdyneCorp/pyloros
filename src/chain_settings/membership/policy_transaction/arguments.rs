@@ -28,10 +28,7 @@ impl Chain {
         public_key: &str,
     ) -> Result<(String, Option<TokenId>), PrepareError> {
         if validate_address(owner).is_ok() {
-            let envelope = self.identity_envelope(owner, public_key, "").await?;
-            let contract = envelope.to;
-            let (hash, receipt) = self.submit_identity_token(envelope).await?;
-            return Ok((hash, super::creation::mint_id(&receipt, contract)?));
+            return self.mint_identity(owner, public_key, "").await;
         }
         let issue = owner_diagnostic(owner).ok_or_else(|| {
             let provided = if validate_address(public_key).is_ok() {

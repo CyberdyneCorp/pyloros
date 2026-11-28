@@ -494,16 +494,29 @@ impl Chain {
         self.submit_token_status(envelope).await
     }
 
-    pub(crate) async fn prepare_identity_creation(
+    pub(crate) async fn create_identity(
         &self,
         owner: &str,
         public_key: &str,
         metadata_uri: &str,
-    ) -> Result<Vec<u8>, PrepareError> {
-        Ok(self
+    ) -> Result<(Uuid, Box<serde_json::value::RawValue>), PrepareError> {
+        let (_, token) = self.mint_identity(owner, public_key, metadata_uri).await?;
+        let id = token.ok_or(PrepareError::Invalid)?;
+        Ok((chain_uuid("identity", id), chain_number(id)))
+    }
+
+    async fn mint_identity(
+        &self,
+        owner: &str,
+        public_key: &str,
+        metadata_uri: &str,
+    ) -> Result<(String, Option<TokenId>), PrepareError> {
+        let envelope = self
             .identity_envelope(owner, public_key, metadata_uri)
-            .await?
-            .signing_payload())
+            .await?;
+        let contract = envelope.to;
+        let (hash, receipt) = self.submit_identity_token(envelope).await?;
+        Ok((hash, creation::mint_id(&receipt, contract)?))
     }
 
     async fn identity_envelope(

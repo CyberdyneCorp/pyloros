@@ -1,4 +1,4 @@
 - [x] Implement PostgreSQL identity creation and compare validation, persistence, audit rollback and user linking.
 - [x] Verify the existing CLI and frontend.
 - [x] Implement and compare unsigned mint preparation, privacy and provider failures.
-- [ ] Verify confirmed chain minting and its audit.
+- [x] Verify confirmed minting, token precision, disclosure of off-chain attributes, original clients and audit commit rejection on a deployed fixture.

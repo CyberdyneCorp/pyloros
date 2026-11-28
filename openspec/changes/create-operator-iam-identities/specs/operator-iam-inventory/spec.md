@@ -18,3 +18,13 @@ An authorized operator SHALL be able to create an identity using the selected IA
 
 - **WHEN** identity creation uses the chain provider
 - **THEN** encode the owner, public key and metadata URI with an empty email argument
+
+#### Scenario: Confirm a chain identity mint
+
+- **WHEN** a mint confirms and its first contract log identifies the assigned token
+- **THEN** return HTTP 201 with the stable identity UUID, the full token identifier and the requested identity attributes
+- **AND** record one operator audit and return a null user link for the chain identity
+- **WHEN** the provider rejects minting or the receipt yields no usable token identifier
+- **THEN** return HTTP 404 and omit the creation audit
+- **WHEN** PostgreSQL rejects the audit commit after confirmation
+- **THEN** return HTTP 500 and retain the confirmed chain effect

@@ -349,3 +349,32 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 - **WHEN** an operator retries a remote mint with a stored wallet name
 - **THEN** return HTTP 200 with the provider's failed mint result and record its diagnostic in the user metadata and audit
 - **AND** reject malformed name syntax before reading the pending nonce, and report encoding failures for accepted names after the nonce lookup and before submission
+
+### Requirement: Create an operator IAM identity
+
+An authorized operator SHALL be able to create an identity using the selected IAM provider and optionally link it to a user in PostgreSQL.
+
+#### Scenario: Create a database identity
+
+- **WHEN** the operator creates an identity with default lifecycle settings
+- **THEN** return an active, soulbound identity with HTTP 201 and atomically record its creation audit
+
+#### Scenario: User already has an identity
+
+- **WHEN** the requested user already has an IAM identity in PostgreSQL
+- **THEN** return a conflict and preserve the existing identity
+
+#### Scenario: Prepare a chain mint
+
+- **WHEN** identity creation uses the chain provider
+- **THEN** encode the owner, public key and metadata URI with an empty email argument
+
+#### Scenario: Confirm a chain identity mint
+
+- **WHEN** a mint confirms and its first contract log identifies the assigned token
+- **THEN** return HTTP 201 with the stable identity UUID, the full token identifier and the requested identity attributes
+- **AND** record one operator audit and return a null user link for the chain identity
+- **WHEN** the provider rejects minting or the receipt yields no usable token identifier
+- **THEN** return HTTP 404 and omit the creation audit
+- **WHEN** PostgreSQL rejects the audit commit after confirmation
+- **THEN** return HTTP 500 and retain the confirmed chain effect
