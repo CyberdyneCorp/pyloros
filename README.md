@@ -196,7 +196,7 @@ Bulk provisioning uses `POST /api/v1/admin/users/bulk`. Upload a UTF-8 CSV as th
 
 For spreadsheet exports, select comma-delimited UTF-8 CSV with the column names on the first line. UTF-8 files with a byte-order mark, quoted column names, and LF or CRLF line endings are supported. A semicolon separator, an Excel `sep=,` preamble, or a UTF-16 file produces HTTP 400 before any accounts are created. Replaying a committed import reports existing accounts as failed rows and records another batch audit. Check the created and failed counts before retrying.
 
-The multipart form charset applies to field names and text values. Send the CSV as a file part named `file`. Its contents must be UTF-8 even when the enclosing form declares another charset. Sending the field as text returns a validation error.
+The multipart form charset applies to field names and text values. Send the CSV as a part named `file` with a `filename` parameter. The importer accepts international filenames, including those sent in a legacy encoding. The CSV contents must be UTF-8 even when the enclosing form declares another charset. Sending the field as text returns a validation error.
 
 During migration, keep the bulk import route on the existing backend while an active `user_registered` hook still needs a WebAssembly binding. Use `just hook-inventory user_registered` to check registration coverage before switching the writer. A committed edit to a hook’s source invalidates its binding, including edits made through the existing backend. If Pyloros returns 503 with `Registration hook dispatcher unavailable`, the whole import rolled back. Route the next attempt to the existing backend or bind the reviewed replacement component before resubmitting the CSV.
 

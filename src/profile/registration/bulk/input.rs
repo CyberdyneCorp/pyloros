@@ -1,5 +1,6 @@
 //! Decode the selected form part before interpreting the CSV as an operator.
 mod charset;
+mod disposition;
 use super::*;
 use axum::extract::FromRequest;
 use futures_util::StreamExt;
@@ -76,11 +77,14 @@ async fn select_file(form: &mut multer::Multipart<'_>, charset: &str) -> Result<
     let mut files = 0;
     let mut fields = 0;
     while let Some(part) = form.next_field().await.map_err(|_| malformed())? {
-        let name = part.name().ok_or_else(|| {
-            bad("The Content-Disposition header field \"name\" must be provided.")
-        })?;
-        let wanted = charset::decode(name.as_bytes().to_vec(), charset) == "file";
-        let result = if part.file_name().is_some() {
+        let (wanted, is_file) = part
+            .headers()
+            .get(header::CONTENT_DISPOSITION)
+            .and_then(|header| disposition::classify(header.as_bytes(), charset))
+            .ok_or_else(|| {
+                bad("The Content-Disposition header field \"name\" must be provided.")
+            })?;
+        let result = if is_file {
             count_part(&mut files, "files")?;
             read_file(part, wanted).await?
         } else {

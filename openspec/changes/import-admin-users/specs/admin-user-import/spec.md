@@ -38,3 +38,8 @@ The API SHALL accept administrative user imports with email and password columns
 
 - **WHEN** the declared form charset decodes a part name to a value other than `file` and no other part supplies the file
 - **THEN** report the missing field and create no accounts.
+
+#### Scenario: Select file parts with international filenames
+
+- **WHEN** a multipart part names the file field and includes a filename parameter
+- **THEN** recognize it as an upload even when the filename is empty or contains legacy-encoded bytes. Match parameter names case-insensitively, ignore parameter-like text inside quoted values, and use the last supplied field name.
