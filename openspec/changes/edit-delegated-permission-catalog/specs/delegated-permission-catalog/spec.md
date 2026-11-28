@@ -18,3 +18,8 @@ A service client authenticated for delegated permission discovery SHALL be able 
 #### Scenario: Isolate catalogs
 - **WHEN** a caller deletes a key that only exists in another client's catalog
 - **THEN** return HTTP 404 and preserve the other client's definition
+
+#### Scenario: Deletion is rejected at commit
+- **WHEN** PostgreSQL explicitly rejects the permission deletion at commit
+- **THEN** return HTTP 500 and preserve the permission definition, role assignments and audit history
+- **AND** a successful retry removes the definition and its role mappings and records the caller once

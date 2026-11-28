@@ -3,3 +3,4 @@
 - [x] Exercise immediate audit failures, deferred commit failures and simultaneous writes at the catalog limit.
 - [ ] Resolve the release contract for two writers competing for the last catalog slot.
 - [x] Rehearse simultaneous operator and delegated creates on two Rust replicas with reference inventory reads and an independent client write.
+- [x] Verify that a rejected removal preserves the definition and role mappings, and a peer retry records one deletion for the authenticated caller.

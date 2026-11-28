@@ -64,6 +64,8 @@ Both writers can list an existing catalog above 256 permissions. A request to cr
 
 In a local handoff rehearsal, both services read all 257 stored keys. Deleting one key left the catalog full. A second deletion brought the count to 255, and creating a retired key then succeeded. Both writers showed the recreated permission with its former role mappings removed. Reassign it explicitly if the role still needs it. The two deletions and one creation each had a committed audit entry attributed to their caller.
 
+If PostgreSQL explicitly rejects a permission deletion at commit, Pyloros returns HTTP 500. Both the key and its role mappings remain available. A successful retry on either backend removes the key and its mappings together and adds one deletion audit entry for the caller. Repeating the deletion then returns HTTP 404.
+
 ## Global role capacity
 
 The PostgreSQL catalog limit is 64 global roles per client. In two handoff trials, a client started with 65 global roles and 1,000 organization-scoped groups. The administrator and delegated APIs listed all 65 global roles with the same member counts on both services. Removing one global role left the catalog full. After a second removal, recreating a retired role succeeded with zero members and an empty permission mapping.
