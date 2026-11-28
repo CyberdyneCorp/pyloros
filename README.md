@@ -63,6 +63,8 @@ Load the console routes against each upstream with the same authenticated accoun
 
 For an HTTPS cutover rehearsal, keep the same browser context and public origin throughout. Set the console’s `ORIGIN` to that origin and `PUBLIC_API_URL` to its `/api/v1` URL. Terminate TLS at the ingress, preserve the public host, and route API traffic to the selected backend. Sign in using the console form. After switching to Rust, rotate the session with the browser’s refresh cookie. Switch back and rotate again. Check that both responses set a new Secure, HttpOnly refresh cookie for the same session. Retain the route, method, path and status when reporting any browser trace difference.
 
+When switching the writer for an existing login session, hold new refreshes and administrator revocations at ingress. Drain admitted writes on the outgoing pool and verify their committed session state before reopening those routes. [Session writer handoff](docs/session-writer-handoff.md)
+
 Two local Chromium rehearsals using the reviewed Node runtime and four API processes verified both rotations. In each rehearsal all 28 console pages loaded on the reference, on Rust, and after rollback. The 119 browser API calls per phase matched across all three phases. These runs exercised local TLS ingress on macOS. Release-image startup and deployed ingress have separate checks.
 
 Set `CORS_ALLOWED_ORIGINS` to the frontend origins that may make credentialed requests, as a comma-separated list or JSON array. The default is `http://localhost:3001`. Active PostgreSQL web origins enabled for CORS also take effect on the registry refresh interval. Responses to allowed origins expose `X-CSRF-Token`.
