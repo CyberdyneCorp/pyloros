@@ -3,4 +3,5 @@
 - [x] Verify provider failures, replays, mixed backend reads and concurrent deliveries.
 - [x] Verify character limits for multibyte message IDs and purchase tokens.
 - [x] Verify renewal and expiry hook execution and processed-message replay across both backends.
+- [x] Verify deferred withdrawal before claim and reconciliation by the other backend after claim.
 - [ ] Check live store delivery before migration signoff.

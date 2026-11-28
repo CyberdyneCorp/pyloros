@@ -22,3 +22,8 @@ The service SHALL accept Google-authenticated notifications for its configured A
 #### Scenario: Match a multibyte identifier
 - **WHEN** an authenticated delivery for the configured package has a nonempty message ID of up to 128 Unicode code points and a nonempty purchase token of up to 512 Unicode code points
 - **THEN** accept their lengths and use the exact decoded identifiers for delivery tracking and purchase lookup
+
+#### Scenario: Withdrawal arrives before the purchase claim
+- **WHEN** a cancellation, revocation or expiry arrives before the purchase has an owner or a Google entitlement
+- **THEN** record the delivery as deferred with reason `no entitlement for purchase` and leave access and hook history untouched
+- **AND** allow either backend to reconcile the same message after a successful claim

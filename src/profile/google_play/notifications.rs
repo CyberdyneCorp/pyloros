@@ -128,6 +128,21 @@ enum Outcome {
 }
 type Tx<'a> = Transaction<'a, Postgres>;
 
+async fn missing_owner(tx: &mut Tx<'_>, change: &Change) -> sqlx::Result<Outcome> {
+    if matches!(change.notification_type, 3 | 12 | 13) {
+        let has_entitlement = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT FROM entitlements WHERE source='google' AND external_ref=$1)",
+        )
+        .bind(&change.purchase_token)
+        .fetch_one(&mut **tx)
+        .await?;
+        if !has_entitlement {
+            return Ok(Outcome::Deferred("no entitlement for purchase"));
+        }
+    }
+    Ok(Outcome::Deferred("unmapped purchase"))
+}
+
 async fn reconcile(
     tx: &mut Tx<'_>,
     provider: &Provider,
@@ -142,7 +157,7 @@ async fn reconcile(
             .fetch_optional(&mut **tx)
             .await?;
     let Some(user) = owner else {
-        return Ok(Outcome::Deferred("unmapped purchase"));
+        return Ok(missing_owner(tx, change).await?);
     };
     let client = provider.client().await?;
     let subscription = match client.subscription(&provider.package, token, true).await {
@@ -238,6 +253,39 @@ async fn revoke(tx: &mut Tx<'_>, user: Uuid, token: &str, hooks: bool) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn records_the_missing_dependency_for_an_unowned_purchase() {
+        let pool = PgPool::connect(&env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("CREATE TEMP TABLE entitlements(source text,external_ref text)")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO entitlements VALUES('stripe','empty'),('google','orphan')")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        for (kind, token, reason) in [
+            (2, "empty", "unmapped purchase"),
+            (3, "empty", "no entitlement for purchase"),
+            (12, "empty", "no entitlement for purchase"),
+            (13, "empty", "no entitlement for purchase"),
+            (13, "orphan", "unmapped purchase"),
+        ] {
+            let change = Change {
+                notification_type: kind,
+                purchase_token: token.into(),
+                subscription_id: None,
+            };
+            assert!(
+                matches!(missing_owner(&mut tx,&change).await.unwrap(), Outcome::Deferred(actual) if actual == reason)
+            );
+        }
+    }
 
     #[test]
     fn counts_notification_identifiers_in_unicode_characters() {
