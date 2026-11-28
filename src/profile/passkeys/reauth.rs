@@ -56,10 +56,12 @@ pub(super) async fn verify(
     .bind(owner.key)
     .execute(&mut *tx)
     .await?;
-    tx.commit().await?;
-    Ok((
-        StatusCode::NO_CONTENT,
-        [(header::CACHE_CONTROL, "no-store")],
+    commit_response(
+        tx,
+        (
+            StatusCode::NO_CONTENT,
+            [(header::CACHE_CONTROL, "no-store")],
+        ),
     )
-        .into_response())
+    .await
 }

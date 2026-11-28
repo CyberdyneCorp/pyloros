@@ -117,7 +117,7 @@ pub(crate) fn invalid() -> Response {
 }
 
 pub(super) async fn register(
-    state: &Profile,
+    pool: &PgPool,
     id: &Identity,
     enrollment: &Enrollment<'_>,
     proof: Proof,
@@ -125,7 +125,7 @@ pub(super) async fn register(
     origin: SessionOrigin<'_>,
     request_id: Option<&str>,
 ) -> Result<Response, sqlx::Error> {
-    let mut tx = state.pool.begin().await?;
+    let mut tx = pool.begin().await?;
     let account=sqlx::query_as::<_,(bool,Option<String>,Option<Uuid>)>(
         "SELECT u.totp_enabled,u.primary_email,u.organization_id FROM users u JOIN sessions s ON s.user_id=u.id
          WHERE u.id=$1 AND s.id=$2 AND u.is_active AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp()
@@ -180,11 +180,104 @@ pub(super) async fn register(
         now,
     )
     .await?;
-    tx.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        [(header::CACHE_CONTROL, "no-store")],
-        Json(record),
+    commit_response(
+        tx,
+        (
+            StatusCode::CREATED,
+            [(header::CACHE_CONTROL, "no-store")],
+            Json(record),
+        ),
     )
-        .into_response())
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn rejected_enrollment_commit_discards_the_credential_and_activity() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        sqlx::raw_sql("
+            CREATE TEMP TABLE users(id uuid, totp_enabled bool, primary_email text, organization_id uuid, is_active bool, tokens_valid_after timestamptz);
+            CREATE TEMP TABLE sessions(id uuid, user_id uuid, revoked_at timestamptz, expires_at timestamptz, auth_time timestamptz, amr text);
+            CREATE TEMP TABLE passkey_reauthentication(session_id uuid, user_id uuid, credential_id uuid, verified_at timestamptz);
+            CREATE TEMP TABLE passkeys(id uuid PRIMARY KEY, user_id uuid, rp_id text, credential_id text, public_key bytea, algorithm int,
+                sign_count bigint, backup_eligible bool, backed_up bool, aaguid text, transports jsonb, name text, created_at timestamptz, last_used_at timestamptz, revoked_at timestamptz);
+            CREATE TEMP TABLE auth_events(activity text UNIQUE DEFERRABLE INITIALLY DEFERRED);
+            INSERT INTO auth_events VALUES ('passkey_enroll');
+        ").execute(&pool).await.unwrap();
+        let user = Uuid::new_v4();
+        let session = Uuid::new_v4();
+        sqlx::query("INSERT INTO users VALUES ($1,false,NULL,NULL,true,NULL)")
+            .bind(user)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO sessions VALUES ($1,$2,NULL,now()+interval '1 hour',now(),'pwd')")
+            .bind(session)
+            .bind(user)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let fixtures: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/passkey-attestations.json"
+        ))
+        .unwrap();
+        let fixture = &fixtures[0];
+        let enrollment = Enrollment {
+            user,
+            session,
+            relying_party: "example.test",
+            origin: fixture["origin"].as_str().unwrap(),
+            binding: "test",
+            policy_digest: "test",
+        };
+        let identity = Identity {
+            user,
+            sid: Some(session),
+            client_bound: false,
+            iat: None,
+            jti: Uuid::new_v4(),
+        };
+        let proof = Proof {
+            ceremony: Uuid::new_v4(),
+            credential: fixture["proof"].clone(),
+            name: "Example".into(),
+            code: None,
+        };
+        let challenge = URL_SAFE_NO_PAD
+            .decode(fixture["challenge"].as_str().unwrap())
+            .unwrap();
+        let origin = SessionOrigin {
+            ip: None,
+            user_agent: None,
+        };
+        let response = register(
+            &pool,
+            &identity,
+            &enrollment,
+            proof,
+            challenge,
+            origin,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let counts: (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT count(*) FROM passkeys), (SELECT count(*) FROM auth_events)",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(counts, (0, 1));
+    }
 }

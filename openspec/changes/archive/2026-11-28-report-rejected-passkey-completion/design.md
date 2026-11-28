@@ -1,0 +1,1 @@
+Keep the ceremony claim in its existing transaction. Apply the shared passkey commit response handler to the subsequent result transaction. Preserve the successful response body, status and cache headers.

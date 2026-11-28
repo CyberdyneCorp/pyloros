@@ -362,8 +362,16 @@ async fn inventory(
         let Some(challenge) = enrollment.claim(tx, proof.ceremony).await? else {
             return Ok(finish::invalid());
         };
-        return finish::register(state, id, &enrollment, proof, challenge, origin, request_id)
-            .await;
+        return finish::register(
+            &state.pool,
+            id,
+            &enrollment,
+            proof,
+            challenge,
+            origin,
+            request_id,
+        )
+        .await;
     }
     session_operation(state, tx, id, (session, rp), operation, origin, request_id).await
 }

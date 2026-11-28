@@ -1,0 +1,2 @@
+- [x] Return HTTP 500 on explicit rejection of either completion transaction.
+- [x] Verify rollback, consumed ceremony handling and recovery through a fresh challenge.
