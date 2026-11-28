@@ -89,6 +89,18 @@ Configure App Store Server Notifications V2 to send `signedPayload` to `POST /ap
 
 Enable billing with `BILLING_ENABLED=true`, set `GOOGLE_PACKAGE_NAME` to the Android application ID, and supply `GOOGLE_SERVICE_ACCOUNT_JSON` as a server-side secret with Android Publisher access. Signed-in users submit `purchase_token` and `product_id` to `POST /api/v1/billing/google/validate`. Pyloros checks the purchased line item and expiry with Google before granting the mapped product. A purchase can belong to one account. An active entitlement hook requires the dispatcher before the grant can commit.
 
+Before routing Play claims, check the character limits on both columns that store the purchase token. The stock migration schema allows 512 characters in `google_purchases.purchase_token` and 128 in `entitlements.external_ref`. In local tests with a synthetic store, 128-character tokens committed on both backends. At 129, 511 and 512 characters both returned HTTP 500 and rolled back ownership and access. At 513 characters both returned HTTP 422. ASCII and multibyte tokens gave the same results. With a 512-character entitlement reference in a disposable database, both backends committed the previously failing claims.
+
+```sql
+SELECT table_schema, table_name, column_name, data_type, character_maximum_length
+FROM information_schema.columns
+WHERE (table_name, column_name) IN (
+    ('google_purchases', 'purchase_token'),
+    ('entitlements', 'external_ref')
+)
+ORDER BY table_schema, table_name;
+```
+
 For subscription updates, configure an authenticated Google Pub/Sub push subscription to `POST /api/v1/webhooks/google`. Set `GOOGLE_PUBSUB_AUDIENCE` to its exact audience and `GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL` to its push identity. Pyloros verifies the sender and application, then checks current subscription state with Play. Canceled subscriptions retain access until the confirmed expiry. Processed message IDs are acknowledged on replay. An unknown purchase or product is recorded as deferred and can be resubmitted after the mapping exists. A temporary provider failure returns HTTP 503 so Pub/Sub can retry.
 
 ## Outbound webhooks
