@@ -1,0 +1,1 @@
+Each link identifies its own stored credential. A successful redemption updates the password and marks the submitted credential used in the same transaction. The other credential retains its existing expiry.

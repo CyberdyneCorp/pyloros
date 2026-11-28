@@ -1,0 +1,2 @@
+- [x] Exercise sequential redemption on different backends, using the older link first and the newer link first.
+- [x] Verify credential consumption, password login and successful reset audits.

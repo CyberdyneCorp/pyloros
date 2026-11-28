@@ -92,6 +92,11 @@ The service SHALL accept an email address for password recovery and allow the ow
 - **WHEN** a browser requests or confirms a reset with an old access cookie
 - **THEN** evaluate the reset request independently of that cookie.
 
+#### Scenario: Two outstanding recovery links
+- **WHEN** the same account receives two distinct links and redeems them sequentially before expiry
+- **THEN** each successful reset consumes its submitted credential and records one success
+- **AND** either issuance order permits the second reset, after which the account authenticates with the last committed password
+
 ### Requirement: Decode email verification requests
 
 The service SHALL accept a JSON object containing a string token in UTF-8, UTF-16 or UTF-32 and SHALL retain the submitted value in field validation errors.
