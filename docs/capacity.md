@@ -88,3 +88,20 @@ Two local trials used one reference process, one Rust process and 16 clients. Ea
 | 24 | 128 / 130 | 445 / 422 | 3.66 / 4.69 s | 3.41 / 4.58 s |
 
 All requests succeeded. Across both trials, 352 refreshes and 805 introspections used credentials issued by the other backend. Each database reconciled to 400 sessions and 800 refresh-token rows including warmup. Even at 24 requests/s, the pair needed additional time to finish each phase on this host. Measure the deployment's expected split against its latency budget before increasing canary traffic.
+
+### Canary with a fixed Rust share for each operation
+
+At 32 requests/s on the local PostgreSQL host, routing 75% of each operation to Rust gave an end-to-end p99 of 229–230 ms. Routing 25% to Rust gave a p99 of 8.96–9.05 s. In both repetitions the 75% split completed all 512 requests within the 16-second arrival window. The 25% split completed 326 and took another 8.88–8.93 s to drain.
+
+The workload used one process per backend and 16 synthetic accounts. Each phase scheduled 128 logins, 128 refreshes and 256 introspections. The driver shuffled destinations within blocks of four requests separately for each operation, so the selected share also applied to expensive password checks. In a preliminary trial, routing by client turn sent every introspection in one phase to Rust. The table uses only the operation-balanced trials. Four fresh databases ran in the order 25%, 75%, 75%, 25%.
+
+| Offered requests/s | Rust share | Finished within window, of 512 (trial 1 / 2) | End-to-end p99, ms (trial 1 / 2) | Drain, ms (trial 1 / 2) |
+|---:|---:|---:|---:|---:|
+| 24 | 25% | 435 / 435 | 3771 / 3780 | 3621 / 3646 |
+| 24 | 75% | 512 / 512 | 225 / 225 | 0 / 0 |
+| 32 | 25% | 326 / 326 | 8957 / 9049 | 8881 / 8927 |
+| 32 | 75% | 512 / 512 | 230 / 229 | 0 / 0 |
+| 24 (recovery) | 25% | 440 / 441 | 3792 / 3906 | 3628 / 3691 |
+| 24 (recovery) | 75% | 512 / 512 | 223 / 221 | 0 / 0 |
+
+All 6,144 requests succeeded. Across the four trials, 597 refreshes rotated credentials issued by the other backend and 1,404 introspections verified the expected account across backends. Both handoff directions succeeded in every phase. Each database reconciled to 400 sessions and 800 refresh-token rows. The Rust executable had SHA-256 `9312cc4fcbab135489c4c77b035c6bc200418bd3f6fe0978d8cb7b722d15d922`. These short loopback phases excluded hooks and webhooks. Production canary signoff still requires the deployment workload, ingress and latency objective.
