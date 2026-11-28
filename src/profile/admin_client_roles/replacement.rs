@@ -98,6 +98,30 @@ fn input(raw: &RawValue) -> Result<BTreeSet<String>, Box<Response>> {
     }
 }
 
+async fn unknown_permissions(
+    tx: &mut Transaction<'_, Postgres>,
+    client: &str,
+    submitted: &BTreeSet<String>,
+) -> sqlx::Result<Vec<String>> {
+    // A JSON string containing NUL cannot match a PostgreSQL text key.
+    let candidates: Vec<_> = submitted
+        .iter()
+        .map(String::as_str)
+        .filter(|key| !key.contains('\0'))
+        .collect();
+    let known: Vec<String> = sqlx::query_scalar(
+        "SELECT key FROM client_permissions WHERE client_id=$1 AND key=ANY($2::text[])",
+    )
+    .bind(client)
+    .bind(candidates)
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(submitted
+        .difference(&known.into_iter().collect())
+        .map(|key| crate::admin_audit::ascii_json(&json!(key)))
+        .collect())
+}
+
 impl Change<'_> {
     pub(super) async fn apply(
         self,
@@ -105,17 +129,7 @@ impl Change<'_> {
         client: &str,
         key: &str,
     ) -> Result<Response, sqlx::Error> {
-        let known: Vec<String> =
-            sqlx::query_scalar("SELECT key FROM client_permissions WHERE client_id=$1")
-                .bind(client)
-                .fetch_all(&mut *tx)
-                .await?;
-        let known = known.into_iter().collect::<BTreeSet<_>>();
-        let unknown: Vec<_> = self
-            .keys
-            .difference(&known)
-            .map(|s| crate::admin_audit::ascii_json(&json!(s)))
-            .collect();
+        let unknown = unknown_permissions(&mut tx, client, &self.keys).await?;
         if !unknown.is_empty() {
             return Ok(problem(
                 StatusCode::BAD_REQUEST,
@@ -189,6 +203,27 @@ mod tests {
             input(raw).unwrap_err().status(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn catalog_lookup_preserves_unknown_keys_that_postgres_cannot_store() -> sqlx::Result<()>
+    {
+        use sqlx::Connection;
+        let mut db = sqlx::PgConnection::connect(&env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = db.begin().await?;
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE client_permissions(client_id text,key text);
+            INSERT INTO client_permissions VALUES('app','read'),('other','share');",
+        )
+        .execute(&mut *tx)
+        .await?;
+        let submitted = ["share", "read", "bad\0key"].map(String::from).into();
+        assert_eq!(
+            unknown_permissions(&mut tx, "app", &submitted).await?,
+            [r#""bad\u0000key""#, r#""share""#]
+        );
+        tx.rollback().await
     }
 
     #[tokio::test]

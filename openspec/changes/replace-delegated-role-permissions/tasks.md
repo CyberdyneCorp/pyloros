@@ -2,4 +2,5 @@
 - [x] Compare validation, isolated role mappings, audit integrity, CLI, browser and provider changes.
 - [x] Verify global and organization-scoped permissions after rotating tokens on the opposite backend.
 - [x] Exercise immediate audit failure, deferred commit rejection, and overlapping and disjoint concurrent replacements.
+- [x] Bound catalog rows returned during replacement validation by the distinct submitted keys and verify unknown-key diagnostics.
 - [ ] Resolve the concurrency and failed-commit response contracts for migration signoff.

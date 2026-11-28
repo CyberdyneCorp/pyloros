@@ -5,3 +5,5 @@ Resolve the client from the authenticated service bearer, check role existence a
 ## Open decisions
 
 Mapping writes on Pyloros serialize per client and role. Each successful replacement sets the entire permission list. A rejected commit rolls back the mapping and audit and returns HTTP 500. Migration signoff depends on the agreed concurrency and failed-commit response contracts.
+
+Fetch only registered keys present in the submitted replacement. Validate unknown keys against the original sorted set so diagnostics also cover JSON strings that PostgreSQL cannot store as text.
