@@ -6,6 +6,8 @@ Pyloros is a Rust identity and authorization service under development. It provi
 
 Role-based access control (RBAC) lets an application assign permissions to roles and grant roles to users globally or within an organization. A service client with `roles:manage` can list its roles at `GET /api/v1/clients/me/roles` and inspect a role’s permissions at `GET /api/v1/clients/me/roles/{role_key}/permissions`. See the [role mapping handoff procedure](docs/role-mapping-handoff.md) when switching writers on a shared database.
 
+For the role-read migration, `just db-client-id-overlaps` counts pairs of registered client IDs where the longer ID starts with the shorter ID followed by a colon. The report includes inactive registrations and gives a separate count for pairs where both are active. Set `DATABASE_URL` to a login with schema access and `SELECT (client_id, active)` on `oauth_clients`. This registry check measures naming overlap. Actual role assignments and chain IAM data require separate verification.
+
 Relationship-based access control (ReBAC) lets an application check access to a specific object through relationships between people and resources. A reviewer might be allowed to open a particular submission because it belongs to a collection shared with their team. Applications can require both the reviewer role and access to that submission.
 
 Application object IDs belong to the calling client. Remove assignments involving a deleted application object before reusing its ID, including assignments where it appears as the subject. [OpenAPI contract and request examples](openapi/rebac.yaml) · [Typed operator CLI commands](integrations/operator-cli/README.md)

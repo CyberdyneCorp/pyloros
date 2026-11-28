@@ -50,3 +50,15 @@ Operator and delegated user role grants SHALL apply the IAM document rules befor
 #### Scenario: Invalid assignment field
 - **WHEN** a field validation error would include a non-finite number in the response
 - **THEN** return the unhandled HTTP 500 response and leave the assignment unchanged
+
+### Requirement: Measure registered role namespace overlap
+An operator SHALL be able to count registered client ID pairs where the longer ID starts with the shorter nonempty ID followed by a colon. The report SHALL return only aggregate counts from a read-only database snapshot.
+
+#### Scenario: Nested identifiers
+- **WHEN** three registrations form a chain of colon-delimited prefixes
+- **THEN** count all three distinct shorter–longer pairs, including the pair spanning two separators
+- **AND** report the numbers of distinct shorter and longer identifiers
+
+#### Scenario: Inactive registration
+- **WHEN** either member of an overlapping pair is inactive
+- **THEN** include the pair in the total and exclude it from the active-pair count
