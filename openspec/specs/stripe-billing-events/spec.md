@@ -12,6 +12,12 @@ The service SHALL verify Stripe signatures against the original payload and appl
 - **WHEN** a verified purchase identifies a user and an eligible product
 - **THEN** activate the entitlement, associate its billing reference and record the event as processed
 
+#### Scenario: Concurrent delivery survives a rejected commit
+- **WHEN** two replicas receive the same signed checkout or refund and PostgreSQL rejects the first transaction at commit
+- **THEN** the first request returns HTTP 500 and its entitlement change and hook delivery roll back
+- **AND** the waiting request can apply the event and return HTTP 200 with `handled: true`
+- **AND** later deliveries of that event return `handled: false` and leave the committed entitlement and hook execution count unchanged
+
 #### Scenario: Change or revoke a subscription
 - **WHEN** a verified subscription changes plans or is cancelled
 - **THEN** retire superseded access or revoke the active grants for that billing reference
