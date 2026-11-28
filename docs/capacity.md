@@ -343,3 +343,16 @@ Three local trials each scheduled 8,192 writes over 32 seconds (256/s) on eight 
 | Two legacy | 2,336 | 72.23 s | 72.29 s |
 
 Every trial committed 4,096 administrator audits and 4,096 service-client audits. All four API replicas then verified the audit chain and returned the expected mapping for every role. In the mixed trial the p99 delay before the driver dispatched a request was 79.56 seconds. Concurrent compiler activity was visible on the host, and a follow-up trial stopped during setup when local disk space ran out. The results establish that the mixed writers converged under backlog. Estimating sustainable throughput requires a repeat on a host with controlled load and sufficient disk space.
+
+### Confirmed role catalog writes alongside reads
+
+Two Pyloros replicas shared one signer, PostgreSQL primary and loopback Anvil node. Each trial started fresh. Writers created and retired 24 distinct roles, alternating replicas between creation and deletion. Operators and delegated clients each owned half the roles. Two readers queried an unrelated client's empty catalog, one through each replica, with 30 ms between a response and the next request.
+
+| Trial | Concurrent writers | Confirmed writes/s | Write p95 (ms) | Completed reads | Read p95 (ms) |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 1 | 4.39 | 278.84 | 496 | 16.68 |
+| 2 | 4 | 4.07 | 1088.03 | 556 | 15.20 |
+| 3 | 4 | 4.28 | 1088.15 | 536 | 14.35 |
+| 4 | 1 | 5.00 | 268.12 | 488 | 8.97 |
+
+Every trial confirmed 48 transactions, emitted 24 distinct group deletions and committed 48 audit entries. All replicas verified the audit chain. Four writers sharing a signer increased write latency without increasing throughput in these trials. Unrelated reads continued throughout. Production block times and populated reader catalogs require separate measurements.
