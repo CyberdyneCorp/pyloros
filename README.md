@@ -537,6 +537,8 @@ Before switching hook producers, run `just hook-inventory` or `pyloros --check-h
 
 Run `just check-hook-examples` to build the hook examples and execute their Wasm components with the local worker. It checks output and error text, including integer carry at the counter's decimal limit and binary64 rounding for decimal and exponent inputs. CI runs the same fixtures on Linux.
 
+Before retiring the legacy hook runtime, run `just hook-inventory --include-inactive`. Its `all_unbound` count includes disabled definitions that an operator could reactivate. Exit 2 means at least one selected definition still needs a binding. For an event-specific review, put event names after the flag. Use `just verify-hook-inventory REVIEWED_FILE --include-inactive` with the same events to verify a saved retirement report. Exercise each component with its source fixtures before signing off on behavior.
+
 After reviewing the source and component bindings, keep the original JSON output from `just hook-inventory` in a private file. Before switching producers, run `just verify-hook-inventory REVIEWED_FILE` with the same event arguments. It requires complete active-hook coverage and compares the generated file byte for byte, including source and component digests, active state and port settings. Save a fresh reviewed report after an intentional change.
 
 The [counter example](examples/event-name-hook/examples/counter_hook.rs) reads the numeric field `n` and prints its successor. For example, `{"n":41}` produces `42` followed by a newline. Run `just build-counter-hook` and compare `target/hook-examples/wasm32-unknown-unknown/release/examples/counter_hook.wasm` with recorded outcomes using `just check-hook-fixture` before binding it to a reviewed source.

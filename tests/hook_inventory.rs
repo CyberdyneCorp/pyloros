@@ -59,6 +59,7 @@ async fn inventory_tracks_active_hooks_across_binding_migration() -> sqlx::Resul
     let source = "fixture π";
     sqlx::query("INSERT INTO hooks VALUES ($2,'archived','user_registered',false,'old'), ($1,'enabled','role_granted',true,$3)")
         .bind(active).bind(inactive).bind(source).execute(&mut *conn).await?;
+    assert_retirement_coverage(&url, &[], 2, 1);
     let before = report(&url, 2);
     assert_eq!(before["active_unbound"], 1);
     assert_eq!(
@@ -84,6 +85,9 @@ async fn inventory_tracks_active_hooks_across_binding_migration() -> sqlx::Resul
     )
     .execute(&mut *conn)
     .await?;
+    assert_retirement_coverage(&url, &[], 1, 0);
+    assert_retirement_coverage(&url, &["role_granted"], 0, 0);
+    assert_retirement_coverage(&url, &["user_registered"], 1, 0);
     let bound = report(&url, 0);
     assert_eq!(bound["active_unbound"], 0);
     assert_eq!(bound["hooks"][0]["component_sha256"], "c".repeat(64));
@@ -153,12 +157,25 @@ async fn inventory_tracks_active_hooks_across_binding_migration() -> sqlx::Resul
         assert!(output.stdout.is_empty());
         assert!(String::from_utf8_lossy(&output.stderr).contains("hook event"));
     }
+    sqlx::raw_sql("INSERT INTO pyloros_hook_bindings SELECT id,repeat('c',64) FROM hooks")
+        .execute(&mut *conn)
+        .await?;
+    assert_retirement_coverage(&url, &[], 0, 0);
     check_queue_visibility(&url, &mut conn).await?;
     check_delivery_visibility(&url, &mut conn).await?;
     sqlx::raw_sql(&format!("DROP SCHEMA {schema} CASCADE"))
         .execute(&mut *conn)
         .await?;
     Ok(())
+}
+
+fn assert_retirement_coverage(url: &Url, events: &[&str], total: u64, active: u64) {
+    let args = [&["--include-inactive"][..], events].concat();
+    let output = inventory(url, &args);
+    assert_eq!(output.status.code(), Some(if total == 0 { 0 } else { 2 }));
+    let data: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(data["all_unbound"], total);
+    assert_eq!(data["active_unbound"], active);
 }
 
 async fn check_queue_visibility(url: &Url, conn: &mut sqlx::PgConnection) -> sqlx::Result<()> {

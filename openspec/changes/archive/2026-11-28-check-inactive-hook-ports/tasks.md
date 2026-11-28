@@ -1,0 +1,2 @@
+- [x] Add the optional coverage mode and document its two recipes.
+- [x] Exercise the CLI against PostgreSQL before and after binding, including event selection.

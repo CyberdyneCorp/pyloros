@@ -78,9 +78,13 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
             return check_writer_mode(&pool).await;
         }
         Some("--check-hook-bindings") => {
-            let report = hook_inventory::read(&pool, &hook_events(args)?).await?;
+            let mut args = args.peekable();
+            let include_inactive = args.next_if(|arg| arg == "--include-inactive").is_some();
+            let report = hook_inventory::read(&pool, &hook_events(args)?, include_inactive).await?;
             println!("{}", serde_json::to_string_pretty(&report)?);
-            return Ok(coverage_status(report.active_unbound == 0));
+            return Ok(coverage_status(
+                report.all_unbound.unwrap_or(report.active_unbound) == 0,
+            ));
         }
         Some("--inspect-hook-delivery") => {
             let id = args.next().ok_or("expected a delivery UUID")?;

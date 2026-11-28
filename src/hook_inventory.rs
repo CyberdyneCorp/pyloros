@@ -5,10 +5,12 @@ use sqlx::PgPool;
 #[derive(Serialize)]
 pub struct Report {
     pub active_unbound: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub all_unbound: Option<usize>,
     hooks: Vec<Value>,
 }
 
-pub async fn read(pool: &PgPool, events: &[&str]) -> sqlx::Result<Report> {
+pub async fn read(pool: &PgPool, events: &[&str], include_inactive: bool) -> sqlx::Result<Report> {
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
@@ -37,21 +39,26 @@ pub async fn read(pool: &PgPool, events: &[&str]) -> sqlx::Result<Report> {
     });
     let settings = settings.join(", ");
     let query = format!(
-        "SELECT h.is_active AND b.sha256 IS NULL, jsonb_build_object(
+        "SELECT h.is_active, b.sha256 IS NULL, jsonb_build_object(
             'id', h.id, 'name', h.name, 'event', h.event_type, 'active', h.is_active,
             'source_sha256', encode(sha256(convert_to(h.code, 'UTF8')), 'hex'),
             'component_sha256', b.sha256, {settings})
          FROM hooks h LEFT JOIN ({selections}) b ON h.id = b.hook_id
          WHERE cardinality($1::text[]) = 0 OR h.event_type = ANY($1) ORDER BY h.id"
     );
-    let rows: Vec<(bool, Value)> = sqlx::query_as(&query)
+    let rows: Vec<(bool, bool, Value)> = sqlx::query_as(&query)
         .bind(events)
         .fetch_all(&mut *tx)
         .await?;
     tx.commit().await?;
     Ok(Report {
-        active_unbound: rows.iter().filter(|(unbound, _)| *unbound).count(),
-        hooks: rows.into_iter().map(|(_, hook)| hook).collect(),
+        active_unbound: rows
+            .iter()
+            .filter(|(active, unbound, _)| *active && *unbound)
+            .count(),
+        all_unbound: include_inactive
+            .then(|| rows.iter().filter(|(_, unbound, _)| *unbound).count()),
+        hooks: rows.into_iter().map(|(_, _, hook)| hook).collect(),
     })
 }
 

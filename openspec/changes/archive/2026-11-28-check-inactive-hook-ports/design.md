@@ -1,0 +1,1 @@
+Use the existing read-only PostgreSQL snapshot and event filter. Include the total count only when requested so existing saved reviews continue to compare byte for byte. A selected component still requires behavioral verification against its fixtures.
