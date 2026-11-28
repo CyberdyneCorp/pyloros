@@ -458,6 +458,10 @@ async fn operator_and_delegated_writes_apply_iam_document_rules_before_authentic
     for (method, path) in [
         (Method::POST, "admin/users/invalid/roles"),
         (Method::POST, "clients/me/users/invalid/roles"),
+        (Method::POST, "admin/groups/invalid/policies"),
+        (Method::POST, "admin/users/invalid/groups"),
+        (Method::POST, "admin/users/invalid/policies"),
+        (Method::POST, "admin/identities/invalid/boundary"),
         (Method::POST, "admin/groups"),
         (Method::POST, "admin/policies"),
         (Method::PUT, "admin/policies/invalid"),

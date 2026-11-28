@@ -2,7 +2,7 @@
 use super::*;
 use crate::{
     chain_settings::IamMutation, grant_response::SessionOrigin, login_http::problem,
-    request_json::fields,
+    request_json::iam_document,
 };
 use axum::extract::Path;
 use serde_json::value::RawValue;
@@ -52,7 +52,7 @@ pub(in crate::profile) async fn set(
     Path(raw): Path<String>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    match fields::document(&headers, &bytes) {
+    match iam_document::document(&headers, &bytes) {
         Ok(doc) => change(&state, peer, &headers, &raw, Operation::Set(doc)).await,
         Err(error) => *error,
     }

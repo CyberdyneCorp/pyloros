@@ -1,0 +1,1 @@
+Parse the request with the IAM decoder before operator authentication. Reuse the existing identifier validators and the existing authorization and relationship transactions. Check the result through the other backend’s user IAM or group inventory.

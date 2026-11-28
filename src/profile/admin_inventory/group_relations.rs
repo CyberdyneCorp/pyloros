@@ -1,6 +1,8 @@
 //! Dispatch authorized group and user IAM relationship edits to the selected provider.
 use super::*;
-use crate::{chain_settings::IamMutation, grant_response::SessionOrigin, request_json::fields};
+use crate::{
+    chain_settings::IamMutation, grant_response::SessionOrigin, request_json::iam_document,
+};
 use axum::extract::Path;
 use serde_json::value::RawValue;
 
@@ -43,7 +45,7 @@ pub(in crate::profile) async fn attach_group_policy(
     Path(parent): Path<String>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    match fields::document(&headers, &bytes) {
+    match iam_document::document(&headers, &bytes) {
         Ok(raw) => {
             change(
                 &state,
@@ -65,7 +67,7 @@ pub(in crate::profile) async fn attach_role_policy(
     Path(parent): Path<String>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    match crate::request_json::iam_document::document(&headers, &bytes) {
+    match iam_document::document(&headers, &bytes) {
         Ok(raw) => {
             change(
                 &state,
@@ -87,7 +89,7 @@ pub(in crate::profile) async fn add_member(
     Path(parent): Path<String>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    match fields::document(&headers, &bytes) {
+    match iam_document::document(&headers, &bytes) {
         Ok(raw) => {
             change(
                 &state,
@@ -157,7 +159,7 @@ pub(in crate::profile) async fn attach_user_policy(
     Path(parent): Path<String>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    match fields::document(&headers, &bytes) {
+    match iam_document::document(&headers, &bytes) {
         Ok(raw) => {
             change(
                 &state,
