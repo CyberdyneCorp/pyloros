@@ -1,0 +1,1 @@
+Use signed synthetic events for the failover rehearsal and the billing ledger for the repeatable database test. Check both persisted plans and effective account access. A recognized signature permits recording an unsupported event type without granting access.

@@ -156,9 +156,7 @@ mod tests {
         assert!(!verifier.accepts("", payload, 1000));
     }
 
-    #[tokio::test]
-    #[ignore = "requires PostgreSQL"]
-    async fn signed_checkout_can_be_replayed_after_its_product_is_registered() {
+    async fn billing_fixture() -> PgPool {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
             .connect(&env::var("DATABASE_URL").unwrap())
@@ -172,6 +170,13 @@ mod tests {
             CREATE TEMP TABLE entitlements(id uuid PRIMARY KEY,user_id uuid,product_key text,plan text,expires_at timestamptz,source text,external_ref text,
                 status text DEFAULT 'active',revoked_at timestamptz,updated_at timestamptz);")
             .execute(&pool).await.unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn signed_checkout_can_be_replayed_after_its_product_is_registered() {
+        let pool = billing_fixture().await;
         let user = Uuid::new_v4();
         sqlx::query("INSERT INTO users VALUES($1)")
             .bind(user)
@@ -224,5 +229,89 @@ mod tests {
             rows,
             [("stripe".into(), "revoked".into(), "pi_sample".into())]
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn a_deferred_subscription_upgrade_can_resume_after_checkout() -> sqlx::Result<()> {
+        let pool = billing_fixture().await;
+        let user = Uuid::new_v4();
+        sqlx::query("INSERT INTO users VALUES($1)")
+            .bind(user)
+            .execute(&pool)
+            .await?;
+        sqlx::query("INSERT INTO products VALUES('library',true)")
+            .execute(&pool)
+            .await?;
+
+        let event = |id: &str, kind: &str, object: Value| -> Event {
+            serde_json::from_value(json!({"id":id,"type":kind,"data":{"object":object}})).unwrap()
+        };
+        let upgrade = event(
+            "change",
+            "customer.subscription.updated",
+            json!({
+                "id":"sub", "customer":"reader", "items":{"data":[{
+                    "current_period_end":2_000_000_000,
+                    "price":{"metadata":{"cyberdyne_product":"library","cyberdyne_plan":"plus"}}
+                }]}
+            }),
+        );
+        let checkout = event(
+            "checkout",
+            "checkout.session.completed",
+            json!({
+                "subscription":"sub", "customer":"reader", "client_reference_id":user,
+                "metadata":{"cyberdyne_product":"library","cyberdyne_plan":"basic"}
+            }),
+        );
+        let invoice = event(
+            "invoice",
+            "invoice.created",
+            json!({"customer":"reader","subscription":"sub"}),
+        );
+        let cancel = event(
+            "cancel",
+            "customer.subscription.deleted",
+            json!({"id":"sub","customer":"reader"}),
+        );
+        for (notification, handled) in [
+            (&upgrade, false),
+            (&checkout, true),
+            (&invoice, false),
+            (&upgrade, true),
+            (&upgrade, false),
+        ] {
+            assert_eq!(
+                ledger::process(&pool, notification, false).await?,
+                Some(handled)
+            );
+        }
+        let plans = sqlx::query_as::<_, (String, String, Option<i64>)>(
+            "SELECT plan,status,extract(epoch FROM expires_at)::bigint FROM entitlements
+             WHERE user_id=$1 AND external_ref='sub' ORDER BY plan",
+        )
+        .bind(user)
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(
+            plans,
+            [
+                ("basic".into(), "revoked".into(), None),
+                ("plus".into(), "active".into(), Some(2_000_000_000))
+            ]
+        );
+        assert_eq!(ledger::process(&pool, &cancel, false).await?, Some(true));
+        assert_eq!(ledger::process(&pool, &cancel, false).await?, Some(false));
+        let revoked: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM entitlements WHERE status='revoked'")
+                .fetch_one(&pool)
+                .await?;
+        let processed: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM stripe_events WHERE status='processed'")
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!((revoked, processed), (2, 4));
+        Ok(())
     }
 }

@@ -67,6 +67,8 @@ The response contains the hosted session's `id` and `url`. The service identifie
 
 Pyloros intentionally fulfills correctly signed events that the previous provider adapter could reject with HTTP 500 during decoding. When hook processing is enabled, an active entitlement hook without a selected version or enabled store dispatcher keeps the billing notification retryable with HTTP 503.
 
+A subscription update can arrive before checkout maps the customer. Redelivery after checkout applies the new plan and its expiry. An `invoice.created` event is informational and returns `handled: false`. A refund for a separate one-time payment revokes only the grants tied to that payment reference.
+
 ## App Store purchases
 
 Set `BILLING_ENABLED=true`, `APPLE_BUNDLE_ID` and `APPLE_ROOT_CA_DIR` on the server. Install trusted Apple roots as DER certificate files in that directory. Set `APPLE_ENVIRONMENT` to `Sandbox` or `Production` (default), and supply `APPLE_APP_APPLE_ID` for production. The server needs network access to the OCSP responders listed in the trusted certificate chain.

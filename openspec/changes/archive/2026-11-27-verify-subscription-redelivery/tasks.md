@@ -1,0 +1,2 @@
+- [x] Rehearse a deferred upgrade, invoice, refund and cancellation across PostgreSQL promotion.
+- [x] Verify the repeatable subscription regression and existing billing checks.
