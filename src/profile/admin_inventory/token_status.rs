@@ -51,7 +51,7 @@ pub(in crate::profile) async fn update(
 }
 
 enum Outcome {
-    Changed(&'static str),
+    Changed(String),
     Failed(String),
 }
 
@@ -66,14 +66,16 @@ async fn change(
             let mut tokens = tokens.lock().await;
             if let Some(value) = index.and_then(|i| tokens.get_mut(i)) {
                 *value = status;
-                Ok(Outcome::Changed("0xnullstatus"))
+                Ok(Outcome::Changed("0xnullstatus".into()))
             } else {
                 Ok(Outcome::Failed("identity not found".into()))
             }
         }
         TokenProvider::Remote(chain, writes) => {
             let _write = writes.lock().await;
-            match chain.prepare_token_status(token, status).await {
+            match chain.set_token_status(token, status).await {
+                Ok(Some(hash)) => Ok(Outcome::Changed(hash)),
+                Ok(None) => Ok(Outcome::Failed(String::new())),
                 Err(
                     PrepareError::Argument(text)
                     | PrepareError::Rpc(text)
@@ -99,7 +101,7 @@ struct StatusAudit<'a> {
 struct StatusResponse<'a> {
     #[serde(flatten)]
     audit: StatusAudit<'a>,
-    tx_hash: Option<&'static str>,
+    tx_hash: Option<String>,
     error: Option<String>,
 }
 
@@ -129,6 +131,9 @@ async fn store(
     else {
         return Ok(problem(StatusCode::BAD_REQUEST, "User has no minted NFT"));
     };
+    if let TokenProvider::Remote(chain, _) = &provider {
+        chain.lock_signer(&mut tx).await?;
+    }
     let (tx_hash, error) = match change(provider, token.get(), status).await {
         Ok(Outcome::Changed(hash)) => {
             let label = ["Active", "Suspended", "Revoked"][usize::from(status)];

@@ -477,11 +477,11 @@ impl Chain {
         self.prepare_envelope(address, call).await
     }
 
-    pub(crate) async fn prepare_token_status(
+    pub(crate) async fn set_token_status(
         &self,
         token: &str,
         status: u8,
-    ) -> Result<Vec<u8>, PrepareError> {
+    ) -> Result<Option<String>, PrepareError> {
         let id = TokenId::from_str_radix(token, 10).map_err(|_| {
             arguments::incompatible_first(
                 "setStatus",
@@ -490,15 +490,17 @@ impl Chain {
                 &[token, &status.to_string()],
             )
         })?;
-        self.prepare_contract(
-            self.identity.as_deref(),
-            setStatusCall {
-                tokenId: id,
-                status,
-            }
-            .abi_encode(),
-        )
-        .await
+        let envelope = self
+            .prepare_envelope(
+                self.identity.as_deref(),
+                setStatusCall {
+                    tokenId: id,
+                    status,
+                }
+                .abi_encode(),
+            )
+            .await?;
+        self.submit_token_status(envelope).await
     }
 
     pub(crate) async fn prepare_identity_creation(

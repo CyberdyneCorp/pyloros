@@ -45,6 +45,26 @@ fn should_check_receipt(reply: Result<Value, ReadError>, expected: B256) -> bool
     }
 }
 
+enum Execution {
+    Confirmed { hash: B256, receipt: Value },
+    Reverted(B256),
+    ReceiptTimeout,
+}
+
+impl Execution {
+    // The token API uses an empty provider error when its receipt deadline expires.
+    fn token_status_hash(self) -> Result<Option<String>, PrepareError> {
+        match self {
+            Self::Confirmed { hash, .. } => Ok(Some(HEXLOWER.encode(hash.as_slice()))),
+            Self::Reverted(hash) => Err(PrepareError::Reverted(format!(
+                "transaction reverted (tx={})",
+                HEXLOWER.encode(hash.as_slice())
+            ))),
+            Self::ReceiptTimeout => Ok(None),
+        }
+    }
+}
+
 impl Chain {
     pub(crate) async fn submit_mutation(
         &self,
@@ -58,6 +78,26 @@ impl Chain {
         &self,
         tx: UnsignedIamTransaction,
     ) -> Result<Value, PrepareError> {
+        match self.execute_envelope(tx).await? {
+            Execution::Confirmed { receipt, .. } => Ok(receipt),
+            Execution::ReceiptTimeout => Err(PrepareError::Unavailable),
+            Execution::Reverted(hash) => Err(PrepareError::Reverted(format!(
+                "transaction reverted (tx={hash})"
+            ))),
+        }
+    }
+
+    pub(super) async fn submit_token_status(
+        &self,
+        tx: UnsignedIamTransaction,
+    ) -> Result<Option<String>, PrepareError> {
+        self.execute_envelope(tx).await?.token_status_hash()
+    }
+
+    async fn execute_envelope(
+        &self,
+        tx: UnsignedIamTransaction,
+    ) -> Result<Execution, PrepareError> {
         let signed = tx.signed(self.signing_key.as_ref().ok_or(PrepareError::Invalid)?)?;
         let expected = keccak256(&signed);
         let body = json!({"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction",
@@ -65,6 +105,9 @@ impl Chain {
         let reply = self
             .request(&SUBMISSION_CLIENT, &body.to_string(), RpcRead::Contract)
             .await;
+        if let Err(ReadError::Rpc(error)) = reply {
+            return Err(PrepareError::Rpc(error.diagnostic));
+        }
         if !should_check_receipt(reply, expected) {
             return Err(PrepareError::Unavailable);
         }
@@ -72,10 +115,25 @@ impl Chain {
             .wait_for_receipt(expected, Some(tx.to), Duration::from_secs(60))
             .await
         {
-            Ok(("reported_success", receipt)) => Ok(receipt),
-            Ok(("reported_revert", _)) => Err(PrepareError::Reverted(format!(
-                "transaction reverted (tx={expected})"
-            ))),
+            Ok(("reported_success", receipt)) => Ok(Execution::Confirmed {
+                hash: expected,
+                receipt,
+            }),
+            Ok(("reported_revert", _)) => Ok(Execution::Reverted(expected)),
+            Ok(("receipt_timeout", _)) => {
+                eprintln!(
+                    "Receipt deadline expired for IAM transaction {expected} on {}",
+                    tx.to
+                );
+                Ok(Execution::ReceiptTimeout)
+            }
+            Err(error) => {
+                eprintln!(
+                    "Could not read receipt for IAM transaction {expected} on {}",
+                    tx.to
+                );
+                Err(rpc_failure(error))
+            }
             _ => {
                 eprintln!(
                     "Unconfirmed IAM transaction {expected} for contract {}",
@@ -90,6 +148,22 @@ impl Chain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_status_uses_provider_hashes_and_preserves_a_missing_receipt() {
+        let hash = B256::repeat_byte(0xab);
+        let digits = "ab".repeat(32);
+        assert!(
+            matches!(Execution::Confirmed { hash, receipt: Value::Null }.token_status_hash(), Ok(Some(value)) if value==digits)
+        );
+        assert!(
+            matches!(Execution::Reverted(hash).token_status_hash(),Err(PrepareError::Reverted(value)) if value==format!("transaction reverted (tx={digits})"))
+        );
+        assert!(matches!(
+            Execution::ReceiptTimeout.token_status_hash(),
+            Ok(None)
+        ));
+    }
 
     #[test]
     fn lost_submission_response_requires_reconciliation_by_local_hash() {

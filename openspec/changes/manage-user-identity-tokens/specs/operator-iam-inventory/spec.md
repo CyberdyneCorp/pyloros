@@ -69,3 +69,18 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 - **WHEN** transaction preparation encounters an HTTP refusal or a malformed provider response
 - **THEN** report the failed provider outcome to the operator and record the audit
 - **AND** include the provider failure detail in the mint retry outcome stored on the user
+
+#### Scenario: Confirm a remote identity token status update
+
+- **WHEN** the configured identity contract confirms the submitted status change
+- **THEN** return the transaction hash in the provider's hexadecimal format after committing the user metadata and operator audit
+- **WHEN** the transaction is mined but reverts
+- **THEN** retain the previous stored status and record the failed outcome with the token identifier and requested status
+- **WHEN** the contract confirms the update but the metadata and audit transaction fails to commit
+- **THEN** return HTTP 500 and leave the confirmed contract update intact
+
+#### Scenario: Identity status receipt deadline expires
+
+- **WHEN** the provider has accepted a status transaction but its receipt remains pending through the deadline
+- **THEN** return HTTP 200 with an unsuccessful result, null transaction hash and empty error string, and record the failed outcome
+- **AND** retain the previous stored status even if the transaction later confirms on chain

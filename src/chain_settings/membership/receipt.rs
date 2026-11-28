@@ -1,6 +1,6 @@
 //! Inspect a known transaction without loading a signer or submitting a mutation.
 use super::inspection::inspection_chain;
-use super::{Chain, Value, json};
+use super::{Chain, ReadError, Value, json};
 use alloy_primitives::{Address, B256};
 use serde::Serialize;
 use std::{error::Error, time::Duration};
@@ -50,14 +50,9 @@ impl Chain {
         hash: B256,
         contract: Option<Address>,
         poll: bool,
-    ) -> Result<(&'static str, Value), &'static str> {
+    ) -> Result<(&'static str, Value), ReadError> {
         loop {
-            let receipt = self
-                .rpc("eth_getTransactionReceipt", json!([hash]))
-                .await
-                .map_err(
-                    |_| "Could not read transaction receipt from the configured RPC endpoint",
-                )?;
+            let receipt = self.rpc("eth_getTransactionReceipt", json!([hash])).await?;
             if !poll || !receipt.is_null() {
                 return Ok((outcome(hash, contract, &receipt), receipt));
             }
@@ -70,7 +65,7 @@ impl Chain {
         hash: B256,
         contract: Option<Address>,
         limit: Duration,
-    ) -> Result<(&'static str, Value), &'static str> {
+    ) -> Result<(&'static str, Value), ReadError> {
         tokio::time::timeout(limit, self.observe_receipt(hash, contract, true))
             .await
             .unwrap_or(Ok(("receipt_timeout", Value::Null)))
@@ -95,12 +90,11 @@ pub async fn inspect_receipt_for(
     let (outcome, _) = if wait {
         chain
             .wait_for_receipt(requested_hash, contract, Duration::from_secs(60))
-            .await?
+            .await
     } else {
-        chain
-            .observe_receipt(requested_hash, contract, false)
-            .await?
-    };
+        chain.observe_receipt(requested_hash, contract, false).await
+    }
+    .map_err(|_| "Could not read transaction receipt from the configured RPC endpoint")?;
     Ok(ReceiptObservation {
         requested_hash,
         requested_contract: contract,

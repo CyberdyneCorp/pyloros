@@ -3,5 +3,7 @@
 - [x] Exercise mint retries with the existing CLI and browser.
 - [x] Implement local status updates, including input validation, metadata persistence and audit rollback.
 - [x] Exercise local status changes with the existing CLI and browser.
-- [ ] Compare deployed provider call preparation and failures for both operations.
-- [ ] Verify confirmed chain operations.
+- [x] Compare remote status preparation, submission refusal, mined revert and receipt deadline against the reference provider.
+- [ ] Complete deployed provider comparisons for mint retry.
+- [x] Verify confirmed remote status changes, original clients, concurrent replicas and post-confirmation audit rejection.
+- [ ] Verify confirmed mint retry.
