@@ -19,3 +19,11 @@ Pyloros SHALL expose GET /api/v1/orgs/{org_id}/members to administrators and act
 #### Scenario: Service registration is disabled
 - **WHEN** a disabled client presents its previously issued directory token
 - **THEN** the directory returns HTTP 401
+
+### Requirement: Validate numeric metadata before display
+PostgreSQL organization directories SHALL validate all stored metadata integers before converting values to display strings.
+
+#### Scenario: A directory entry contains an oversized integer
+- **WHEN** a selected organization contains an integer wider than 4,300 digits, including in a superseded historical key-value pair
+- **THEN** its detail, the operator directory containing it and a member's directory containing it return HTTP 500
+- **AND** an unrelated valid organization's detail remains available

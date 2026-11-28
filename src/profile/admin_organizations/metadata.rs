@@ -4,6 +4,7 @@ use serde_json::{Value, value::RawValue};
 use std::collections::BTreeMap;
 
 pub(super) fn strings(input: &str) -> serde_json::Result<Value> {
+    crate::stored_json::check_integers(input).map_err(serde::de::Error::custom)?;
     let raw: &RawValue = serde_json::from_str(input)?;
     let mut projected = serde_json::Map::new();
     match raw.get().as_bytes()[0] {
@@ -232,6 +233,14 @@ fn display(value: &RawValue) -> serde_json::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directory_rejects_oversized_integers_before_stringifying_values() {
+        let n = "9".repeat(4301);
+        assert!(strings(&format!(r#"{{"nested":[{n}]}}"#)).is_err());
+        assert!(strings(&format!(r#"[["key",{n}],["key","new"]]"#)).is_err());
+        assert_eq!(strings(&format!(r#"{{"key":"{n}"}}"#)).unwrap()["key"], n);
+    }
 
     #[test]
     fn check_integer_width_before_projecting_or_replacing_metadata_fields() {
