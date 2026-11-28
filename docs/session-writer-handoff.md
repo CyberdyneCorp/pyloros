@@ -13,6 +13,24 @@ A local reverse proxy selected between two pools of two API processes sharing Po
 
 In each direction we drained an ordinary login refresh and revoked the rotated session on the incoming writer. We also drained an administrator revocation and tried the existing credential on the incoming writer. Every session ended with zero active refresh records and one revocation audit.
 
+### Recover a lost revocation response
+
+Keep admission closed until the outgoing transaction finishes. In four local trials the caller disconnected while PostgreSQL was committing the revocation. A read on the primary still showed an active session while the commit was pending, including in trials where the revocation ultimately succeeded.
+
+After draining, use the following query in a fresh `psql` transaction on the primary. Set the `session_id` variable to the affected UUID. Compare the audit count with the count before the switch.
+
+```sql
+SELECT s.revoked_at,
+       (SELECT count(*) FROM refresh_tokens
+        WHERE session_id = s.id AND revoked_at IS NULL) AS unrevoked_tokens,
+       (SELECT count(*) FROM admin_action_logs
+        WHERE action = 'session.revoke' AND target_id = s.id::text) AS revocation_audits
+FROM sessions AS s
+WHERE s.id = :'session_id'::uuid;
+```
+
+In both switch directions, a successful commit left a revocation timestamp, zero unrevoked tokens and one additional audit. The operator could leave the request alone. A rejected commit left all three values at their pre-request baseline. Retrying once on the incoming writer then returned HTTP 204. In all four trials both writers subsequently refused the old refresh credential. A missing session or ambiguous audit history requires separate investigation.
+
 ### OAuth refresh grants
 
 Eight additional handoffs exercised the OAuth token endpoint with public clients and confidential clients using HTTP Basic authentication. Each client obtained a resource-bound authorization code with PKCE and requested offline access. Each client type exercised both writer directions and both outgoing operations.
