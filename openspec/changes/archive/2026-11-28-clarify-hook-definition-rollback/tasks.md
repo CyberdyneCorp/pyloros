@@ -1,0 +1,2 @@
+- [x] Verify that rejected creates and edits preserve definitions, bindings and audit entries.
+- [x] Verify cross-writer retry, readback, binding invalidation and audit count.

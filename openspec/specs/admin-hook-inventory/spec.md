@@ -74,6 +74,11 @@ The service SHALL accept authorized creation and editing of hook definitions, va
 - **WHEN** a create or edit request contains extra JSON whitespace or a multibyte encoding
 - **THEN** apply authentication and decoded field validation as for a compact request
 
+#### Scenario: Definition commit is explicitly rejected
+- **WHEN** PostgreSQL rejects the commit for a hook creation or source edit
+- **THEN** return HTTP 500 and preserve the prior definitions, component bindings and audit history
+- **AND** a subsequent committed source edit clears the old component binding and records one edit audit
+
 ### Requirement: Test an installed hook
 The service SHALL let an authorized operator run the component selected for an installed hook against a supplied context and report success, output, error and elapsed milliseconds.
 

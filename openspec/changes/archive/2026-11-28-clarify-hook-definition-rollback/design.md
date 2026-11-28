@@ -1,0 +1,1 @@
+The source update, binding invalidation and operator audit share a PostgreSQL transaction. A commit rejection preserves the earlier definition and component selection. Either writer can apply the edit after the cause of rejection clears.
