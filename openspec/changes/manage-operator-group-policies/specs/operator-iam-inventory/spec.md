@@ -18,3 +18,14 @@ An authorized operator SHALL be able to attach and detach an existing IAM policy
 
 - **WHEN** recording an attachment or detachment fails
 - **THEN** the transaction preserves the previously committed relationships
+
+#### Scenario: Attaching a policy while group deletion commits
+
+- **WHEN** a PostgreSQL attachment request waits for a deletion of its target group and that deletion commits
+- **THEN** Pyloros returns HTTP 404, creates no attachment, and records no successful attachment audit
+
+#### Scenario: Detaching a policy while group deletion commits
+
+- **WHEN** a detachment waits for a group deletion that removes its existing attachment and commits
+- **THEN** the detachment returns HTTP 200 and records one detachment audit
+- **AND** subsequent group inventory omits the group and permission checks deny access previously granted solely through that attachment

@@ -4,3 +4,4 @@
 - [x] Verify unsigned preparation for both group policy contract calls and provider failure responses.
 - [ ] Verify confirmed chain mutations and post-confirmation auditing.
 - [ ] Resolve overlapping attachment, detachment and policy deletion during a mixed-writer rollout.
+- [x] Verify a waiting attachment and detachment after a populated group deletion commits across writer pools, including audit and inherited access.
