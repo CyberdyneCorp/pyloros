@@ -1,0 +1,30 @@
+# Mixed authentication traffic on PostgreSQL
+
+## Workload
+
+A single Apple M3 Pro host (12 CPU cores, 36 GiB RAM) ran the Rust release, PostgreSQL 17.12 and the HTTP driver over loopback. Each trial used a fresh migrated database and 16 synthetic accounts. The API used RS256 signing, token revocation enforcement and Argon2id with 64 MiB, three iterations and four lanes. Hooks and webhooks were disabled. Each API process allowed two concurrent password hash jobs.
+
+The driver warmed up all 16 accounts with a login, a refresh and an introspection. Each account had its own sequential HTTP client. In the two-process configuration, eight clients used each process and both processes shared a PostgreSQL primary. The driver scheduled requests independently of completions and gave each ticket to the next available client. The mix repeated one password login, one refresh and two introspections. Each response had to identify the expected account, and each refresh had to rotate its token.
+
+Each phase offered 1,024 requests and drained before the next phase. The arrival rates were 64, 96, 128, 160 and finally 64 requests/s. The four trials used one, two, two and one API processes in that order. Reported latency includes waiting in the driver queue. This counts the delay an overloaded server imposes on arriving work. Repeating the 64 requests/s phase measures recovery once the backlog drains.
+
+## Results
+
+All 20,480 measured requests succeeded. Each trial produced the expected 1,296 sessions and 2,592 refresh-token rows including warmup. At 96 requests/s, both configurations held p99 below 87 ms. At 128 requests/s, one process accumulated a backlog in both runs. With two processes the driver queue peaked at one ticket even at 160 requests/s. Both configurations returned to a p99 below 86 ms in the final phase.
+
+Each range covers the two repetitions of that configuration. A request completing just after the arrival window counts as a success and contributes to drain time. The CSV includes individual trials, per-operation p99, generator delay and API CPU time. [Trial data](capacity-trials.csv)
+
+| Offered requests/s | API processes | Completed within window (of 1,024) | End-to-end p99 (ms) | Peak queued | Drain (ms) |
+|---|---:|---:|---:|---:|---:|
+| 64 | 1 | 1023 | 83.8–84.4 | 1 | 16.4–29.2 |
+| 64 | 2 | 1023 | 83.6–84.6 | 1 | 17.5–17.6 |
+| 96 | 1 | 1022 | 85.3–86.3 | 1 | 38.4–49.0 |
+| 96 | 2 | 1023 | 84.8–85.6 | 1 | 37.5–38.0 |
+| 128 | 1 | 845–849 | 2092.8–2131.1 | 161–164 | 2137.4–2177.5 |
+| 128 | 2 | 1022 | 113.3–117.7 | 1 | 52.3–62.1 |
+| 160 | 1 | 685 | 3626.3–3663.7 | 323–325 | 3741.7–3779.9 |
+| 160 | 2 | 1020 | 182.4–196.6 | 1 | 64.4–121.9 |
+| 64 (recovery) | 1 | 1023 | 83.2–83.8 | 1 | 17.0–17.3 |
+| 64 (recovery) | 2 | 1023 | 83.2–85.5 | 1 | 17.1–18.4 |
+
+The packaged binary had SHA-256 `17fa9667b7b8872be03b551f29e39f71014dc72a3cc534bc24a435a4d2059104`. Its backend source matches revision `fb70d84`. The 160 requests/s phase offered traffic for 6.4 seconds. Production sizing still needs sustained traffic with the deployed endpoint mix, ingress, background jobs, database topology and latency budget.

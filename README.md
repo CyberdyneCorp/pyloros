@@ -89,6 +89,10 @@ A receiver can process a webhook just before the worker loses its connection or 
 
 By default each replica claims up to 50 deliveries per batch, runs eight sends concurrently, allows ten seconds per request and polls every two seconds when the batch is smaller than the limit. Set `WEBHOOKS_BATCH_SIZE`, `WEBHOOKS_MAX_CONCURRENCY`, `WEBHOOKS_REQUEST_TIMEOUT_SECONDS` and `WEBHOOKS_POLL_INTERVAL_SECONDS` to tune these values. The worker pins HTTPS connections to checked public addresses. For local receiver testing, `WEBHOOKS_ALLOW_INSECURE_HTTP=true` permits HTTP and local addresses in development.
 
+## Capacity measurements
+
+[Mixed login, refresh and introspection results on PostgreSQL](docs/capacity.md) cover one and two API processes under scheduled traffic.
+
 ## Local development
 
 Install stable Rust with rustfmt and Clippy, OpenSSL development headers and libraries, just, and Docker Compose. Run `just` for available commands.
