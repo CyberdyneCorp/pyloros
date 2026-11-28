@@ -540,9 +540,12 @@ For example, a silent hook returns
 
 The command builds the release worker, applies the dry-run deadline and prints
 the component SHA-256 on success. A mismatch, invalid input or worker failure
-exits unsuccessfully. Each invocation checks one fixture and works without a
-database or API credentials. Run the command for each behavior you expect
-from the source hook, including guest errors where applicable.
+exits unsuccessfully. Append additional event and expectation paths in pairs to cover each behavior
+you expect from the source hook, including guest errors. For example,
+`just check-hook-fixture component.wasm ok.json ok-result.json error.json error-result.json`
+checks both cases against one in-memory copy of the artifact. Each case uses a
+fresh worker. Only a fully matching set prints the digest. A failure identifies
+the case by its one-based position. The check runs without database or API credentials.
 
 To capture expectations for a registration hook edited during migration, run
 the saved source through its v1 manual test with representative contexts.

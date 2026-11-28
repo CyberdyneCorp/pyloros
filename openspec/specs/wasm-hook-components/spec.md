@@ -232,6 +232,11 @@ The executable SHALL check a local component and JSON event against an expected 
 - **WHEN** the fixture is invalid, the worker fails, or the guest outcome differs
 - **THEN** the check exits unsuccessfully without printing event or output contents
 
+#### Scenario: Review several behaviors for one binding
+- **WHEN** an operator supplies multiple event and expected outcome pairs
+- **THEN** check each pair in order against one copy of the component and print its digest only after all pairs match
+- **AND** a failed case reports its position without disclosing event or output contents
+
 ### Requirement: Numeric range during component event admission
 The offline fixture checker, artifact dry run and isolated worker SHALL admit otherwise valid bounded JSON events independently of the host floating-point range and forward the original numeric tokens to the component.
 

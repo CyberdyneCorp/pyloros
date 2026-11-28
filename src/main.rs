@@ -37,10 +37,15 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
     let mut fixture = env::args_os().skip(1);
     if fixture.next().as_deref() == Some(std::ffi::OsStr::new("--check-hook-fixture")) {
         let paths: Vec<std::path::PathBuf> = fixture.map(Into::into).collect();
-        let [component, event, expected] = paths.as_slice() else {
-            return Err("expected component, event JSON, and expected outcome paths".into());
+        let Some((component, files)) = paths.split_first() else {
+            return Err("expected a component followed by event and expected outcome pairs".into());
         };
-        let digest = pyloros::profile::check_hook_fixture(component, event, expected).await?;
+        let pairs = files.chunks_exact(2);
+        if !pairs.remainder().is_empty() {
+            return Err("each event must have an expected outcome path".into());
+        }
+        let cases: Vec<_> = pairs.map(|p| (p[0].as_path(), p[1].as_path())).collect();
+        let digest = pyloros::profile::check_hook_fixtures(component, &cases).await?;
         println!("{digest}");
         return Ok(ExitCode::SUCCESS);
     }

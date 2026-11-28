@@ -120,7 +120,7 @@ hook-delivery id:
 
 # Compare a candidate guest with a recorded outcome before uploading it.
 [positional-arguments]
-check-hook-fixture component event expected:
+check-hook-fixture component event expected *additional:
     cargo build --release --locked --manifest-path hook-worker/Cargo.toml --target-dir "${CARGO_TARGET_DIR:-target}"
     cargo run --release --locked --bin pyloros -- --check-hook-fixture "$@"
 

@@ -58,7 +58,7 @@ pub use hook_inventory::HOOK_EVENTS;
 pub use wasm_hooks::ComponentHookWorker as EntitlementHookWorker;
 pub use wasm_hooks::ComponentHookWorker as StoreHookWorker;
 pub(crate) use wasm_hooks::delivery::logged_in;
-pub use wasm_hooks::{ComponentHookWorker, check_hook_fixture};
+pub use wasm_hooks::{ComponentHookWorker, check_hook_fixture, check_hook_fixtures};
 mod webhook_history;
 use crate::{config, token_authorization};
 use axum::extract::{ConnectInfo, Request};
