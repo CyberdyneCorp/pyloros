@@ -63,6 +63,11 @@ def main():
         '{"v":[1,1,12,1e2,1e20,1e2,1e2,-0e2,3e-4,9e15,1.3e8]}',
         '{"v":[{"x":1,"x":2},{"x":1,"x":2},{"x":3}]}',
     ])
+    for values in (["1e-1"] * 4000, ["1e-6", "1e16", "1e-50"] * 1200, [f"{i % 93}.0e1" for i in range(4000)],
+                   [f"{i % 1000}e-2" for i in range(3500)],
+                   ["-0.000e-100", "10e-5", "10e-6", "1e15", "1e16",
+                    "-0.00120E+4", "123456789012345e-12", "1234567890123456e-12"]):
+        contexts.append('{"v":[' + ",".join(values) + "]}")
     for event in contexts:
         expected = (repr(json.loads(event)) + "\n")[:10_000]
         cases.append(("examples/context_hook", event, "success", expected))

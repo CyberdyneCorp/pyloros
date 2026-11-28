@@ -232,25 +232,75 @@ fn short_decimal(text: &str) -> Option<&str> {
     Some(trimmed)
 }
 
-// Integers below 10^15 are exactly representable in binary64, and the
-// source prints integral floats of this magnitude in fixed-point notation.
-fn scaled_integer(text: &str, out: &mut DisplayOutput) -> bool {
+// Up to 15 decimal digits round-trip in the normal binary64 range. Keep
+// overflow, subnormal values and longer mantissas on the round-trip formatter.
+fn scaled_decimal(text: &str, out: &mut DisplayOutput) -> bool {
     let Some((mantissa, exponent)) = text.split_once(['e', 'E']) else {
         return false;
     };
-    let Ok(power) = exponent.parse::<usize>() else {
+    let Ok(power) = exponent.parse::<i16>() else {
         return false;
     };
-    let digits = mantissa.trim_start_matches('-');
-    if power > 15 || digits.len() + power > 15 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+    let magnitude = mantissa.trim_start_matches('-');
+    let (whole, fraction) = magnitude.split_once('.').unwrap_or((magnitude, ""));
+    let len = whole.len() + fraction.len();
+    if len > 15 {
         return false;
     }
-    out.push_ascii(mantissa);
-    if digits != "0" {
-        out.push_ascii(&"000000000000000"[..power]);
+    let mut buffer = [0; 15];
+    buffer[..whole.len()].copy_from_slice(whole.as_bytes());
+    buffer[whole.len()..len].copy_from_slice(fraction.as_bytes());
+    let all = std::str::from_utf8(&buffer[..len]).expect("JSON decimal digits");
+    let significant = all.trim_start_matches('0');
+    let point = i32::from(power) + whole.len() as i32 - (len - significant.len()) as i32;
+    let digits = significant.trim_end_matches('0');
+    if !digits.is_empty() && !(-306..=308).contains(&point) {
+        return false;
     }
-    out.push_ascii(".0");
+    if mantissa.starts_with('-') {
+        out.push_ascii("-");
+    }
+    if !digits.is_empty() && !(-3..=16).contains(&point) {
+        write_scientific(digits, point - 1, out);
+    } else {
+        write_fixed(digits, point, out);
+    }
     true
+}
+
+fn write_scientific(digits: &str, exponent: i32, out: &mut DisplayOutput) {
+    let (first, tail) = digits.split_at(1);
+    out.push_ascii(first);
+    if !tail.is_empty() {
+        out.push_ascii(".");
+        out.push_ascii(tail);
+    }
+    out.push_ascii(if exponent < 0 { "e-" } else { "e+" });
+    let magnitude = exponent.unsigned_abs();
+    if magnitude < 10 {
+        out.push_ascii("0");
+    }
+    out.push_ascii(&magnitude.to_string());
+}
+
+fn write_fixed(digits: &str, point: i32, out: &mut DisplayOutput) {
+    const ZEROS: &str = "0000000000000000";
+    if digits.is_empty() {
+        out.push_ascii("0.0");
+    } else if point <= 0 {
+        out.push_ascii("0.");
+        out.push_ascii(&ZEROS[..(-point) as usize]);
+        out.push_ascii(digits);
+    } else if point as usize >= digits.len() {
+        out.push_ascii(digits);
+        out.push_ascii(&ZEROS[..point as usize - digits.len()]);
+        out.push_ascii(".0");
+    } else {
+        let (whole, fraction) = digits.split_at(point as usize);
+        out.push_ascii(whole);
+        out.push_ascii(".");
+        out.push_ascii(fraction);
+    }
 }
 
 fn scalar(text: &str, out: &mut DisplayOutput) -> Result<(), String> {
@@ -263,7 +313,7 @@ fn scalar(text: &str, out: &mut DisplayOutput) -> Result<(), String> {
                 out.push_ascii(decimal);
                 return Ok(());
             }
-            if scaled_integer(text, out) {
+            if scaled_decimal(text, out) {
                 return Ok(());
             }
             let value = text.parse::<f64>().map_err(|e| e.to_string())?;

@@ -323,6 +323,10 @@ The context display guest SHALL render the supplied object using source-compatib
 - **WHEN** a manual request contains `{"b":0,"a":1,"b":2}`
 - **THEN** the displayed dictionary starts with `'b': 2` followed by `'a': 1`
 
+#### Scenario: Display a dense numeric context
+- **WHEN** a reviewed display hook receives thousands of short decimal mantissas with positive or negative exponents in a bounded event
+- **THEN** render the source-compatible fixed or scientific notation and return the first 10,000 characters under the standard worker budget
+
 ### Requirement: Preserve registration context order after privacy filtering
 The registration delivery adapter SHALL supply the permitted fields in their source execution order for new and pending deliveries.
 
