@@ -243,6 +243,26 @@ enum SessionProof {
     Reauthenticate,
 }
 
+impl SessionProof {
+    async fn claim(
+        &self,
+        enrollment: &crate::passkey_ceremonies::SessionCeremony<'_>,
+        tx: Transaction<'_, Postgres>,
+        ceremony: Uuid,
+    ) -> Result<Vec<u8>, Response> {
+        let result = match self {
+            Self::Register => enrollment.claim(tx, ceremony).await,
+            Self::Reauthenticate => enrollment.claim_reauthentication(tx, ceremony).await,
+        };
+        match result {
+            Ok(Some(challenge)) => Ok(challenge),
+            Ok(None) => Err(finish::invalid()),
+            Err(sqlx::Error::Database(_)) => Err(internal()),
+            Err(_) => Err(inventory_unavailable()),
+        }
+    }
+}
+
 enum Operation {
     Reauthenticate(Option<creation::Transport>),
     Enroll(Option<creation::Transport>),
@@ -287,12 +307,14 @@ async fn run(
         operation,
     )
     .await;
-    result.unwrap_or_else(|_| {
-        problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Passkey inventory unavailable",
-        )
-    })
+    result.unwrap_or_else(|_| inventory_unavailable())
+}
+
+fn inventory_unavailable() -> Response {
+    problem(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Passkey inventory unavailable",
+    )
 }
 
 async fn inventory(
@@ -350,18 +372,13 @@ async fn inventory(
                 .expect("validated enrollment settings")
                 .digest,
         };
+        let challenge = match purpose.claim(&enrollment, tx, proof.ceremony).await {
+            Ok(challenge) => challenge,
+            Err(response) => return Ok(response),
+        };
         if matches!(purpose, SessionProof::Reauthenticate) {
-            let Some(challenge) = enrollment
-                .claim_reauthentication(tx, proof.ceremony)
-                .await?
-            else {
-                return Ok(finish::invalid());
-            };
             return reauth::verify(state, id, &enrollment, proof, challenge).await;
         }
-        let Some(challenge) = enrollment.claim(tx, proof.ceremony).await? else {
-            return Ok(finish::invalid());
-        };
         return finish::register(
             &state.pool,
             id,
@@ -487,6 +504,54 @@ fn record(row: sqlx::postgres::PgRow) -> Result<Record, sqlx::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn rejected_claim_leaves_the_challenge_available_once() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        sqlx::raw_sql("CREATE TEMP TABLE passkey_ceremonies(
+            id uuid PRIMARY KEY, purpose text, user_id uuid, session_id uuid, rp_id text, origin text,
+            binding_hash text, policy text, challenge bytea, consumed_at timestamptz, expires_at timestamptz);
+            CREATE FUNCTION pg_temp.reject_claim() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'claim rejected'; END $$;
+            CREATE CONSTRAINT TRIGGER reject_claim AFTER UPDATE ON passkey_ceremonies
+            DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_claim();")
+            .execute(&pool).await.unwrap();
+        let enrollment = crate::passkey_ceremonies::SessionCeremony {
+            user: Uuid::new_v4(),
+            session: Uuid::new_v4(),
+            relying_party: "example.org",
+            origin: "https://example.org",
+            binding: "fixture",
+            policy_digest: "fixture",
+        };
+        let challenge = [31; 32];
+        let mut tx = pool.begin().await.unwrap();
+        let ceremony = enrollment.issue(&mut tx, &challenge, 300).await.unwrap();
+        tx.commit().await.unwrap();
+        let claim = || async {
+            SessionProof::Register
+                .claim(&enrollment, pool.begin().await.unwrap(), ceremony)
+                .await
+        };
+        assert_eq!(
+            claim().await.unwrap_err().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        sqlx::query("DROP TRIGGER reject_claim ON passkey_ceremonies")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(claim().await.unwrap(), challenge);
+        assert_eq!(
+            claim().await.unwrap_err().status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
 
     #[tokio::test]
     async fn wide_verification_envelopes_preserve_credential_strings_and_reject_invalid_text() {

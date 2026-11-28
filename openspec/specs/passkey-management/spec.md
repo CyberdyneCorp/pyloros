@@ -112,3 +112,10 @@ After a successful ceremony claim, the service SHALL return HTTP 500 when Postgr
 #### Scenario: Rejected reauthentication
 - **WHEN** the transaction saving verified reauthentication rolls back after the ceremony claim
 - **THEN** the previously committed credential counter, last-use time and session proof remain intact, and reauthentication requires a fresh ceremony
+
+### Requirement: Recover from a rejected ceremony claim
+The service SHALL return HTTP 500 when PostgreSQL rejects marking a login, registration or reauthentication ceremony as consumed.
+
+#### Scenario: Retry an uncommitted claim
+- **WHEN** the claim transaction rolls back and the caller retries the valid proof with its original binding before expiry
+- **THEN** the proof can succeed once, with no credential, reauthentication or session updates from the rejected attempt

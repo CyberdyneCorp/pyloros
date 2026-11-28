@@ -1,0 +1,1 @@
+Use the existing bound, expiring claim transaction. Handle database rejection before verifying the proof. Keep transport failures on the existing inventory availability path and preserve the authentication error for an ineligible challenge.

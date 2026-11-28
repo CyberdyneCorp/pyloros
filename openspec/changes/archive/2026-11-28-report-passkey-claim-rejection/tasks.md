@@ -1,0 +1,2 @@
+- [x] Apply the database rejection response to authenticated ceremony claims.
+- [x] Verify that the original unexpired proof can succeed once after claim rollback.
