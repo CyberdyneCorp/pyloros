@@ -381,6 +381,20 @@ exits unsuccessfully. Each invocation checks one fixture and works without a
 database or API credentials. Run the command for each behavior you expect
 from the source hook, including guest errors where applicable.
 
+To capture expectations for a registration hook edited during migration, run
+the saved source through its v1 manual test with representative contexts.
+For a successful short output, copy the returned text into the fixture,
+including its final newline. For an explicit exception raised by the script,
+use `{"status":"error","output":"<returned error text>"}`. The v1 view
+truncates long output, so use a full source output capture for those cases.
+
+After the offline checks pass, upload the matching component and bind it with
+the reviewed source digest. Repeat the manual cases through the Rust v1 API
+and compare `success`, `output`, and `error`. If the binding returns 409,
+read the current source and repeat the review. Once all active registration
+hooks are covered, a CSV import that rolled back with the dispatcher 503 can
+be retried through Rust.
+
 ### Dry-run a staged hook
 
 Send synthetic event JSON to `POST /api/v2/admin/hooks/artifacts/{sha256}/test`
