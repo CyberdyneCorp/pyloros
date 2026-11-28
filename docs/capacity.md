@@ -144,6 +144,23 @@ All 4,608 timed decisions matched the expected user and tenant. After each size 
 
 Rust executable SHA-256: `897f4be10d897aed466458389ba1a24a9c9e58ccf20af7066f067726c51f3704`.
 
+### Inherited checks during membership changes
+
+Two Rust replicas and PostgreSQL 17.12 ran on the same Apple M3 Pro as the HTTP driver. Each of two clients owned 4,096 folders. Half the folders linked to 32 teams and half linked to 33, crossing the evaluator’s 32-node batch boundary. A different user in each client belonged to the last team of every folder. This produced a database with 277,453 object relationships and 8,193 user memberships, including setup fixtures.
+
+Eight concurrent workers sampled folders and users across both clients for 60 seconds. Two additional folders were reserved for alternating membership withdrawals and restorations at two writes per second. After each acknowledgement, the driver checked both users in both clients through both replicas. Each trial started with a fresh database.
+
+| Teams per folder | Decision | Completed reads across two trials | Trial 1 p95 (ms) | Trial 2 p95 (ms) |
+|---:|---|---:|---:|---:|
+| 32 | Allow | 43,938 | 6.84 | 6.85 |
+| 32 | Deny | 43,337 | 6.83 | 6.98 |
+| 33 | Allow | 43,536 | 7.27 | 7.28 |
+| 33 | Deny | 43,827 | 7.20 | 7.33 |
+
+All 174,638 timed reads and 1,920 checks after acknowledged writes matched the expected permissions. Each database recorded 60 grants and 60 withdrawals. The driver kept at most eight background reads in flight. Measuring saturation requires a separate arrival-rate test.
+
+Rust executable SHA-256: `897f4be10d897aed466458389ba1a24a9c9e58ccf20af7066f067726c51f3704`.
+
 ### Starting a ReBAC permission snapshot
 
 Each permission check opens a read-only repeatable-read transaction. Opening it with both modes in the initial SQL statement removes one round trip to PostgreSQL. Statement traces confirmed the change on direct, inherited and wide-graph checks.
