@@ -23,6 +23,7 @@ An authorized operator SHALL be able to create an identity using the selected IA
 
 - **WHEN** a mint confirms and its first contract log identifies the assigned token
 - **THEN** return HTTP 201 with the stable identity UUID, the full token identifier and the requested identity attributes
+- **AND** interpret the token identifier with the same hexadecimal integer syntax as an identity mint retry
 - **AND** record one operator audit and return a null user link for the chain identity
 - **WHEN** the provider rejects minting or the receipt yields no usable token identifier
 - **THEN** return HTTP 404 and omit the creation audit

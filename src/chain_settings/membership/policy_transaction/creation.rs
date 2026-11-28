@@ -67,13 +67,20 @@ pub(super) fn mint_id(receipt: &Value, contract: Address) -> Result<Option<Token
     let bytes = HEXLOWER_PERMISSIVE
         .decode(raw.as_bytes())
         .map_err(|_| PrepareError::Invalid)?;
-    let digits = bytes
-        .trim_ascii()
-        .strip_prefix(b"+")
-        .unwrap_or(bytes.trim_ascii());
-    text_id(digits)
+    mint_text_integer(&bytes)
         .map(Some)
         .ok_or_else(|| invalid_mint_id(&bytes))
+}
+
+fn mint_text_integer(bytes: &[u8]) -> Option<TokenId> {
+    // The provider parses the log bytes as a base-16 integer, including digit separators.
+    let text = std::str::from_utf8(bytes).ok()?.trim();
+    if !bytes.is_ascii() {
+        return None;
+    }
+    let digits = crate::unicode_decimal::hexadecimal_magnitude(text)?;
+    let value = TokenId::from_str_radix(&digits, 16).ok()?;
+    (!text.starts_with('-') || value.is_zero()).then_some(value)
 }
 
 fn invalid_mint_id(bytes: &[u8]) -> PrepareError {
@@ -275,6 +282,32 @@ mod tests {
             mint_id(&receipt, Address::ZERO),
             Err(PrepareError::Invalid)
         ));
+    }
+
+    #[test]
+    fn mint_receipt_text_accepts_grouped_digits_without_losing_uint256_precision() {
+        for (text, id) in [
+            (b"+0x_FF".as_slice(), 255),
+            (b"1_0", 16),
+            (b"-0", 0),
+            (b"\x0b0f\x0b", 15),
+        ] {
+            assert_eq!(mint_text_integer(text), Some(TokenId::from(id)));
+        }
+        let max = ["ffff"; 16].join("_");
+        assert_eq!(mint_text_integer(max.as_bytes()), Some(TokenId::MAX));
+        for invalid in [
+            "0__1",
+            "_ab",
+            "ff_",
+            "0x_",
+            "-1",
+            "1 0",
+            "++1",
+            &format!("1{max}"),
+        ] {
+            assert_eq!(mint_text_integer(invalid.as_bytes()), None);
+        }
     }
 
     #[test]

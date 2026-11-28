@@ -89,6 +89,7 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 
 - **WHEN** a mint retry confirms and the first identity-contract log carries a hexadecimal text token ID
 - **THEN** return the confirmed transaction hash and preserve the full integer token ID in the response, user metadata and operator audit
+- **AND** accept unsigned 256-bit values represented with surrounding ASCII whitespace, an optional sign, a hexadecimal prefix or valid underscore separators, including signed zero
 - **WHEN** the confirmed receipt has no logs
 - **THEN** report a successful mint with its transaction hash and a null token ID
 - **WHEN** the provider rejects minting or the first log contains an invalid integer
