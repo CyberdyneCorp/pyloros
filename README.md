@@ -352,6 +352,8 @@ Browser sessions rotate at `POST /api/v1/auth/refresh` using a refresh cookie or
 
 The shared frontend signs out through `POST /api/v1/auth/logout`. A valid refresh token revokes its session family. A presented access token is denylisted until expiry. Configure `ENFORCE_TOKEN_REVOCATION=true` for immediate enforcement on protected reads.
 
+If PostgreSQL rejects the sign-out transaction at commit, Pyloros returns HTTP 500 and the session stays active. The console can still show the login screen while the browser retains its cookies. Once database writes recover, reopen Preferences in the same browser and choose **Sign out** again. A successful retry returns HTTP 204, clears the session cookies and revokes the refresh family. If the browser has already cleared its cookies, an administrator can revoke the affected session through `DELETE /api/v1/admin/sessions/{session_id}`.
+
 From Preferences, a first-party user can sign out on all devices through `POST /api/v1/auth/logout-all`. The operation revokes that account’s live sessions and advances its access-token cutoff. Cookie-authenticated calls require the CSRF header.
 
 The Preferences screen reads `GET /api/v1/auth/mfa/status` with a first-party access token. The response reports the account’s authenticator enrollment and remaining unused recovery codes.
