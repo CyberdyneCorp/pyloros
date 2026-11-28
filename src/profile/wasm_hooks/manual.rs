@@ -138,12 +138,7 @@ async fn execute(seconds: i32, component: &[u8], context: &str) -> Result<Value,
 
 fn outcome(value: &Value) -> Option<(Option<String>, Option<String>)> {
     match value["status"].as_str()? {
-        "success" => Some((
-            Some(value["output"].as_str()?)
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned),
-            None,
-        )),
+        "success" => Some((super::v1_output(value["output"].as_str()?), None)),
         "error" => Some((None, Some(value["output"].as_str()?.to_owned()))),
         "failed" => Some((None, Some(value["error"].as_str()?.to_owned()))),
         _ => None,

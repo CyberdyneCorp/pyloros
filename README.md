@@ -331,6 +331,8 @@ The component is written to
 `target/hook-examples/wasm32-unknown-unknown/release/event_name_hook.wasm`.
 Stage it and exercise it with synthetic events before selecting it for a hook.
 
+The [silent example](examples/event-name-hook/examples/silent_hook.rs) completes an event without side effects or output. Run `just build-silent-hook` to produce `target/hook-examples/wasm32-unknown-unknown/release/examples/silent_hook.wasm`. Use it for a reviewed source hook whose only behavior is to complete successfully. The v1 manual test and execution history report null for silent output and retain up to 10,000 characters when a hook writes output.
+
 ### Stage a hook artifact
 
 Apply [the artifact table migration](migrations/001_hook_artifacts.sql) once through

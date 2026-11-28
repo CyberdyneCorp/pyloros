@@ -133,8 +133,34 @@ async fn retry(mut tx: Transaction<'_, Postgres>, id: Uuid) -> sqlx::Result<()> 
 fn history(value: &Value) -> (&'static str, Option<String>, Option<String>) {
     let text = |key: &str| value[key].as_str().map(|s| s.replace('\0', "�"));
     match value["status"].as_str() {
-        Some("success") => ("success", text("output"), None),
+        Some("success") => (
+            "success",
+            value["output"]
+                .as_str()
+                .and_then(super::super::v1_output)
+                .map(|s| s.replace('\0', "�")),
+            None,
+        ),
         Some("error") => ("failed", None, text("output")),
         _ => ("failed", None, text("error")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn successful_history_preserves_whitespace_and_limits_output_by_character() {
+        for (output, expected) in [
+            (String::new(), None),
+            (" \n".into(), Some(" \n".into())),
+            ("雪".repeat(10_000) + "tail", Some("雪".repeat(10_000))),
+        ] {
+            assert_eq!(
+                history(&json!({"status":"success","output":output})),
+                ("success", expected, None)
+            );
+        }
     }
 }

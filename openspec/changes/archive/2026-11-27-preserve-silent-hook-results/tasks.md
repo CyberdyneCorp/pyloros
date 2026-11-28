@@ -1,0 +1,3 @@
+- [x] Build a silent component and compare local registration effects and manual results.
+- [x] Correct empty success output in automatic history and cover whitespace in a regression test.
+- [x] Compare v1 Unicode truncation for manual and automatic deliveries with the raw v2 artifact result.

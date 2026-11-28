@@ -14,3 +14,8 @@ wit-bindgen = { version = "0.41", default-features = false, features = ["macros"
 [profile.release]
 opt-level = "s"
 strip = true
+
+[[example]]
+name = "silent_hook"
+path = "examples/silent_hook.rs"
+crate-type = ["cdylib"]

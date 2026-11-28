@@ -165,5 +165,13 @@ fn check_handler(types: &Types) -> Result<(), String> {
     Ok(())
 }
 
+/// The v1 manual test and execution history share a character-limited stdout field.
+fn v1_output(output: &str) -> Option<String> {
+    if output.is_empty() {
+        return None;
+    }
+    Some(output.chars().take(10_000).collect())
+}
+
 #[cfg(test)]
 mod tests;
