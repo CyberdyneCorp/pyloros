@@ -1,4 +1,5 @@
 //! Decode the selected form part before interpreting the CSV as an operator.
+mod charset;
 use super::*;
 use axum::extract::FromRequest;
 use futures_util::StreamExt;
@@ -45,12 +46,18 @@ pub(super) async fn envelope(req: Request) -> Result<Upload, Rejection> {
 }
 
 async fn multipart(req: Request) -> Result<Upload, Rejection> {
-    let boundary = req
+    let media = req
         .headers()
         .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| multer::parse_boundary(v).ok())
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<mime::Mime>().ok())
         .ok_or_else(|| bad("Missing boundary in multipart."))?;
+    let boundary = media
+        .get_param(mime::BOUNDARY)
+        .ok_or_else(|| bad("Missing boundary in multipart."))?;
+    let charset = media
+        .get_param(mime::CHARSET)
+        .map_or("utf-8", |value| value.as_str());
     let mut body = req.into_body().into_data_stream();
     let first = loop {
         match body.next().await {
@@ -60,24 +67,25 @@ async fn multipart(req: Request) -> Result<Upload, Rejection> {
         }
     };
     let stream = futures_util::stream::once(async { first }).chain(body);
-    let mut form = multer::Multipart::new(stream, boundary);
-    select_file(&mut form).await
+    let mut form = multer::Multipart::new(stream, boundary.as_str());
+    select_file(&mut form, charset).await
 }
 
-async fn select_file(form: &mut multer::Multipart<'_>) -> Result<Upload, Rejection> {
+async fn select_file(form: &mut multer::Multipart<'_>, charset: &str) -> Result<Upload, Rejection> {
     let mut selected = Upload::Missing;
     let mut files = 0;
     let mut fields = 0;
     while let Some(part) = form.next_field().await.map_err(|_| malformed())? {
-        let wanted = part.name().ok_or_else(|| {
+        let name = part.name().ok_or_else(|| {
             bad("The Content-Disposition header field \"name\" must be provided.")
-        })? == "file";
+        })?;
+        let wanted = charset::decode(name.as_bytes().to_vec(), charset) == "file";
         let result = if part.file_name().is_some() {
             count_part(&mut files, "files")?;
             read_file(part, wanted).await?
         } else {
             count_part(&mut fields, "fields")?;
-            text_field(part, wanted).await?
+            text_field(part, wanted, charset).await?
         };
         match result {
             None => break,
@@ -126,6 +134,7 @@ async fn read_file(mut part: multer::Field<'_>, wanted: bool) -> Result<Option<U
 async fn text_field(
     mut part: multer::Field<'_>,
     wanted: bool,
+    charset: &str,
 ) -> Result<Option<Upload>, Rejection> {
     let mut size = 0;
     let mut data = Vec::new();
@@ -145,8 +154,7 @@ async fn text_field(
     if !wanted {
         return Ok(Some(Upload::Missing));
     }
-    let text = String::from_utf8(data)
-        .unwrap_or_else(|e| e.into_bytes().into_iter().map(char::from).collect());
+    let text = charset::decode(data, charset);
     Ok(Some(Upload::Text(text)))
 }
 
@@ -177,6 +185,26 @@ mod tests {
             .body(Body::from(bytes.to_owned()))
             .unwrap();
         envelope(req).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn envelope_charset_affects_field_selection_but_preserves_csv_bytes() {
+        let csv = "--abc\r\nContent-Disposition: form-data; name=\"file\"; filename=\"staff.csv\"\r\n\r\nemail,password\r\nélise@example.org,example\r\n--abc--\r\n";
+        for (charset, selected) in [("utf-16le", false), ("utf-32", true), ("cp1252", true)] {
+            let req = Request::builder()
+                .header(
+                    header::CONTENT_TYPE,
+                    format!("multipart/form-data; boundary=abc; charset={charset}"),
+                )
+                .body(Body::from(csv))
+                .unwrap();
+            let upload = envelope(req).await.unwrap();
+            if selected {
+                assert_eq!(records(upload).await.unwrap()[0].0, "élise@example.org");
+            } else {
+                assert!(matches!(upload, Upload::Missing));
+            }
+        }
     }
 
     #[tokio::test]

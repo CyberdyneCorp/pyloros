@@ -48,6 +48,8 @@ hyper = { version = "1", features = ["http1"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "form", "gzip", "deflate"] }
 flate2 = "1"
 multer = "3"
+mime = "0.3"
+encoding_rs = "0.8"
 futures-util = "0.3"
 csv = "1"
 tempfile = "3"

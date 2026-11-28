@@ -2,3 +2,4 @@
 - [x] Implement transactional provisioning, duplicates, webhook enqueue and audit.
 - [x] Verify mixed-backend login, rollback, concurrency and the existing clients.
 - [ ] Verify active registration hooks through the shared dispatcher.
+- [x] Compare multipart charset handling for text fields and uploaded CSV files.

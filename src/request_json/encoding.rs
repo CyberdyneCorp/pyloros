@@ -17,7 +17,10 @@ pub(crate) fn text(bytes: &[u8]) -> Result<Cow<'_, str>, ()> {
                 .map_err(|_| ());
         }
     };
-    let bytes = &bytes[skip..];
+    wide_text(&bytes[skip..], width, little).map(Cow::Owned)
+}
+
+pub(crate) fn wide_text(bytes: &[u8], width: usize, little: bool) -> Result<String, ()> {
     if !bytes.len().is_multiple_of(width) {
         return Err(());
     }
@@ -47,7 +50,7 @@ pub(crate) fn text(bytes: &[u8]) -> Result<Cow<'_, str>, ()> {
             })
             .collect::<Result<String, _>>()?
     };
-    Ok(Cow::Owned(text))
+    Ok(text)
 }
 
 #[cfg(test)]
