@@ -393,7 +393,7 @@ mod tests {
             "relations":{"member":["user"]},"permissions":{"read":[{"relation":"member"}]}
         }}}))
         .unwrap();
-        let batch: Vec<_> = (0..8)
+        let teams = (0..65)
             .map(|index| {
                 (
                     Node {
@@ -404,15 +404,37 @@ mod tests {
                     1,
                 )
             })
-            .collect();
-        sqlx::query("INSERT INTO pyloros_user_relationships VALUES($1,'team','7','member',$2)")
-            .bind(owner)
-            .bind(user)
-            .execute(&mut *tx)
-            .await?;
-        for (budget, expected) in [(0, None), (7, None), (8, Some(true))] {
-            let mut search = Search::new(batch[0].0.clone());
-            search.queue = batch.clone().into();
+            .collect::<VecDeque<_>>();
+        sqlx::query(
+            "INSERT INTO pyloros_user_relationships VALUES
+            ($1,'team','7','member',$2),($1,'team','32','member',$2),($1,'team','64','member',$2)",
+        )
+        .bind(owner)
+        .bind(user)
+        .execute(&mut *tx)
+        .await?;
+        // Each withdrawal exposes the next granting team in traversal order.
+        for (withdraw, budget, expected) in [
+            (None, 0, None),
+            (None, 7, None),
+            (None, 8, Some(true)),
+            (Some("7"), 32, None),
+            (None, 33, Some(true)),
+            (Some("32"), 64, None),
+            (None, 65, Some(true)),
+            (Some("64"), 65, Some(false)),
+        ] {
+            if let Some(team) = withdraw {
+                sqlx::query(
+                    "DELETE FROM pyloros_user_relationships WHERE client_id=$1 AND object_id=$2",
+                )
+                .bind(owner)
+                .bind(team)
+                .execute(&mut *tx)
+                .await?;
+            }
+            let mut search = Search::new(teams[0].0.clone());
+            search.queue = teams.clone();
             search.remaining = budget;
             assert_eq!(search.run(&mut tx, &model, owner, user).await?, expected);
         }
