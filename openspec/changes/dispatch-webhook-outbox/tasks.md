@@ -6,4 +6,5 @@
 - [x] Verify finished and flushed gzip responses across worker handoffs and reject a corrupted checksum within a short excerpt.
 - [x] Verify signatures on a queued retry after rotation and after expiry of the previous key, with either worker taking ownership.
 - [x] Decode layered receiver responses and verify stored status, bounded excerpts and acknowledgements across worker handoffs.
+- [x] Verify wire byte counts for interrupted compressed responses below the excerpt limit.
 - [ ] Verify production TLS receiver behavior, remaining transport failure details and special-use IPv6 policy before migration signoff.

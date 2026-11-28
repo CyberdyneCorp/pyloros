@@ -62,7 +62,7 @@ fn inflate(
     Ok(())
 }
 
-pub(super) async fn read(mut response: Response) -> io::Result<Vec<u8>> {
+pub(super) async fn read(response: Response) -> io::Result<Vec<u8>> {
     let encodings = response.headers().get_all(CONTENT_ENCODING);
     let mut fields = encodings.iter();
     let first = fields.next();
@@ -94,7 +94,8 @@ pub(super) async fn read(mut response: Response) -> io::Result<Vec<u8>> {
     }
     layers.reverse();
     let mut excerpt = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(io::Error::other)? {
+    let mut body = crate::http_body::WireBody::new(response);
+    while let Some(chunk) = body.chunk().await? {
         feed(&mut layers, &chunk, &mut excerpt)?;
         if excerpt.len() == 1024 {
             break;

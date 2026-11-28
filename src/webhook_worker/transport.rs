@@ -225,6 +225,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn short_encoded_body_reports_wire_bytes_for_single_and_stacked_codings() {
+        use flate2::{Compression, write::GzEncoder};
+        use std::io::Write;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let mut compressed = vec![b'x'; 1023];
+        for coding in ["gzip", "gzip, gzip"] {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(&compressed).unwrap();
+            compressed = encoder.finish().unwrap();
+            let size = compressed.len();
+            let expected = size + 40;
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let mut reply = format!("HTTP/1.1 503 Busy\r\nContent-Encoding: {coding}\r\nContent-Length: {expected}\r\n\r\n").into_bytes();
+            reply.extend_from_slice(&compressed);
+            let receiver = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let _ = socket.read(&mut [0; 4096]).await.unwrap();
+                socket.write_all(&reply).await.unwrap();
+                socket.shutdown().await.unwrap();
+            });
+            let response = reqwest::Client::builder()
+                .no_proxy()
+                .no_gzip()
+                .build()
+                .unwrap()
+                .get(format!("http://{address}"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                receiver_excerpt(response).await.unwrap_err(),
+                format!(
+                    "RemoteProtocolError: peer closed connection without sending complete message body (received {size} bytes, expected {expected})"
+                )
+            );
+            receiver.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn receiver_gets_signed_headers_and_redirect_is_recorded_with_a_bounded_excerpt() {
         use axum::{
             Router,

@@ -11,11 +11,11 @@ use std::{error::Error, io};
     "peer closed connection without sending complete message body (received {received} bytes, expected {expected})"
 )]
 pub(crate) struct ShortBody {
-    received: usize,
+    received: u64,
     expected: u64,
 }
 
-fn body_error(error: reqwest::Error, received: usize, expected: Option<u64>) -> io::Error {
+fn body_error(error: reqwest::Error, received: u64, expected: Option<u64>) -> io::Error {
     if let Some(expected) = expected {
         let eof = std::iter::successors(error.source(), |cause| (*cause).source()).any(|cause| {
             cause
@@ -30,6 +30,34 @@ fn body_error(error: reqwest::Error, received: usize, expected: Option<u64>) -> 
         }
     }
     io::Error::other(error)
+}
+
+pub(crate) struct WireBody {
+    response: Response,
+    expected: Option<u64>,
+    received: u64,
+}
+
+impl WireBody {
+    pub(crate) fn new(response: Response) -> Self {
+        Self {
+            expected: response.content_length(),
+            response,
+            received: 0,
+        }
+    }
+
+    pub(crate) async fn chunk(&mut self) -> io::Result<Option<axum::body::Bytes>> {
+        let piece = self
+            .response
+            .chunk()
+            .await
+            .map_err(|error| body_error(error, self.received, self.expected))?;
+        if let Some(bytes) = &piece {
+            self.received += bytes.len() as u64;
+        }
+        Ok(piece)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -73,7 +101,7 @@ fn effective_coding(headers: &HeaderMap) -> &[u8] {
     }
 }
 
-pub(crate) async fn read(mut response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
+pub(crate) async fn read(response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
     let coding = effective_coding(response.headers());
     if coding.eq_ignore_ascii_case(b"gzip") {
         return read_compressed(response, limit, Decompress::new_gzip(15), None).await;
@@ -81,13 +109,9 @@ pub(crate) async fn read(mut response: Response, limit: ReadLimit) -> io::Result
     if coding.eq_ignore_ascii_case(b"deflate") {
         return read_deflate(response, limit).await;
     }
-    let expected = response.content_length();
+    let mut body = WireBody::new(response);
     let mut bytes = Vec::new();
-    while let Some(piece) = response
-        .chunk()
-        .await
-        .map_err(|e| body_error(e, bytes.len(), expected))?
-    {
+    while let Some(piece) = body.chunk().await? {
         if limit.append(&mut bytes, &piece)? {
             break;
         }
@@ -108,14 +132,15 @@ pub(crate) async fn read_deflate(response: Response, limit: ReadLimit) -> io::Re
 }
 
 async fn read_compressed(
-    mut response: Response,
+    response: Response,
     limit: ReadLimit,
     framed: Decompress,
     raw: Option<Decompress>,
 ) -> io::Result<Vec<u8>> {
     let mut framed = Some(Inflate::new(framed, limit));
     let mut raw = raw.map(|decoder| Inflate::new(decoder, limit));
-    while let Some(piece) = response.chunk().await.map_err(io::Error::other)? {
+    let mut body = WireBody::new(response);
+    while let Some(piece) = body.chunk().await? {
         framed = framed.and_then(|decoder| decoder.feed(&piece));
         raw = raw.and_then(|decoder| decoder.feed(&piece));
         if let ReadLimit::Prefix(size) = limit

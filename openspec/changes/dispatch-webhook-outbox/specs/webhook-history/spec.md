@@ -44,3 +44,7 @@ When webhook delivery is enabled, the service SHALL deliver queued notifications
 #### Scenario: Compressed excerpt ends at the HTTP body boundary
 - **WHEN** a receiver sends the full HTTP body with gzip, raw deflate or zlib-wrapped deflate and the decoder produces an excerpt before the compression end marker
 - **THEN** retain the receiver's status and the available decoded bytes up to the excerpt limit, and apply the usual retry rule for that status
+
+#### Scenario: Compressed response ends before its declared length
+- **WHEN** the receiver closes a fixed-length encoded response before the worker obtains the full decoded excerpt
+- **THEN** record the received and expected wire byte counts and leave the attempt status code and response excerpt empty
