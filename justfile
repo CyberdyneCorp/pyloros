@@ -173,7 +173,7 @@ check-frontend-build directory *expected:
 
 # Compare assets served through ingress with the reviewed client bundle.
 [positional-arguments]
-check-frontend-assets directory base_url:
+check-frontend-assets directory base_url *options:
     python3 scripts/check_frontend_assets.py "$@"
 
 # Record a packaged console runtime or compare it with a reviewed manifest.

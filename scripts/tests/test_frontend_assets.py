@@ -16,7 +16,17 @@ from check_frontend_assets import check, check_content_type
 class QuietHandler(SimpleHTTPRequestHandler):
     content_encodings = ()
 
+    def do_GET(self):
+        tag = 'W/"reviewed"'
+        if self.headers.get("If-None-Match") == tag and self.path.endswith(".js"):
+            self.send_response(304)
+            self.end_headers()
+            return
+        super().do_GET()
+
     def end_headers(self):
+        if self.path.endswith(".js"):
+            self.send_header("ETag", 'W/"reviewed"')
         for encoding in self.content_encodings:
             self.send_header("Content-Encoding", encoding)
         super().end_headers()
@@ -65,6 +75,22 @@ class ServedAssets(unittest.TestCase):
                 base = f"http://127.0.0.1:{server.server_port}/public/"
                 asset.write_bytes(data)
                 self.assertEqual(check(reviewed, base), {"verified_assets": 1})
+                tags = check(reviewed, base, record=True)["asset_etags"]
+                self.assertEqual(tags, {name: 'W/"reviewed"'})
+                self.assertEqual(check(reviewed, base, baseline=tags)["revalidated_assets"], 1)
+                with self.assertRaisesRegex(ValueError, "HTTP 200 for the recorded ETag"):
+                    check(reviewed, base, baseline={name: '"earlier"'})
+                with self.assertRaisesRegex(ValueError, "Invalid ETag"):
+                    check(reviewed, base, baseline={name: "*"})
+                with self.assertRaisesRegex(ValueError, "asset paths differ"):
+                    check(reviewed, base, baseline={})
+                for directory in (public, reviewed):
+                    (directory / "untagged.txt").write_text("static")
+                mixed = check(reviewed, base, record=True)["asset_etags"]
+                self.assertIsNone(mixed["untagged.txt"])
+                self.assertEqual(check(reviewed, base, baseline=mixed), {"verified_assets": 2, "revalidated_assets": 1})
+                for directory in (public, reviewed):
+                    (directory / "untagged.txt").unlink()
                 with patch.object(QuietHandler, "guess_type", return_value="text/plain"):
                     with self.assertRaisesRegex(ValueError, "invalid Content-Type"):
                         check(reviewed, base)
