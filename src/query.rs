@@ -121,6 +121,19 @@ fn uuid_reason(path: &str, error: uuid::Error) -> String {
     error.to_string()
 }
 
+/// UUID text in stored cursors and signed billing references uses legacy integer syntax.
+pub(crate) fn legacy_uuid(value: &str) -> Option<uuid::Uuid> {
+    let hex = value.replace("urn:", "").replace("uuid:", "");
+    let hex = hex.trim_matches(['{', '}']).replace('-', "");
+    if hex.chars().count() != 32 {
+        return None;
+    }
+    let digits = crate::unicode_decimal::hexadecimal_magnitude(&hex)?;
+    u128::from_str_radix(&digits, 16)
+        .ok()
+        .map(uuid::Uuid::from_u128)
+}
+
 pub(crate) fn path_uuid(path: &str, field: &str) -> Result<uuid::Uuid, serde_json::Value> {
     uuid_field(path, "path", field)
 }
@@ -260,6 +273,29 @@ mod integer_tests {
 #[cfg(test)]
 mod uuid_tests {
     use super::*;
+
+    #[test]
+    fn historical_payment_references_resolve_to_the_same_account() {
+        let compact = "12ab".repeat(8);
+        let account = uuid::Uuid::parse_str(&compact).unwrap();
+        for reference in [
+            account.to_string(),
+            compact.to_uppercase(),
+            format!("{{{compact}}}"),
+            format!("{}-{}", &compact[..7], &compact[7..]),
+            format!("urn:uuid:{compact}"),
+            compact.replace('2', "٢"),
+        ] {
+            assert_eq!(super::legacy_uuid(&reference), Some(account));
+        }
+        for reference in [
+            format!("URN:UUID:{account}"),
+            compact[..31].to_owned(),
+            format!("{}G", &compact[..31]),
+        ] {
+            assert_eq!(super::legacy_uuid(&reference), None);
+        }
+    }
 
     #[test]
     fn long_uuid_fields_report_character_and_group_errors() {

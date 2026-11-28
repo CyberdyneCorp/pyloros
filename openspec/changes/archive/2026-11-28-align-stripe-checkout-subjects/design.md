@@ -1,0 +1,1 @@
+Extract the identifier decoder used for historical audit cursors. Use it when billing resolves an explicit checkout subject. A malformed nonempty subject continues through the existing unmapped-customer deferral path, even when the customer has an existing mapping. Path parameters retain their own validation contract.

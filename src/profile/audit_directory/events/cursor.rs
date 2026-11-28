@@ -49,13 +49,7 @@ impl Cursor {
         }
         let stamp = fields.next()?;
         let at = time::parse(stamp)?.and_utc();
-        let hex = fields.next()?.replace("urn:", "").replace("uuid:", "");
-        let hex = hex.trim_matches(['{', '}']).replace('-', "");
-        if hex.chars().count() != 32 {
-            return None;
-        }
-        let digits = crate::unicode_decimal::hexadecimal_magnitude(&hex)?;
-        let id = Uuid::from_u128(u128::from_str_radix(&digits, 16).ok()?);
+        let id = crate::query::legacy_uuid(fields.next()?)?;
         fields.next().is_none().then_some(Self { at, id })
     }
 }

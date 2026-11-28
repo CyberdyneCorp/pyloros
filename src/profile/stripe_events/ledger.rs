@@ -84,7 +84,7 @@ async fn customer(tx: &mut Tx<'_>, event: &Event) -> sqlx::Result<Result<Uuid, S
         None
     };
     let user = match event.text("client_reference_id").filter(|v| !v.is_empty()) {
-        Some(reference) => Uuid::parse_str(reference).ok(),
+        Some(reference) => crate::query::legacy_uuid(reference),
         None => mapped,
     };
     let Some(user) = user else {
@@ -172,4 +172,53 @@ async fn revoke(tx: &mut Tx<'_>, event: &Event, hooks: bool) -> sqlx::Result<Out
         return Ok(Outcome::NeedsDispatcher);
     }
     Ok(Outcome::Applied)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn historical_checkout_subject_creates_one_customer_mapping() {
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE users (id uuid PRIMARY KEY);
+             CREATE TEMP TABLE stripe_customers (id uuid, user_id uuid, stripe_customer_id text UNIQUE)",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let user = Uuid::new_v4();
+        sqlx::query("INSERT INTO users VALUES ($1)")
+            .bind(user)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        let checkout = |reference: String| {
+            serde_json::from_value::<Event>(json!({
+                "id": "evt_checkout",
+                "type": "checkout.session.completed",
+                "data": {"object": {"customer": "cus_checkout", "client_reference_id": reference}}
+            }))
+            .unwrap()
+        };
+        let wrapped = checkout(format!("{{{}}}", user.simple()));
+        let invalid = checkout(format!("URN:UUID:{user}"));
+        assert_eq!(customer(&mut tx, &wrapped).await.unwrap(), Ok(user));
+        assert_eq!(
+            customer(&mut tx, &invalid).await.unwrap(),
+            Err("unmapped customer".into())
+        );
+        assert_eq!(customer(&mut tx, &wrapped).await.unwrap(), Ok(user));
+        let mappings: Vec<Uuid> = sqlx::query_scalar("SELECT user_id FROM stripe_customers")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(mappings, [user]);
+    }
 }

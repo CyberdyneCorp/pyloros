@@ -1,0 +1,2 @@
+- [x] Share the historical identifier decoder and cover accepted and refused billing spellings.
+- [x] Compare signed events on PostgreSQL with reference billing outcomes and peer replay.
