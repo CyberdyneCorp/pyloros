@@ -251,18 +251,38 @@ impl IamMutation<'_> {
     }
 }
 
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct UnsignedIamTransaction<'a> {
-    from: &'a str,
-    to: &'a str,
+struct UnsignedIamTransaction {
+    to: alloy_primitives::Address,
     nonce: TokenId,
-    data: String,
+    data: Vec<u8>,
     chain_id: TokenId,
     gas: TokenId,
     max_priority_fee_per_gas: TokenId,
     max_fee_per_gas: TokenId,
-    value: TokenId,
+}
+
+impl UnsignedIamTransaction {
+    fn signing_payload(&self) -> Vec<u8> {
+        use alloy_rlp::Encodable;
+        let mut fields = Vec::new();
+        self.chain_id.encode(&mut fields);
+        self.nonce.encode(&mut fields);
+        self.max_priority_fee_per_gas.encode(&mut fields);
+        self.max_fee_per_gas.encode(&mut fields);
+        self.gas.encode(&mut fields);
+        self.to.encode(&mut fields);
+        TokenId::ZERO.encode(&mut fields);
+        self.data.as_slice().encode(&mut fields);
+        fields.push(alloy_rlp::EMPTY_LIST_CODE);
+        let mut payload = vec![0x02];
+        alloy_rlp::Header {
+            list: true,
+            payload_length: fields.len(),
+        }
+        .encode(&mut payload);
+        payload.extend_from_slice(&fields);
+        payload
+    }
 }
 
 fn rpc_failure(error: ReadError) -> PrepareError {
@@ -328,7 +348,7 @@ impl Chain {
     pub(crate) async fn prepare_mutation(
         &self,
         mutation: &IamMutation<'_>,
-    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+    ) -> Result<Vec<u8>, PrepareError> {
         let call = mutation.calldata(self).await?;
         let address = match mutation {
             IamMutation::GroupMember { .. }
@@ -343,7 +363,7 @@ impl Chain {
         &self,
         token: &str,
         status: u8,
-    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+    ) -> Result<Vec<u8>, PrepareError> {
         let id = TokenId::from_str_radix(token, 10).map_err(|_| {
             arguments::incompatible_first(
                 "setStatus",
@@ -368,7 +388,7 @@ impl Chain {
         owner: &str,
         public_key: &str,
         metadata_uri: &str,
-    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+    ) -> Result<Vec<u8>, PrepareError> {
         validate_address(owner).map_err(|_| PrepareError::Invalid)?;
         let call = mintCall {
             owner: owner.parse().map_err(|_| PrepareError::Invalid)?,
@@ -385,7 +405,7 @@ impl Chain {
         name: &str,
         description: Option<&str>,
         seconds: &str,
-    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+    ) -> Result<Vec<u8>, PrepareError> {
         let call = createRoleCall {
             name: name.into(),
             description: description.unwrap_or_default().into(),
@@ -408,7 +428,7 @@ impl Chain {
         group_id: TokenId,
         identity: i32,
         add: bool,
-    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+    ) -> Result<Vec<u8>, PrepareError> {
         self.require_role_group(group_id).await?;
         let identity_id = TokenId::from(
             u32::try_from(identity)
@@ -433,7 +453,7 @@ impl Chain {
     pub(crate) async fn prepare_role_group_removal(
         &self,
         group_id: TokenId,
-    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+    ) -> Result<Vec<u8>, PrepareError> {
         self.require_role_group(group_id).await?;
         self.prepare_contract(
             self.group.as_deref(),
@@ -446,7 +466,7 @@ impl Chain {
         &self,
         name: &str,
         description: Option<&str>,
-    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+    ) -> Result<Vec<u8>, PrepareError> {
         let call = createGroupCall {
             name: name.into(),
             description: description.unwrap_or_default().into(),
@@ -455,11 +475,11 @@ impl Chain {
             .await
     }
 
-    async fn prepare_contract<'a>(
-        &'a self,
-        address: Option<&'a str>,
+    async fn prepare_contract(
+        &self,
+        address: Option<&str>,
         call: Vec<u8>,
-    ) -> Result<UnsignedIamTransaction<'a>, PrepareError> {
+    ) -> Result<Vec<u8>, PrepareError> {
         let to = address.ok_or(PrepareError::Unavailable)?;
         validate_address(to).map_err(|_| PrepareError::Unavailable)?;
         let from = self.signer.as_deref().ok_or(PrepareError::Invalid)?;
@@ -487,16 +507,15 @@ impl Chain {
             .and_then(|v| v.checked_add(max_priority_fee_per_gas))
             .ok_or(PrepareError::Unavailable)?;
         Ok(UnsignedIamTransaction {
-            from,
-            to,
+            to: to.parse().map_err(|_| PrepareError::Invalid)?,
             nonce,
-            data,
+            data: call,
             chain_id,
             gas,
             max_priority_fee_per_gas,
             max_fee_per_gas,
-            value: TokenId::ZERO,
-        })
+        }
+        .signing_payload())
     }
 }
 
@@ -525,6 +544,47 @@ fn history_priority_fee(history: &Value) -> Result<TokenId, PrepareError> {
 mod tests {
     use super::*;
     use axum::{Json, Router, routing::post};
+
+    #[test]
+    fn unsigned_payload_preserves_rlp_boundaries_and_full_width_quantities() {
+        let mut tx = UnsignedIamTransaction {
+            to: alloy_primitives::Address::ZERO,
+            nonce: TokenId::ZERO,
+            data: vec![],
+            chain_id: TokenId::from(1),
+            gas: TokenId::from(21000),
+            max_priority_fee_per_gas: TokenId::from(1),
+            max_fee_per_gas: TokenId::from(2),
+        };
+        assert_eq!(
+            HEXLOWER.encode(&tx.signing_payload()),
+            "02df018001028252089400000000000000000000000000000000000000008080c0"
+        );
+        for (size, nonce, expected) in [
+            (
+                55,
+                TokenId::from(127),
+                "bebec068cd563a84e3b6c6575199b22746778d736fbe2e40f797064853dab7ae",
+            ),
+            (
+                56,
+                TokenId::from(128),
+                "bcf6a14ed09b26e77c069104b53b725442ad5ffe902aa9245c1b7b0143b97a05",
+            ),
+            (
+                256,
+                TokenId::MAX,
+                "0d10952c25ee1f20d2ff19740eb77379b4730966900cb1e027f950af9eef2ee9",
+            ),
+        ] {
+            tx.data = vec![0xa5; size];
+            tx.nonce = nonce;
+            assert_eq!(
+                format!("{:x}", alloy_primitives::keccak256(tx.signing_payload())),
+                expected
+            );
+        }
+    }
 
     #[tokio::test]
     async fn prepares_a_zero_value_call_with_pending_nonce_and_history_based_fees() {
@@ -582,11 +642,12 @@ mod tests {
             .await
             .ok()
             .unwrap();
-        assert_eq!(tx.nonce, TokenId::from(17));
-        assert_eq!(tx.chain_id, TokenId::from(1337));
-        assert_eq!(tx.gas, TokenId::from(0x7791));
-        assert_eq!(tx.max_fee_per_gas, TokenId::from(1_000_000_042));
-        assert_eq!(tx.value, TokenId::ZERO);
+        // Independent ABI and RLP encoding of the complete unsigned fixture.
+        assert_eq!(tx.len(), 1171);
+        assert_eq!(
+            format!("{:x}", alloy_primitives::keccak256(&tx)),
+            "6ec4655fff2e7eaa5a791cfff266bcd970dfcb97b6b696326b17f4d9b93c4d37"
+        );
         server.abort();
     }
 

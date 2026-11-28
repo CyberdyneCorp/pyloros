@@ -15,3 +15,7 @@ Determine the response and audit outcome for a receipt with an absent or nonstan
 ## Receipt inspection during reconciliation
 
 Run `just inspect-iam-receipt HASH` with `BLOCKCHAIN_RPC_ENDPOINT` pointing at the intended chain. The command reads the receipt for that hash without a signer or a database connection. A matching transaction hash with status `0x1` reports `reported_success` and exits zero. A reverted, absent, mismatched or unrecognized receipt produces a distinct observation and exits 2. Invalid input or an RPC failure exits 1. This inspects the provider's reported execution status. Block finality, contract address, creation events and audit persistence require separate verification.
+
+## Unsigned payload
+
+Preparation produces the type-2 transaction prefix followed by the RLP list of chain ID, pending nonce, priority fee, maximum fee, gas limit, destination, zero value, call data and an empty access list. Preserve full-width quantities from the provider. The sender address selects the pending nonce and gas estimate and is excluded from the signing payload.

@@ -26,7 +26,7 @@ impl Chain {
         &self,
         owner: &str,
         public_key: &str,
-    ) -> Result<UnsignedIamTransaction<'_>, PrepareError> {
+    ) -> Result<Vec<u8>, PrepareError> {
         if validate_address(owner).is_ok() {
             return self.prepare_identity_creation(owner, public_key, "").await;
         }
