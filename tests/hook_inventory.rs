@@ -154,6 +154,7 @@ async fn inventory_tracks_active_hooks_across_binding_migration() -> sqlx::Resul
         assert!(String::from_utf8_lossy(&output.stderr).contains("hook event"));
     }
     check_queue_visibility(&url, &mut conn).await?;
+    check_delivery_visibility(&url, &mut conn).await?;
     sqlx::raw_sql(&format!("DROP SCHEMA {schema} CASCADE"))
         .execute(&mut *conn)
         .await?;
@@ -200,5 +201,62 @@ async fn check_queue_visibility(url: &Url, conn: &mut sqlx::PgConnection) -> sql
     tx.commit().await?;
     queue(&billing, 0, Some(0));
     queue(&[], 2, Some(1));
+    Ok(())
+}
+
+async fn check_delivery_visibility(url: &Url, conn: &mut sqlx::PgConnection) -> sqlx::Result<()> {
+    use sqlx::Connection;
+    let id = Uuid::new_v4();
+    let arg = id.to_string();
+    let inspect = || check(url, "--inspect-hook-delivery", &[&arg]);
+    let report = || {
+        let output = inspect();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    for args in [&[][..], &["invalid"], &[&arg, &arg]] {
+        let output = check(url, "--inspect-hook-delivery", args);
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+    }
+    let missing_table = inspect();
+    assert!(!missing_table.status.success());
+    assert!(missing_table.stdout.is_empty());
+    sqlx::raw_sql(
+        "ALTER TABLE pyloros_hook_deliveries ADD COLUMN id uuid;
+        CREATE TABLE hook_executions(id uuid PRIMARY KEY,status text NOT NULL)",
+    )
+    .execute(&mut *conn)
+    .await?;
+    assert_eq!(report(), json!({"pending":false,"execution_status":null}));
+    sqlx::query("INSERT INTO pyloros_hook_deliveries(id) VALUES($1)")
+        .bind(id)
+        .execute(&mut *conn)
+        .await?;
+    for commit in [false, true] {
+        let mut tx = conn.begin().await?;
+        sqlx::query("INSERT INTO hook_executions VALUES($1,'timeout')")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM pyloros_hook_deliveries WHERE id=$1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        assert_eq!(report(), json!({"pending":true,"execution_status":null}));
+        if commit {
+            tx.commit().await?;
+        } else {
+            tx.rollback().await?;
+        }
+    }
+    assert_eq!(
+        report(),
+        json!({"pending":false,"execution_status":"timeout"})
+    );
     Ok(())
 }

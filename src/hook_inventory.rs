@@ -61,3 +61,14 @@ pub async fn pending(pool: &PgPool, events: &[&str]) -> sqlx::Result<i64> {
         .fetch_one(pool)
         .await
 }
+
+pub async fn delivery(pool: &PgPool, id: uuid::Uuid) -> sqlx::Result<Value> {
+    sqlx::query_scalar(
+        "SELECT jsonb_build_object(
+            'pending', EXISTS(SELECT id FROM pyloros_hook_deliveries WHERE id=$1),
+            'execution_status', (SELECT status FROM hook_executions WHERE id=$1))",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+}

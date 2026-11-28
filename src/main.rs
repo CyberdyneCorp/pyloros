@@ -62,6 +62,16 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(coverage_status(report.active_unbound == 0));
         }
+        Some("--inspect-hook-delivery") => {
+            let id = args.next().ok_or("expected a delivery UUID")?;
+            if args.next().is_some() {
+                return Err("expected one delivery UUID".into());
+            }
+            let id = id.to_str().ok_or("invalid delivery UUID")?.parse()?;
+            let report = hook_inventory::delivery(&pool, id).await?;
+            println!("{}", serde_json::to_string(&report)?);
+            return Ok(ExitCode::SUCCESS);
+        }
         Some("--check-hook-queue") => {
             let pending = hook_inventory::pending(&pool, &hook_events(args)?).await?;
             println!("{}", serde_json::json!({ "pending": pending }));

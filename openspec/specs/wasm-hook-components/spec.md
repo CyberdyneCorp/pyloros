@@ -373,3 +373,15 @@ A deletion hook SHALL receive the event type first and the erased user ID second
 #### Scenario: Read execution history after deletion
 - **WHEN** a component prints the context of a committed account deletion
 - **THEN** its execution history shows the event type followed by the erased subject identifier
+
+### Requirement: Reconcile an interrupted component delivery
+For a recorded delivery ID, an operator SHALL be able to inspect queue presence and committed execution status in a single PostgreSQL snapshot.
+
+#### Scenario: Worker stops before committing history
+- **WHEN** a worker stops after executing the component and before its completion transaction commits
+- **THEN** the delivery remains queued with no committed execution status and another worker can claim it using the pinned component
+- **AND** committing the replacement worker's history removes the queue entry and records the outcome under the original delivery ID
+
+#### Scenario: Neither table contains the ID
+- **WHEN** the supplied ID has no queue entry and no retained history
+- **THEN** report pending as false and execution status as null

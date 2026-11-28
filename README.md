@@ -690,6 +690,8 @@ For a planned billing handoff, capture `just db-stripe-deferred` on the outgoing
 
 After pausing the outgoing writer and waiting for in-flight transactions to finish, run `just hook-queue entitlement_granted entitlement_revoked` against the PostgreSQL primary. The packaged equivalent is `pyloros --check-hook-queue entitlement_granted entitlement_revoked`. The command returns a JSON pending count. Exit code 2 means deliveries remain, including delayed retries and work still in progress. Exit code 0 means the selected queue was empty at the time of the query. Review execution history for failed or timed-out hooks before resuming writes. Omit the event names to count the entire queue.
 
+After a worker interruption, run `just hook-delivery UUID` or `pyloros --inspect-hook-delivery UUID` on the primary for a previously recorded component delivery ID. The command reads queue presence and execution status in one query. It requires `SELECT (id)` on `pyloros_hook_deliveries` and `SELECT (id, status)` on `hook_executions`. A pending delivery can be in progress on another replica. If completion rolls back, the replacement worker can claim the same ID and pinned component. Check the recorded status after the queue entry disappears. A null status with no queue entry means neither table currently has the ID. This check establishes the committed database outcome; an interrupted guest may have run before its outcome was committed.
+
 ### Deliver PostgreSQL role hooks
 
 Enable `HOOKS_ENABLED=true` and `PYLOROS_ROLE_HOOK_DISPATCH=true` on the

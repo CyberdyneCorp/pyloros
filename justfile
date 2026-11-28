@@ -113,6 +113,11 @@ verify-hook-inventory reviewed *event:
 hook-queue *event:
     cargo run --quiet --locked -- --check-hook-queue "$@"
 
+# Read the committed queue and history state for a recorded component delivery.
+[positional-arguments]
+hook-delivery id:
+    cargo run --quiet --locked -- --inspect-hook-delivery "$1"
+
 # Compare a candidate guest with a recorded outcome before uploading it.
 [positional-arguments]
 check-hook-fixture component event expected:
