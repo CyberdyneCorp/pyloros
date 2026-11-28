@@ -1,5 +1,6 @@
 """Compare the public assets served by a console with its reviewed build/client directory."""
 import argparse
+import hashlib
 from http.client import HTTPConnection, HTTPException, HTTPSConnection
 import json
 import re
@@ -44,13 +45,15 @@ def compare_asset(client, target, path, asset, *, stale_tag=None):
             if any(coding.strip().lower() != "identity" for coding in value.split(",") if coding.strip()):
                 raise ValueError(f"{asset} has incompatible Content-Encoding for an identity request: {encodings!r}")
         check_content_type(asset, path.suffix, response.headers)
+        digest = hashlib.sha256()
         with path.open("rb") as reviewed:
             for chunk in iter(lambda: reviewed.read(65536), b""):
                 if response.read(len(chunk)) != chunk:
                     raise ValueError(f"Served content differs for {asset}")
+                digest.update(chunk)
         if response.read(1):
             raise ValueError(f"Served content exceeds the reviewed length for {asset}")
-        return response.headers.get("ETag")
+        return response.headers.get("ETag"), digest.digest()
 
 
 def validate_tags(tags):
@@ -79,13 +82,14 @@ def console_url(base):
     return url
 
 
-def check(directory: Path, base: str, *, record=False, baseline=None) -> dict:
+def check(directory: Path, base: str, *, record=False, baseline=None, expected_digest=None) -> dict:
     url = console_url(base)
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("Expected a reviewed frontend client directory")
     connect = HTTPSConnection if url.scheme == "https" else HTTPConnection
     client = connect(url.hostname, url.port, timeout=10)
     tags = {}
+    tree = hashlib.sha256()
     revalidated = 0
     if baseline is not None:
         validate_tags(baseline)
@@ -93,7 +97,8 @@ def check(directory: Path, base: str, *, record=False, baseline=None) -> dict:
         for path in build_files(directory):
             asset = path.relative_to(directory).as_posix()
             target = url.path.rstrip("/") + "/" + quote(asset)
-            tags[asset] = compare_asset(client, target, path, asset)
+            tags[asset], digest = compare_asset(client, target, path, asset)
+            tree.update(asset.encode("utf-8") + b"\0" + digest)
             if baseline is not None and baseline.get(asset) is not None:
                 revalidate(client, target, baseline[asset], asset)
                 compare_asset(client, target, path, asset, stale_tag=f'"{uuid4()}"')
@@ -102,10 +107,13 @@ def check(directory: Path, base: str, *, record=False, baseline=None) -> dict:
         client.close()
     if not tags:
         raise ValueError("Reviewed client directory contains no files")
+    if expected_digest is not None and tree.hexdigest() != expected_digest:
+        raise ValueError("Reviewed client bytes differ from the recorded assets")
     report = {"verified_assets": len(tags)}
     if record:
         validate_tags(tags)
         report["asset_etags"] = tags
+        report["client_sha256"] = tree.hexdigest()
     if baseline is not None:
         if tags.keys() != baseline.keys():
             raise ValueError("Recorded and reviewed asset paths differ")
@@ -123,11 +131,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         baseline = None
+        expected_digest = None
         if args.replay_etags:
             saved = json.loads(args.replay_etags.read_text())
             if not isinstance(saved, dict) or not isinstance(saved.get("asset_etags"), dict):
                 raise ValueError("Expected a recorded asset_etags object")
             baseline = saved["asset_etags"]
-        print(json.dumps(check(args.directory, args.base_url, record=args.record_etags, baseline=baseline)))
+            if "client_sha256" in saved:
+                expected_digest = saved["client_sha256"]
+                if not isinstance(expected_digest, str) or not re.fullmatch("[0-9a-f]{64}", expected_digest):
+                    raise ValueError("Invalid recorded client SHA-256")
+        print(json.dumps(check(args.directory, args.base_url, record=args.record_etags, baseline=baseline, expected_digest=expected_digest)))
     except (OSError, HTTPException, ValueError) as error:
         parser.exit(1, f"{error}\n")

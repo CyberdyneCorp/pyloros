@@ -11,6 +11,7 @@ from email.message import Message
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from check_frontend_assets import check, check_content_type
+from check_frontend_build import build_digest
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -112,6 +113,14 @@ class ServedAssets(unittest.TestCase):
                     (directory / "untagged.txt").write_text("static")
                 mixed = check(reviewed, base, record=True)["asset_etags"]
                 self.assertIsNone(mixed["untagged.txt"])
+                report = check(reviewed, base, record=True)
+                digest = report["client_sha256"]
+                self.assertEqual(digest, build_digest(reviewed))
+                check(reviewed, base, baseline=mixed, expected_digest=digest)
+                for directory in (public, reviewed):
+                    (directory / "untagged.txt").write_text("edited")
+                with self.assertRaisesRegex(ValueError, "differ from the recorded assets"):
+                    check(reviewed, base, baseline=mixed, expected_digest=digest)
                 self.assertEqual(check(reviewed, base, baseline=mixed), {"verified_assets": 2, "revalidated_assets": 1})
                 for directory in (public, reviewed):
                     (directory / "untagged.txt").unlink()
