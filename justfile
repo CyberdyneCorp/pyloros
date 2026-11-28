@@ -36,8 +36,9 @@ db-passkey-models:
     uv run --script scripts/passkey_models.py
 
 # Count registered client identifiers that overlap at a role namespace separator.
-db-client-id-overlaps:
-    uv run --script scripts/client_id_overlaps.py
+[positional-arguments]
+db-client-id-overlaps *args:
+    uv run --script scripts/client_id_overlaps.py "$@"
 
 # Count account password prefixes on the target PostgreSQL database.
 db-password-schemes:

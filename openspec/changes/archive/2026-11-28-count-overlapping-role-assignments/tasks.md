@@ -1,0 +1,3 @@
+- [x] Add an optional assignment report to the registry inventory.
+- [x] Verify group deduplication, distinct identities, empty groups and transaction visibility with column-level privileges.
+- [x] Document the required grants and report scope.
