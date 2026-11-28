@@ -1,0 +1,2 @@
+- [x] Test reference selection and verify late and current reversals in both purchase orders.
+- [x] Document how to reconcile superseded payment and subscription references.

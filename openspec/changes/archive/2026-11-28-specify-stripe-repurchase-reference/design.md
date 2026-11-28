@@ -1,0 +1,1 @@
+Compare the selected reference with the provider adapter and exercise signed events on two replicas. Use the same customer account, product and plan across successive purchases. Compare the entitlement ID, reference, status and processed event IDs at each step, with account reads from both services.

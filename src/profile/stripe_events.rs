@@ -144,6 +144,27 @@ impl Event {
 mod tests {
     use super::*;
     #[test]
+    fn checkout_and_cancellation_choose_their_billing_reference() {
+        for (kind, subscription, expected) in [
+            ("checkout.session.completed", "sub_primary", "sub_primary"),
+            ("checkout.session.completed", "", "pi_purchase"),
+            ("customer.subscription.deleted", "sub_other", "sub_object"),
+        ] {
+            let event: Event = serde_json::from_value(json!({
+                "id": "evt_purchase",
+                "type": kind,
+                "data": {"object": {
+                    "id": "sub_object",
+                    "subscription": subscription,
+                    "payment_intent": "pi_purchase"
+                }}
+            }))
+            .unwrap();
+            assert_eq!(event.reference(), Some(expected));
+        }
+    }
+
+    #[test]
     fn signature_checks_original_bytes_and_expires_after_five_minutes() {
         let verifier = Verifier(hmac::Key::new(hmac::HMAC_SHA256, b"test-only"));
         let payload = br#"{"id":"evt_test"}"#;
