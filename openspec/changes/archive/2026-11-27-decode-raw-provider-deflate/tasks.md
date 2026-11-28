@@ -1,0 +1,2 @@
+- [x] Verify reference behavior and add remote exchange regression coverage.
+- [x] Implement bounded streaming decoding and validate the package.

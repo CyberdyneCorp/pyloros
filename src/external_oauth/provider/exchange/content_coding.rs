@@ -7,7 +7,7 @@ use axum::{
 };
 use flate2::{
     Compression,
-    write::{GzEncoder, ZlibEncoder},
+    write::{DeflateEncoder, GzEncoder, ZlibEncoder},
 };
 use std::io::Write;
 
@@ -18,6 +18,7 @@ enum Coding {
     Identity,
     Gzip,
     Deflate,
+    RawDeflate,
 }
 
 fn encoded(document: &[u8], coding: Coding, headers: HeaderMap) -> HttpResponse {
@@ -27,6 +28,11 @@ fn encoded(document: &[u8], coding: Coding, headers: HeaderMap) -> HttpResponse 
             let mut enc = GzEncoder::new(Vec::new(), Compression::fast());
             enc.write_all(document).unwrap();
             ("gzip", enc.finish().unwrap())
+        }
+        Coding::RawDeflate => {
+            let mut enc = DeflateEncoder::new(Vec::new(), Compression::fast());
+            enc.write_all(document).unwrap();
+            ("deflate", enc.finish().unwrap())
         }
         Coding::Deflate => {
             let mut enc = ZlibEncoder::new(Vec::new(), Compression::fast());
@@ -102,7 +108,12 @@ async fn exchange_documents(
 
 #[tokio::test]
 async fn provider_documents_can_use_independent_content_codings() {
-    let codings = [Coding::Identity, Coding::Gzip, Coding::Deflate];
+    let codings = [
+        Coding::Identity,
+        Coding::Gzip,
+        Coding::Deflate,
+        Coding::RawDeflate,
+    ];
     for kind in [Kind::Google, Kind::Microsoft] {
         for token in codings {
             for profile in codings {
@@ -120,18 +131,14 @@ async fn limit_applies_to_each_decoded_provider_document() {
         (LIMIT + 1, 0, false),
         (0, LIMIT + 1, false),
     ] {
-        assert_eq!(
-            exchange(
-                Kind::Google,
-                Coding::Gzip,
-                Coding::Deflate,
-                token_len,
-                profile_len
-            )
-            .await
-            .is_ok(),
-            accepted
-        );
+        for coding in [Coding::Gzip, Coding::Deflate, Coding::RawDeflate] {
+            assert_eq!(
+                exchange(Kind::Google, coding, coding, token_len, profile_len)
+                    .await
+                    .is_ok(),
+                accepted
+            );
+        }
     }
 }
 

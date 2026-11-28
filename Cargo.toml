@@ -46,6 +46,7 @@ pem = "3.0.6"
 hyper-util = { version = "0.1", features = ["client-proxy"] }
 hyper = { version = "1", features = ["http1"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "form", "gzip", "deflate"] }
+flate2 = "1"
 multer = "3"
 futures-util = "0.3"
 csv = "1"
@@ -66,5 +67,4 @@ dns-lookup = "4"
 libc = "0.2"
 
 [dev-dependencies]
-flate2 = "1"
 wat = "1.263.0"

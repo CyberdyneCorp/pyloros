@@ -50,7 +50,11 @@ pub struct Provider(Backend);
 fn provider_http() -> reqwest::ClientBuilder {
     Client::builder()
         .gzip(true)
-        .deflate(true)
+        .no_deflate()
+        .default_headers(reqwest::header::HeaderMap::from_iter([(
+            reqwest::header::ACCEPT_ENCODING,
+            reqwest::header::HeaderValue::from_static("gzip, deflate"),
+        )]))
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(10))

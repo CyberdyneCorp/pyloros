@@ -1,0 +1,1 @@
+Feed each HTTP chunk to the raw and wrapped decoders while each interpretation remains valid. A raw stream can begin with the same two bytes as a zlib header. Prefer a complete wrapped stream when both succeed. Cap each decoder’s output at one MiB and release it on failure. Apply content coding before decoding JSON text.

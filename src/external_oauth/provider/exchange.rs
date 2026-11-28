@@ -1,6 +1,7 @@
 use super::{Backend, Kind, Provider, Remote};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::Response;
+mod document;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -49,18 +50,11 @@ impl Provider {
     }
 }
 
-async fn body<T: serde::de::DeserializeOwned>(mut response: Response) -> Result<T, ExchangeError> {
-    const LIMIT: usize = 1024 * 1024;
+async fn body<T: serde::de::DeserializeOwned>(response: Response) -> Result<T, ExchangeError> {
     if !response.status().is_success() {
         return Err(ExchangeError);
     }
-    let mut bytes = Vec::new();
-    while let Some(piece) = response.chunk().await.map_err(|_| ExchangeError)? {
-        if piece.len() > LIMIT - bytes.len() {
-            return Err(ExchangeError);
-        }
-        bytes.extend_from_slice(&piece);
-    }
+    let bytes = document::read(response).await.map_err(|_| ExchangeError)?;
     let text = crate::request_json::encoding::text(&bytes).map_err(|_| ExchangeError)?;
     serde_json::from_str(&text).map_err(|_| ExchangeError)
 }
