@@ -26,6 +26,10 @@ def main():
         ("examples/silent_hook", "{}", "success", ""),
         ("examples/counter_hook", '{"n":41}', "success", "42\n"),
         ("examples/counter_hook", '{"n":' + "9" * 4299 + "}", "success", "1" + "0" * 4299 + "\n"),
+        ("examples/counter_hook", '{"n":9007199254740992}', "success", "9007199254740993\n"),
+        ("examples/counter_hook", '{"n":9007199254740992.0}', "success", "9007199254740992.0\n"),
+        ("examples/counter_hook", '{"n":-0.99997}', "success", "2.999999999997449e-05\n"),
+        ("examples/counter_hook", '{"n":1e16}', "success", "1e+16\n"),
         ("examples/counter_hook", "{}", "error", "KeyError: 'n'"),
     ]
     for guest, event, status, output in cases:
