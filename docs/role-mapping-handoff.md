@@ -16,6 +16,12 @@ If the handoff includes retiring or recreating a role, apply the same hold to ro
 
 After the outgoing mapping transaction finishes, verify its committed permissions and audit entry, or the previous permissions if it rolled back. Then admit the retirement on the incoming pool. A mapping lookup for the retired role returns 404. If the role is recreated, verify its mapping is empty before applying the intended permissions. The create, delete and subsequent replacement each record their caller.
 
+### Chain-backed role retirement
+
+A 404 from the permission endpoint establishes that the role is absent from the catalog. A permission row for that role can still exist in PostgreSQL. On local Anvil, an operator replaced an empty permission set while a delegated client retired the same role. When the replacement was held at its audit insert, the retirement mined before the replacement committed. Both requests succeeded, and the replacement row survived retirement. All four API replicas returned 404. Recreating the role through Pyloros cleared the row.
+
+When retirement waited for the outgoing replacement to commit on the primary, the deletion cleared the stored permission in all four writer combinations. The rehearsal covered two Rust replicas, two reference replicas and both mixed directions. The reference retirement process used a signing-library compatibility alias to reach confirmed execution. During a handoff, drain the outgoing database transaction before admitting the retirement, even if the mapping API has already returned success.
+
 ## Local rehearsal
 
 On a disposable PostgreSQL database, a deferred audit trigger held the outgoing replacement at commit. Each outgoing backend handled both operator and delegated writes. For each caller, one transaction committed and one rolled back. All eight trials began with `read`, requested `export`, and ended with a replacement of `list` from the new writer through the other route.
