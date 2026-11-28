@@ -1,0 +1,2 @@
+- [x] 1. Cover valid and case-variant URN prefixes in the shared UUID field validator.
+- [x] 2. Compare populated account reads and representative query and body validations on both services.

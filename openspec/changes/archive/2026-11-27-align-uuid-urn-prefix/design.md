@@ -1,0 +1,1 @@
+Keep the existing UUID parser for ordinary identifiers and lowercase URNs. Recognize a case variant of the URN prefix before parsing and use the usual structured field error, including the first character and its position.

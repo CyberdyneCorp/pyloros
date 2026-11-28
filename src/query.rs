@@ -45,12 +45,33 @@ pub(crate) fn boolean(name: &str, value: &str) -> Result<bool, serde_json::Value
     }
 }
 
+// The REST diagnostic includes wrapping braces or the URN prefix in the final length.
+fn invalid_final_uuid_group(path: &str) -> Option<usize> {
+    let body = path
+        .strip_prefix("urn:uuid:")
+        .or_else(|| path.strip_prefix('{')?.strip_suffix('}'))
+        .unwrap_or(path);
+    let mut groups = body.splitn(5, '-');
+    for width in [8, 4, 4, 4] {
+        let group = groups.next()?;
+        if group.len() != width || !group.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+    }
+    let last = groups.next()?;
+    (last.len() != 12 && last.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| last.len() + (path.len() - body.len()))
+}
+
 fn uuid_reason(path: &str, error: uuid::Error) -> String {
     if path.bytes().all(|c| c.is_ascii_hexdigit()) {
         return format!(
             "invalid length: expected length 32 for simple format, found {}",
             path.len()
         );
+    }
+    if let Some(length) = invalid_final_uuid_group(path) {
+        return format!("invalid group length in group 4: expected 12, found {length}");
     }
     let message = error.to_string();
     if message.starts_with("invalid character:")
@@ -71,8 +92,15 @@ pub(crate) fn uuid_field(
     source: &str,
     field: &str,
 ) -> Result<uuid::Uuid, serde_json::Value> {
-    uuid::Uuid::parse_str(path).map_err(|error| {
-        let reason = uuid_reason(path, error);
+    const URN: &str = "urn:uuid:";
+    let parsed = match path.get(..URN.len()) {
+        Some(prefix) if prefix != URN && prefix.eq_ignore_ascii_case(URN) => {
+            let first = char::from(prefix.as_bytes()[0]);
+            Err(format!("invalid character: found `{first}` at 1"))
+        }
+        _ => uuid::Uuid::parse_str(path).map_err(|error| uuid_reason(path, error)),
+    };
+    parsed.map_err(|reason| {
         serde_json::json!({
             "type":"uuid_parsing", "loc":[source,field],
             "msg":format!("Input should be a valid UUID, {reason}"),
@@ -141,4 +169,49 @@ pub(crate) fn range(name: &str, raw: &str, min: i128, max: Option<i128>) -> Resu
     let mut e = error(kind, &msg);
     e["ctx"] = ctx;
     Err(e)
+}
+
+#[cfg(test)]
+mod uuid_tests {
+    use super::*;
+
+    #[test]
+    fn final_uuid_group_length_includes_the_submitted_wrapper() {
+        let short = "00000000-0000-0000-0000-00000000000";
+        for (value, count) in [
+            (short.to_owned(), 11),
+            (format!("{{{short}}}"), 13),
+            (format!("urn:uuid:{short}"), 20),
+            (format!("urn:uuid:{short}00"), 22),
+        ] {
+            let error = path_uuid(&value, "user_id").unwrap_err();
+            assert_eq!(
+                error["ctx"]["error"],
+                format!("invalid group length in group 4: expected 12, found {count}")
+            );
+        }
+    }
+
+    #[test]
+    fn typed_uuid_fields_require_a_lowercase_urn_prefix() {
+        let id = uuid::Uuid::from_u128(0xabcdef);
+        let suffix = id.to_string().to_ascii_uppercase();
+        for source in ["path", "query", "body"] {
+            assert_eq!(
+                uuid_field(&format!("urn:uuid:{suffix}"), source, "user_id").unwrap(),
+                id
+            );
+            for prefix in ["URN:UUID:", "Urn:uuid:", "urn:UUID:"] {
+                let value = format!("{prefix}{suffix}");
+                let error = uuid_field(&value, source, "user_id").unwrap_err();
+                let first = prefix.chars().next().unwrap();
+                assert_eq!(
+                    error["ctx"]["error"],
+                    format!("invalid character: found `{first}` at 1")
+                );
+                assert_eq!(error["loc"], json!([source, "user_id"]));
+                assert_eq!(error["input"], value);
+            }
+        }
+    }
 }
