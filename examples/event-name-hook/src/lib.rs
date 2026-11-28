@@ -20,8 +20,12 @@ impl exports::pyloros::hooks::handler::Guest for EventName {
         // Borrow field values so unrelated arrays never become guest allocations.
         let fields: BTreeMap<String, &RawValue> = serde_json::from_str(&event).map_err(invalid)?;
         let raw = fields.get("event_type").ok_or_else(missing)?;
-        let name: String = serde_json::from_str(raw.get()).map_err(|_| missing())?;
-        Ok(format!("{name}\n"))
+        let mut name: String = serde_json::from_str(raw.get()).map_err(|_| missing())?;
+        name.push('\n');
+        if let Some((end, _)) = name.char_indices().nth(10_000) {
+            name.truncate(end);
+        }
+        Ok(name)
     }
 }
 
@@ -30,6 +34,15 @@ export!(EventName);
 #[cfg(test)]
 mod tests {
     use super::{EventName, exports::pyloros::hooks::handler::Guest};
+
+    #[test]
+    fn counts_the_newline_and_each_unicode_scalar_toward_the_output_limit() {
+        let prefix = "雪".repeat(9_999);
+        for (name, last) in [(prefix.clone(), "\n"), (format!("{prefix}e\u{301}"), "e")] {
+            let event = serde_json::json!({"event_type": name}).to_string();
+            assert_eq!(EventName::handle(event).unwrap(), format!("{prefix}{last}"));
+        }
+    }
 
     #[test]
     fn reads_the_final_decoded_field_and_preserves_errors() {
