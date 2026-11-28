@@ -88,6 +88,10 @@ pub(super) async fn read(mut response: Response) -> io::Result<Vec<u8>> {
         }
         layers.push(layer);
     }
+    if matches!(layers.as_slice(), [Layer::Deflate(_)]) {
+        return crate::http_body::read_deflate(response, crate::http_body::ReadLimit::Prefix(1024))
+            .await;
+    }
     layers.reverse();
     let mut excerpt = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(io::Error::other)? {
@@ -131,6 +135,20 @@ mod tests {
             }
             let response = reply.body(reqwest::Body::from(body)).unwrap().into();
             assert_eq!(read(response).await.unwrap(), &text.as_bytes()[..1024]);
+        }
+    }
+
+    #[tokio::test]
+    async fn identity_coding_preserves_raw_deflate_acknowledgements() {
+        // Two stored blocks whose first bytes also satisfy the zlib header check.
+        let body = [0x78, 1, 0, 254, 255, b'o', 1, 1, 0, 254, 255, b'k'];
+        for fields in [vec!["identity, deflate"], vec!["deflate", "identity"]] {
+            let mut builder = axum::http::Response::builder();
+            for field in fields {
+                builder = builder.header(CONTENT_ENCODING, field);
+            }
+            let response = builder.body(reqwest::Body::from(body.to_vec())).unwrap();
+            assert_eq!(read(response.into()).await.unwrap(), b"ok");
         }
     }
 

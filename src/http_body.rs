@@ -65,15 +65,7 @@ pub(crate) async fn read(mut response: Response, limit: ReadLimit) -> io::Result
         return read_compressed(response, limit, Decompress::new_gzip(15), None).await;
     }
     if coding.eq_ignore_ascii_case(b"deflate") {
-        // Raw deflate can start with a valid zlib header. Keep both viable
-        // interpretations without buffering the wire body.
-        return read_compressed(
-            response,
-            limit,
-            Decompress::new(true),
-            Some(Decompress::new(false)),
-        )
-        .await;
+        return read_deflate(response, limit).await;
     }
     let expected = response.content_length();
     let mut bytes = Vec::new();
@@ -87,6 +79,18 @@ pub(crate) async fn read(mut response: Response, limit: ReadLimit) -> io::Result
         }
     }
     Ok(bytes)
+}
+
+pub(crate) async fn read_deflate(response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
+    // Raw deflate can start with a valid zlib header. Keep both viable
+    // interpretations without buffering the wire body.
+    read_compressed(
+        response,
+        limit,
+        Decompress::new(true),
+        Some(Decompress::new(false)),
+    )
+    .await
 }
 
 async fn read_compressed(
