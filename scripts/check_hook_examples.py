@@ -32,6 +32,12 @@ def main():
         ("examples/counter_hook", '{"n":1e16}', "success", "1e+16\n"),
         ("examples/counter_hook", "{}", "error", "KeyError: 'n'"),
     ]
+    wide = ",".join(f'"k{i:04d}":0' for i in range(5800))
+    event = '{"n":0,"event_type":null,' + wide + r',"\u006e":41,"event_\u0074ype":"ready"}'
+    cases.extend([
+        ("event_name_hook", event, "success", "ready\n"),
+        ("examples/counter_hook", event, "success", "42\n"),
+    ])
     for guest, event, status, output in cases:
         check(args.worker.resolve(), args.guests / (guest + ".wasm"), event,
               {"status": status, "output": output})

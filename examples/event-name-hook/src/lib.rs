@@ -1,4 +1,6 @@
 //! Record the type of the event without disclosing its other fields.
+mod event_fields;
+
 wit_bindgen::generate!({
     path: "../../wit",
     world: "hook",
@@ -9,7 +11,6 @@ struct EventName;
 impl exports::pyloros::hooks::handler::Guest for EventName {
     fn handle(event: String) -> Result<String, String> {
         use serde_json::value::RawValue;
-        use std::collections::BTreeMap;
 
         let invalid = |_| "Expected a JSON event".to_owned();
         let missing = || "ValueError: Expected an event_type string".to_owned();
@@ -17,9 +18,9 @@ impl exports::pyloros::hooks::handler::Guest for EventName {
             serde_json::from_str::<&RawValue>(&event).map_err(invalid)?;
             return Err(missing());
         }
-        // Borrow field values so unrelated arrays never become guest allocations.
-        let fields: BTreeMap<String, &RawValue> = serde_json::from_str(&event).map_err(invalid)?;
-        let raw = fields.get("event_type").ok_or_else(missing)?;
+        let raw = event_fields::last_field(&event, "event_type")
+            .map_err(invalid)?
+            .ok_or_else(missing)?;
         let mut name: String = serde_json::from_str(raw.get()).map_err(|_| missing())?;
         name.push('\n');
         if let Some((end, _)) = name.char_indices().nth(10_000) {

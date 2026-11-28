@@ -1,0 +1,1 @@
+Use a streaming JSON map visitor shared by the two examples. Skip unrelated values and borrow the raw token for each matching field. Complete parsing before returning so duplicate keys and trailing content retain their existing behavior.

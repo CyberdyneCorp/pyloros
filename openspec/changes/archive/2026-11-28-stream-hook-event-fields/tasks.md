@@ -1,0 +1,3 @@
+- [x] Replace whole-object indexes in both guests.
+- [x] Test duplicate decoded keys and wide objects through the worker.
+- [x] Compare the compiled guests with source execution.

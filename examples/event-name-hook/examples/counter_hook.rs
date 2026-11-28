@@ -1,6 +1,6 @@
 //! Print the successor of the numeric event field n.
-use serde_json::value::RawValue;
-use std::collections::BTreeMap;
+#[path = "../src/event_fields.rs"]
+mod event_fields;
 
 wit_bindgen::generate!({
     path: "../../wit",
@@ -11,9 +11,10 @@ struct Counter;
 
 impl exports::pyloros::hooks::handler::Guest for Counter {
     fn handle(event: String) -> Result<String, String> {
-        let fields: BTreeMap<String, &RawValue> =
-            serde_json::from_str(&event).map_err(|_| "Expected a JSON object")?;
-        let value = fields.get("n").ok_or("KeyError: 'n'")?.get();
+        let value = event_fields::last_field(&event, "n")
+            .map_err(|_| "Expected a JSON object")?
+            .ok_or("KeyError: 'n'")?
+            .get();
         let result = match value.as_bytes()[0] {
             b't' => "2".into(),
             b'f' => "1".into(),
@@ -117,6 +118,16 @@ mod tests {
             Counter::handle(format!(r#"{{"n":{digits}}}"#))
                 .unwrap_err()
                 .starts_with("ValueError:")
+        );
+    }
+
+    #[test]
+    fn selects_the_final_raw_number_and_rejects_trailing_data() {
+        let event = r#"{"n":null,"nested":{"n":1},"\u006e":9007199254740993}"#;
+        assert_eq!(Counter::handle(event.into()).unwrap(), "9007199254740994\n");
+        assert_eq!(
+            Counter::handle(format!("{event}[]")).unwrap_err(),
+            "Expected a JSON object"
         );
     }
 
