@@ -45,8 +45,9 @@ db-client-id-overlaps *args:
     uv run --script scripts/client_id_overlaps.py "$@"
 
 # Count account password prefixes on the target PostgreSQL database.
-db-password-schemes:
-    uv run --script scripts/account_password_schemes.py
+[positional-arguments]
+db-password-schemes *args:
+    uv run --script scripts/account_password_schemes.py "$@"
 
 # Check declared storage widths for verified Google Play purchase tokens.
 db-play-token-width:

@@ -277,3 +277,14 @@ An operator password reset that migrates a bcrypt credential to Argon2 SHALL pre
 - **WHEN** the user submits the replacement password after the revocation cutoff on a compatible peer
 - **THEN** the peer requires the enrolled second factor
 - **AND** the other backend can complete that challenge with the existing authenticator and issue a session usable by the peer
+
+### Requirement: Bcrypt recovery cohort inventory
+Operators SHALL be able to request a read-only inventory of bcrypt-prefixed accounts grouped by active status and presence of a nonblank primary email. The report SHALL return four counts including zeroes and use the same bcrypt prefix classification as the default family inventory.
+
+#### Scenario: Missing primary email
+- **WHEN** an active bcrypt account has a null, empty or whitespace-only primary email
+- **THEN** it contributes to the active count without email
+
+#### Scenario: Password scheme changes
+- **WHEN** a bcrypt credential is replaced with Argon2
+- **THEN** reports from other connections exclude that account from its previous cohort only after commit

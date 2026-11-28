@@ -348,6 +348,8 @@ The existing forgot-password form submits to `POST /api/v1/auth/password/reset-r
 
 Use `just db-password-schemes` before switching password schemes and again after each recovery cohort. Set `DATABASE_URL` to a database login with schema access and `SELECT (password_hash)` on `users`. The report counts all accounts, including inactive accounts, under Argon2, bcrypt, absent (SQL NULL), and unrecognized. It classifies prefixes only. A malformed credential with a recognized prefix still contributes to that family’s count.
 
+Use `just db-password-schemes --bcrypt-recovery` to count bcrypt accounts by active status and presence of a stored primary email. Grant the reporting login additional `SELECT (is_active, primary_email)` access on `users`. Null, empty and whitespace-only addresses count as missing. Confirm deliverability and reset eligibility separately.
+
 An account with a legacy bcrypt password can move to Argon2 through the emailed reset form. The reset request can reach a bcrypt-configured backend. Route reset confirmation and subsequent password logins to replicas configured with `PASSWORD_SCHEME=argon2`. The confirming backend writes the replacement as Argon2id v19. With token revocation enabled, both services reject the previous session after confirmation. This handoff was verified in both directions with bcrypt prefixes `$2$`, `$2a$`, `$2b$` and `$2y$`.
 
 Submit the email verification code to `POST /api/v1/auth/verify-email` as the JSON string field `token`. The endpoint accepts UTF-8, UTF-16 and UTF-32 JSON. An invalid field type returns a 422 response containing the submitted value. Success returns an empty 204. Verification consumes the code and applies the verified email domain’s organization membership rules.

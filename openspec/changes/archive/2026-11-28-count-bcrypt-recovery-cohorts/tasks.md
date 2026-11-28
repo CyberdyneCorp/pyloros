@@ -1,0 +1,2 @@
+- [x] Add the optional query and document its privileges and output.
+- [x] Verify empty cohorts, prefix selection, column grants and transaction visibility on PostgreSQL.

@@ -1,0 +1,1 @@
+Use one read-only PostgreSQL aggregate for the requested report. Keep the default query separate so existing column grants suffice. Classify email presence using the database whitespace character class and return only counts. A stored value does not establish deliverability or entitlement to reset a password.
