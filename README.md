@@ -93,15 +93,7 @@ Enable billing with `BILLING_ENABLED=true`, set `GOOGLE_PACKAGE_NAME` to the And
 
 Before routing Play claims, check the character limits on both columns that store the purchase token. The stock migration schema allows 512 characters in `google_purchases.purchase_token` and 128 in `entitlements.external_ref`. In local tests with a synthetic store, 128-character tokens committed on both backends. At 129, 511 and 512 characters both returned HTTP 500 and rolled back ownership and access. At 513 characters both returned HTTP 422. ASCII and multibyte tokens gave the same results. With a 512-character entitlement reference in a disposable database, both backends committed the previously failing claims.
 
-```sql
-SELECT table_schema, table_name, column_name, data_type, character_maximum_length
-FROM information_schema.columns
-WHERE (table_name, column_name) IN (
-    ('google_purchases', 'purchase_token'),
-    ('entitlements', 'external_ref')
-)
-ORDER BY table_schema, table_name;
-```
+Run `just db-play-token-width` with the application's `DATABASE_URL` and search path. It reports both resolved columns and exits successfully when each has a visible `text` or `varchar` declaration that can hold 512 characters. A missing column, unsupported type or narrower declaration produces a nonzero exit. This read-only check inspects declared widths. Verify constraints, triggers and claim persistence separately with a purchase fixture on a deployment-equivalent database.
 
 If a deployment elects to widen the entitlement reference, drain requests from the reference replicas and close their database pools before applying the change. A reference login with a prepared entitlement query returned HTTP 500 after the column changed underneath its pool. Set a transaction-local lock timeout on the schema change. In the PostgreSQL 17 rehearsal, a held reader caused the change to time out and the column stayed at 128 characters. The change committed after the reader finished.
 

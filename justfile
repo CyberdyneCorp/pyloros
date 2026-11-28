@@ -27,6 +27,10 @@ db-shell:
 db-commit-checks:
     uv run --script scripts/inspect_commit_checks.py
 
+# Check declared storage widths for verified Google Play purchase tokens.
+db-play-token-width:
+    uv run --script scripts/check_play_token_width.py
+
 # Run the API with the current environment.
 run: hook-worker
     PYLOROS_HOOK_WORKER="${PYLOROS_HOOK_WORKER:-$PWD/hook-worker/target/debug/pyloros-hook-worker}" cargo run --locked
