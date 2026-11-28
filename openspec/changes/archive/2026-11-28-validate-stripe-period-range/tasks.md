@@ -1,0 +1,2 @@
+- [x] Bound the selected integer timestamp before applying the event.
+- [x] Compare signed boundary cases, stored state, corrected redelivery and replay.

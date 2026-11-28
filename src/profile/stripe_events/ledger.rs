@@ -12,6 +12,7 @@ pub(super) async fn process(
     event: &Event,
     hooks: bool,
 ) -> sqlx::Result<Option<bool>> {
+    let expiry = event.expires()?;
     let mut tx = pool.begin().await?;
     // The event row also serializes first delivery against competing retries.
     sqlx::query(
@@ -32,9 +33,15 @@ pub(super) async fn process(
     let outcome = match event.kind.as_str() {
         "checkout.session.completed"
         | "customer.subscription.created"
-        | "customer.subscription.updated" => grant(&mut tx, event, hooks).await?,
+        | "customer.subscription.updated" => grant(&mut tx, event, expiry, hooks).await?,
         "charge.refunded"
-            if event.data.object.get("refunded").and_then(Value::as_bool) != Some(true) =>
+            if event
+                .data
+                .object
+                .fields
+                .get("refunded")
+                .and_then(Value::as_bool)
+                != Some(true) =>
         {
             Outcome::Applied
         }
@@ -121,7 +128,12 @@ async fn lock_reference(tx: &mut Tx<'_>, reference: &str) -> sqlx::Result<()> {
     Ok(())
 }
 
-async fn grant(tx: &mut Tx<'_>, event: &Event, hooks: bool) -> sqlx::Result<Outcome> {
+async fn grant(
+    tx: &mut Tx<'_>,
+    event: &Event,
+    expiry: Option<DateTime<Utc>>,
+    hooks: bool,
+) -> sqlx::Result<Outcome> {
     let Some((product, plan)) = event.product() else {
         return Ok(Outcome::Deferred("no product metadata".into()));
     };
@@ -141,7 +153,7 @@ async fn grant(tx: &mut Tx<'_>, event: &Event, hooks: bool) -> sqlx::Result<Outc
         billing_grants::Grant {
             product,
             plan,
-            expires: event.expires()?,
+            expires: expiry,
             reference: event.reference(),
             source: "stripe",
         },

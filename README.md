@@ -133,6 +133,8 @@ FROM (
 
 A subscription update can arrive before checkout maps the customer. Redelivery after checkout applies the new plan and its expiry. An `invoice.created` event is informational and returns `handled: false`. A refund for a separate one-time payment revokes only the grants tied to that payment reference.
 
+Stripe period ends use whole Unix seconds within UTC years 1–9999. An integer beyond the document decoder’s 4,300-digit limit returns HTTP 400. A decoded period outside the supported date range returns HTTP 500 before Pyloros writes the event, maps the customer, or changes an entitlement. A corrected delivery can use the same event ID.
+
 Account erasure removes the Stripe customer mapping and the account’s grants. Processed event IDs survive, so replaying the old checkout cannot restore access. If someone registers again with the same email, subscription updates for the former customer remain deferred as `unmapped customer`. A fresh signed checkout identifying the new account UUID can establish the mapping. Redelivering the deferred update then applies the subscription plan to that account.
 
 If a previously unseen checkout names an erased UUID, Pyloros records a deferred event. After the Stripe customer is linked to a replacement account, replaying that stale checkout leaves the replacement’s grants intact and reports `customer belongs to another user`.

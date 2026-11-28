@@ -1,0 +1,1 @@
+Preserve the JSON spelling of each candidate until selecting the top-level period or its first-item fallback. An integer outside years 1–9999 fails projection before customer resolution or ledger lookup. A fractional or exponent-form number retains its existing non-integer behavior.

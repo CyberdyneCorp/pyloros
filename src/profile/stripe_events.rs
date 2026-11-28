@@ -4,6 +4,7 @@ use axum::body::Bytes;
 use ring::hmac;
 use serde_json::Value;
 mod ledger;
+mod period;
 
 pub(super) struct Verifier(hmac::Key);
 impl Verifier {
@@ -62,7 +63,7 @@ pub(super) async fn handle(
     if !verifier.accepts(signature, &body, Utc::now().timestamp()) {
         return invalid();
     }
-    let Ok(event) = serde_json::from_slice::<Event>(&body) else {
+    let Some(event) = Event::parse(&body) else {
         return invalid();
     };
     match ledger::process(&state.pool, &event, state.registration.hooks).await {
@@ -91,12 +92,18 @@ struct Event {
 }
 #[derive(Deserialize)]
 struct EventData {
-    object: serde_json::Map<String, Value>,
+    object: period::BillingObject,
 }
 
 impl Event {
+    fn parse(body: &[u8]) -> Option<Self> {
+        let text = std::str::from_utf8(body).ok()?;
+        crate::stored_json::check_integers(text).ok()?;
+        serde_json::from_str(text).ok()
+    }
+
     fn text(&self, k: &str) -> Option<&str> {
-        self.data.object.get(k)?.as_str()
+        self.data.object.fields.get(k)?.as_str()
     }
     fn reference(&self) -> Option<&str> {
         let field = if self.kind.starts_with("customer.subscription.") {
@@ -108,12 +115,13 @@ impl Event {
             .filter(|s| !s.is_empty())
             .or_else(|| self.text("payment_intent"))
     }
-    fn item(&self) -> Option<&Value> {
-        self.data.object.get("items")?.get("data")?.get(0)
-    }
     fn product(&self) -> Option<(&str, Option<&str>)> {
-        let price = self.item().and_then(|v| v.pointer("/price/metadata"));
-        [price, self.data.object.get("metadata")]
+        let object = &self.data.object;
+        let price = object
+            .item
+            .as_ref()
+            .and_then(|item| item.price.get("metadata"));
+        [price, object.fields.get("metadata")]
             .into_iter()
             .flatten()
             .find_map(|meta| {
@@ -125,22 +133,8 @@ impl Event {
             })
     }
     fn expires(&self) -> sqlx::Result<Option<DateTime<Utc>>> {
-        fn period_seconds(value: &Value) -> Option<i64> {
-            value.as_i64().or_else(|| value.as_bool().map(i64::from))
-        }
-
-        let seconds = self
-            .data
-            .object
-            .get("current_period_end")
-            .and_then(period_seconds)
-            .or_else(|| period_seconds(self.item()?.get("current_period_end")?));
-        seconds
-            .map(|s| {
-                DateTime::from_timestamp(s, 0)
-                    .ok_or_else(|| sqlx::Error::Protocol("invalid billing timestamp".into()))
-            })
-            .transpose()
+        let object = &self.data.object;
+        period::expiry(object.current_period_end.as_deref(), object.item.as_ref())
     }
 }
 
@@ -338,6 +332,7 @@ mod tests {
         event
             .data
             .object
+            .fields
             .insert("refunded".into(), Value::Bool(true));
         assert_eq!(
             ledger::process(&pool, &event, false).await.unwrap(),
