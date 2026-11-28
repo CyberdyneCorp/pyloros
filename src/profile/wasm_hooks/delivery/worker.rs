@@ -152,7 +152,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]
-    async fn registration_claim_orders_stored_fields_after_checking_current_privacy() {
+    async fn account_event_claim_orders_stored_fields_after_checking_current_privacy() {
         let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
             .await
             .unwrap();
@@ -171,29 +171,40 @@ mod tests {
         .execute(&mut *tx)
         .await
         .unwrap();
-        let public = r#"{"event_type": "user_registered", "user_id": "subject"}"#;
-        let private = r#"{"email": "person@example.org", "address": "addr", "event_type": "user_registered", "user_id": "subject"}"#;
-        for (stored, enabled, expected) in [
-            (private, true, private),
-            (private, false, public),
-            (public, true, public),
-            (public, false, public),
-        ] {
-            sqlx::query("UPDATE pyloros_hook_deliveries SET payload=$1::jsonb")
-                .bind(stored)
-                .execute(&mut *tx)
-                .await
-                .unwrap();
-            sqlx::query("UPDATE hooks SET receive_pii=$1")
-                .bind(enabled)
-                .execute(&mut *tx)
-                .await
-                .unwrap();
-            let row = sqlx::query(include_str!("claim.sql"))
-                .fetch_one(&mut *tx)
-                .await
-                .unwrap();
-            assert_eq!(row.get::<&str, _>("payload"), expected);
+        let registrations = (
+            "user_registered",
+            r#"{"event_type": "user_registered", "user_id": "subject"}"#,
+            r#"{"email": "person@example.org", "address": "addr", "event_type": "user_registered", "user_id": "subject"}"#,
+        );
+        let logins = (
+            "user_logged_in",
+            r#"{"event_type": "user_logged_in", "user_id": "subject"}"#,
+            r#"{"email": "person@example.org", "user_agent": null, "ip": null, "event_type": "user_logged_in", "user_id": "subject"}"#,
+        );
+        for (event, public, private) in [registrations, logins] {
+            for (stored, enabled, expected) in [
+                (private, true, private),
+                (private, false, public),
+                (public, true, public),
+                (public, false, public),
+            ] {
+                sqlx::query("UPDATE pyloros_hook_deliveries SET event_type=$1, payload=$2::jsonb")
+                    .bind(event)
+                    .bind(stored)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+                sqlx::query("UPDATE hooks SET receive_pii=$1")
+                    .bind(enabled)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+                let row = sqlx::query(include_str!("claim.sql"))
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+                assert_eq!(row.get::<&str, _>("payload"), expected);
+            }
         }
     }
 

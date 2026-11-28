@@ -1,0 +1,1 @@
+Use the existing ordered registration projection for login deliveries. Filter the stored object by the recipient’s current permission before emitting keys in event order. A later opt-in can only expose values that were actually stored. Rendering stored JSON values preserves explicit nulls.
