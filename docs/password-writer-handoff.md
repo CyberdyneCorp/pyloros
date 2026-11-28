@@ -7,4 +7,8 @@ Self-service changes, administrator resets and email reset confirmations all rep
 3. For a canary account, sign in with its expected credential on the incoming pool and use that session for an authenticated read. Password changes advance the access-token cutoff. With revocation enforcement enabled, a token issued in the same second as the cutoff can be refused. In that case, sign in again after the cutoff second.
 4. Reopen writes on the incoming pool. For a self-service change, use a fresh session and the currently committed password. For an administrator reset, use the authorized operator session. If a response was lost after forwarding, reconcile the committed operation before resubmission.
 
-The local rehearsal covered an outgoing self-service change followed by either a self-service change or an administrator reset. Email reset confirmation was checked for ingress refusal during the pause. Deployment routing and ordinary concurrent password changes have separate signoff gates.
+## Pending email resets
+
+If ingress refused a reset confirmation before forwarding it, the account holder can submit the same unexpired link after writes reopen. An intervening self-service password change can leave an issued link usable. Once its redemption commits, submitting it again returns HTTP 400 on either backend.
+
+In the local rehearsal, the outgoing pool issued a reset email and admitted a self-service password change. The proxy refused the emailed credential on both sides of the pool switch. After the change committed, the replacement password worked and the reset credential was still unused. The incoming pool then redeemed the link once and revoked the session opened with the intermediate password. Both pools accepted the final password. The rehearsal also covered an incoming self-service change and an administrator reset. Deployment routing and ordinary concurrent password changes have separate signoff gates.
