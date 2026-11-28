@@ -449,18 +449,26 @@ async fn token_and_passkey_method_dispatch_matches_the_public_routes() {
 }
 
 #[tokio::test]
-async fn role_grants_apply_iam_document_rules_before_authentication() {
+async fn operator_and_delegated_writes_apply_iam_document_rules_before_authentication() {
     let pool = PgPoolOptions::new()
         .connect_lazy("postgresql://localhost/pyloros")
         .unwrap();
     let routes = pyloros::profile::routes(pool, false).unwrap();
     let oversized_integer = format!(r#"{{"extra":{}}}"#, "9".repeat(4301));
-    for route in ["admin/users", "clients/me/users"] {
+    for (method, path) in [
+        (Method::POST, "admin/users/invalid/roles"),
+        (Method::POST, "clients/me/users/invalid/roles"),
+        (Method::POST, "admin/groups"),
+        (Method::POST, "admin/policies"),
+        (Method::PUT, "admin/policies/invalid"),
+    ] {
         for (body, status) in [
             (r#"{"extra":NaN}"#, StatusCode::UNAUTHORIZED),
             (&oversized_integer, StatusCode::BAD_REQUEST),
         ] {
-            let request = Request::post(format!("/api/v1/{route}/invalid/roles"))
+            let request = Request::builder()
+                .method(method.clone())
+                .uri(format!("/api/v1/{path}"))
                 .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_owned()))

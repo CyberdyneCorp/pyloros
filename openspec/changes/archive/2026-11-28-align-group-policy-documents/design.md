@@ -1,0 +1,1 @@
+Use the same decoder as IAM role creation before operator authentication. The existing group and policy validators retain ownership of field validation, including errors containing non-finite numbers. Only validated documents reach a database mutation.

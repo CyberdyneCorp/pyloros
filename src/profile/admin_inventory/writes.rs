@@ -1,7 +1,7 @@
 //! Store ordered policy statements and their operator audit atomically.
 use super::*;
 use crate::chain_settings::{Chain, IamMutation, PrepareError};
-use crate::{grant_response::SessionOrigin, request_json::fields};
+use crate::{grant_response::SessionOrigin, request_json::iam_document};
 
 pub(in crate::profile) async fn create(
     State(state): State<Arc<Profile>>,
@@ -29,7 +29,7 @@ async fn write(
     bytes: &[u8],
     path: Option<&str>,
 ) -> Response {
-    let raw = match fields::document(headers, bytes) {
+    let raw = match iam_document::document(headers, bytes) {
         Ok(v) => v,
         Err(r) => return *r,
     };

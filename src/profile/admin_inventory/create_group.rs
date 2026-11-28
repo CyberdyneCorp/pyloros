@@ -1,6 +1,6 @@
 //! Create an ordinary IAM group and record its operator audit atomically.
 use super::*;
-use crate::{grant_response::SessionOrigin, login_http::problem, request_json::fields};
+use crate::{grant_response::SessionOrigin, login_http::problem, request_json::iam_document};
 
 pub(in crate::profile) async fn create_group(
     State(state): State<Arc<Profile>>,
@@ -8,7 +8,7 @@ pub(in crate::profile) async fn create_group(
     headers: HeaderMap,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let raw = match fields::document(&headers, &bytes) {
+    let raw = match iam_document::document(&headers, &bytes) {
         Ok(raw) => raw,
         Err(error) => return *error,
     };
