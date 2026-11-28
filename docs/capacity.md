@@ -149,3 +149,9 @@ In a separate 60-second run without injected delay, one tenant alternated 60 gra
 After checking the service client's grant, the permission evaluator fetches its model and the subject account's active status in one PostgreSQL statement. Two trials per version traced direct grants, inherited grants and wide denials. Every trace on the earlier build included a separate account lookup. The updated build returned eligibility with the model in all six traces.
 
 Each trial also measured 32 sequential requests per shape with 1 ms of simulated delay per database response chunk. Direct-check trial medians were 16.8–17.2 ms before and 16.8–17.3 ms after. Inherited-check medians were 19.3–23.1 ms before and 21.5–22.2 ms after. Wide-denial medians were 67.5–88.7 ms before and 89.1–95.8 ms after. These trials demonstrate the statement reduction. Deployment latency and throughput still need measurement on the target graph and network.
+
+### Checking membership across 32 teams
+
+When all queued teams use the same single direct membership rule, Pyloros checks the eligible team IDs in one membership query. One paired loopback trial used a folder with 32 parent folders, each linked to a different team. The account belonged to none of those teams. The trace changed from 32 membership reads and four object-edge reads to one membership read and three object-edge reads.
+
+With 1 ms of injected delay per database response chunk, 32 sequential wide denials had a median of 90.8 ms before grouping and 18.7 ms after. Both builds gave the same decisions for direct grants, short inherited grants and the wide denial. This measurement describes the tested graph and network conditions.
