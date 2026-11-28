@@ -396,6 +396,13 @@ Build both release binaries with `just build-release`. Deploy the matching
 UTF-16 and UTF-32 requests. It sends the full decoded module to the worker. A missing or busy worker returns HTTP 503.
 For local inspection, run `pyloros-hook-worker --parse-hook-source < hook.py`.
 
+To rehearse a backend switch with the shared console, keep a new hook open in
+one browser tab. Validate an invalid draft, switch the API backend at the same
+origin, correct the draft and validate again. Check that validation preserves
+the editor contents and leaves the hook inventory untouched. Save once, then
+retrieve the resulting hook ID through each backend and compare its stored
+source with the final draft. Repeat with the backend order reversed.
+
 Administrators can test an installed definition with
 `POST /api/v1/admin/hooks/{hook_id}/test` or `cyberauth hooks test`.
 Select the hook's compiled component first. The test accepts a JSON object
