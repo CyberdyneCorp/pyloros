@@ -1,4 +1,5 @@
 //! Render the deployment's shared consent artifact with a short-lived, signed form ticket.
+use crate::discovery::ScopeCatalog;
 use crate::{browser_client::BrowserClient, consent_http, grant_sessions::GrantSessionIssuer};
 use axum::{
     http::header,
@@ -8,7 +9,6 @@ use chrono::{DateTime, Utc};
 use minijinja::{Environment, UndefinedBehavior, context};
 use serde::Deserialize;
 use serde_json::json;
-use sqlx::{Postgres, Transaction};
 use std::{collections::BTreeMap, env, error::Error, fs};
 use uuid::Uuid;
 
@@ -19,6 +19,7 @@ struct Bundle {
 }
 
 pub(crate) struct Page {
+    catalog: ScopeCatalog,
     templates: Environment<'static>,
     descriptions: BTreeMap<String, String>,
 }
@@ -48,37 +49,6 @@ pub(crate) fn html_environment() -> Environment<'static> {
         Ok(())
     });
     templates
-}
-
-async fn scope_items(
-    tx: &mut Transaction<'_, Postgres>,
-    catalog: &BTreeMap<String, String>,
-    raw: &str,
-) -> Result<Vec<minijinja::Value>, sqlx::Error> {
-    let names: Vec<_> = raw.split_whitespace().collect();
-    let custom: Vec<_> = names
-        .iter()
-        .copied()
-        .filter(|s| !catalog.contains_key(*s))
-        .collect();
-    let mut descriptions = BTreeMap::new();
-    if !custom.is_empty() {
-        descriptions = sqlx::query_as::<_, (String, String)>(
-            "SELECT name,description FROM oauth_scopes WHERE active AND name=ANY($1)",
-        )
-        .bind(&custom)
-        .fetch_all(&mut **tx)
-        .await?
-        .into_iter()
-        .collect();
-    }
-    Ok(names
-        .iter()
-        .map(|&name| {
-            let description = catalog.get(name).or_else(|| descriptions.get(name));
-            context! {name, description => description.map_or("",String::as_str)}
-        })
-        .collect())
 }
 
 pub(crate) fn sign_ticket(
@@ -116,32 +86,42 @@ pub(crate) fn html_response(status: axum::http::StatusCode, html: String) -> Res
 }
 
 impl Page {
-    pub(crate) fn configured() -> Result<Option<Self>, Box<dyn Error>> {
+    pub(crate) fn configured(catalog: ScopeCatalog) -> Result<Option<Self>, Box<dyn Error>> {
         let Some(path) = env::var_os("PYLOROS_CONSENT_UI_PATH") else {
             return Ok(None);
         };
         let bundle: Bundle = serde_json::from_slice(&fs::read(path)?)?;
-        Ok(Some(Self::new(bundle)?))
+        Ok(Some(Self::new(bundle, catalog)?))
     }
 
-    fn new(bundle: Bundle) -> Result<Self, minijinja::Error> {
+    fn new(bundle: Bundle, catalog: ScopeCatalog) -> Result<Self, minijinja::Error> {
         let mut templates = html_environment();
         templates.add_template_owned("consent", bundle.template)?;
         Ok(Self {
+            catalog,
             templates,
             descriptions: bundle.descriptions,
         })
     }
 
-    pub(crate) async fn render(
+    fn scope_items(&self, raw: &str) -> Vec<minijinja::Value> {
+        let catalog = self.catalog.borrow();
+        raw.split_whitespace()
+            .map(|name| {
+                let description = self.descriptions.get(name).or_else(|| catalog.get(name));
+                context! { name, description => description.map_or("", String::as_str) }
+            })
+            .collect()
+    }
+
+    pub(crate) fn render(
         &self,
-        tx: &mut Transaction<'_, Postgres>,
         signer: &GrantSessionIssuer,
         approval: Approval<'_>,
         now: DateTime<Utc>,
     ) -> Result<Response, PageError> {
         let client = approval.client;
-        let scopes = scope_items(tx, &self.descriptions, approval.scopes).await?;
+        let scopes = self.scope_items(approval.scopes);
         let ticket = sign_ticket(
             signer,
             approval.user,
@@ -173,11 +153,42 @@ impl Page {
 mod tests {
     use super::*;
     #[test]
+    fn consent_text_follows_registry_publication_and_keeps_builtin_descriptions() {
+        let (publisher, catalog) = tokio::sync::watch::channel(BTreeMap::from([
+            ("shared".into(), "Before".into()),
+            ("builtin".into(), "Registry label".into()),
+        ]));
+        let page = Page::new(
+            Bundle {
+                template: "{% for s in scopes %}[{{ s.description }}]{% endfor %}".into(),
+                descriptions: BTreeMap::from([("builtin".into(), "Built in".into())]),
+            },
+            catalog,
+        )
+        .unwrap();
+        let render = || {
+            page.templates
+                .get_template("consent")
+                .unwrap()
+                .render(context! { scopes => page.scope_items("builtin shared missing") })
+                .unwrap()
+        };
+        assert_eq!(render(), "[Built in][Before][]");
+        publisher.send_replace(BTreeMap::from([("shared".into(), "After".into())]));
+        assert_eq!(render(), "[Built in][After][]");
+        publisher.send_replace(BTreeMap::new());
+        assert_eq!(render(), "[Built in][][]");
+    }
+
+    #[test]
     fn interpolated_values_are_escaped_once_and_never_evaluated_as_template_code() {
-        let page = Page::new(Bundle {
-            template: "{{ client_name }}".into(),
-            descriptions: BTreeMap::new(),
-        })
+        let page = Page::new(
+            Bundle {
+                template: "{{ client_name }}".into(),
+                descriptions: BTreeMap::new(),
+            },
+            tokio::sync::watch::channel(BTreeMap::new()).1,
+        )
         .unwrap();
         let rendered = page
             .templates

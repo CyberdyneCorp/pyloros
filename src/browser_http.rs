@@ -198,7 +198,7 @@ pub(crate) async fn authorize(
                 scopes: &scopes,
                 query: uri.query().unwrap_or_default(),
             };
-            match page.render(&mut tx, &rt.signer, details, now).await {
+            match page.render(&rt.signer, details, now) {
                 Ok(response) => response,
                 Err(_) => unavailable(),
             }

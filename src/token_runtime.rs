@@ -271,7 +271,7 @@ impl Runtime {
         let admins = crate::config::admin_emails()?;
         Ok(Some(Self {
             refresh_verifier,
-            consent_page: crate::consent_page::Page::configured()?,
+            consent_page: crate::consent_page::Page::configured(provider.scope_catalog())?,
             verifier: crate::profile::Verifier::configured(production)?
                 .ok_or("missing browser session verification key")?,
             enforce_revocation: crate::config::flag("ENFORCE_TOKEN_REVOCATION")?,

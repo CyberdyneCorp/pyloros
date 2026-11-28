@@ -1,0 +1,1 @@
+Give the configured consent page a receiver for the existing scope registry. Resolve all descriptions for a page from one snapshot. Prefer the deployment bundle for built-in descriptions. A missing description renders as empty text. Registry refresh and publication retain their existing ownership and timing.

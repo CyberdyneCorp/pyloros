@@ -1,0 +1,3 @@
+- [x] Use the process registry snapshot during consent rendering.
+- [x] Test published and removed managed descriptions and built-in precedence.
+- [x] Compare per-process publication and browser consent handoffs.

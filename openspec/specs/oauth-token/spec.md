@@ -187,3 +187,14 @@ Pyloros SHALL exchange a valid OAuth refresh token for credentials on its origin
 
 - **WHEN** the client, credential, resource, user or session fails an eligibility check
 - **THEN** return the existing OAuth error and record the applicable decision.
+
+### Requirement: Consent scope descriptions follow publication
+The interactive authorization page SHALL resolve managed scope descriptions from the issuer's published registry snapshot and use deployment-supplied descriptions for built-in scopes.
+
+#### Scenario: An edit awaits publication
+- **WHEN** a stored managed description changes before this process refreshes or publishes its registry
+- **THEN** its consent page continues to display the previously published description
+
+#### Scenario: The registry publishes
+- **WHEN** a registry update publishes a new description on this process
+- **THEN** the next consent page on this process displays the updated description
