@@ -3,3 +3,4 @@
 - [x] Verify unsigned chain deletion preparation, namespace protection and switching back to PostgreSQL.
 - [ ] Verify confirmed chain deletion, its audit and access after confirmation.
 - [ ] Resolve behavior during coexistence when two operators delete a group or a concurrent rename reserves it for a client role.
+- [x] Verify an explicitly rejected PostgreSQL deletion with a waiting delete or policy detachment, including effective access and committed audits across both writers.

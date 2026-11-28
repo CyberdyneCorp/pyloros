@@ -18,3 +18,15 @@ An authorized operator SHALL be able to delete an ordinary group from the select
 
 - **WHEN** a PostgreSQL group deletion cannot be audited
 - **THEN** roll back the deletion and preserve access through the group
+
+#### Scenario: A deletion is rejected at commit while a second operator waits
+
+- **WHEN** PostgreSQL explicitly rejects the deletion transaction and a second writer is waiting to detach a policy or delete the same group
+- **THEN** Pyloros returns HTTP 500 for the rejected deletion and writes no deletion audit for it
+- **AND** prior to commit, readers can still list the group and evaluate access through its attached policy
+- **AND** the waiting writer can commit against the restored group and record its own audit
+
+#### Scenario: Read access after the waiting writer commits
+
+- **WHEN** the waiting writer removes the only policy granting an action, or deletes the group providing it
+- **THEN** subsequent evaluations deny the action and the policy itself remains available
