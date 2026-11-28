@@ -406,6 +406,14 @@ HTTP 409 means the source changed. Read the definition again and verify the
 component against the new source before retrying. A successful change records
 the supplied source digest in its audit entry.
 
+Several independently reviewed hooks may use the same component. Upload the
+artifact once and bind each hook ID using that definition’s own source digest.
+A local lifecycle rehearsal used one silent component for two distinct sources.
+The v1 manual test returned success with null output. A separate registration
+produced one successful execution with null output and an empty delivery queue.
+All v1 requests in that rehearsal went to the Rust backend. For new or edited
+scripts, complete the review and binding before directing their events to Rust.
+
 Each explicit binding change records its previous and new digest in the administrator audit log.
 Repeating a completed change returns the current selection. The hook's existing
 enabled flag, event, privacy settings and source are preserved.
