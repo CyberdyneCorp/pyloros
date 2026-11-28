@@ -6,4 +6,4 @@
 - [x] Implement the ordered renderer, package the guest with a just recipe, and exercise it in worker CI.
 - [x] Compare manual and automated history from both backends, including private-field withdrawal before worker execution and the Unicode output boundary.
 - [x] Verify dense integer, fixed-point decimal, simple string and nested array output against the source under the existing worker budget.
-- [ ] Reconcile remaining budget failures on dense arrays of objects, quoted strings and exponent-form numbers.
+- [x] Reconcile remaining budget failures on dense arrays of objects, quoted strings and exponent-form numbers.

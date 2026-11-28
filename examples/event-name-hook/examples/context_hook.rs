@@ -53,32 +53,82 @@ fn object(text: &str, out: &mut DisplayOutput) -> Result<(), String> {
         out.push_ascii("{}");
         return Ok(());
     }
-    let fields: IndexMap<FieldName<'_>, &RawValue> =
-        serde_json::from_str(text).map_err(|e| e.to_string())?;
+    let fields: Fields = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    display_fields(&fields, out)
+}
+
+// Most small records need no hash table. Multi-field objects retain insertion
+// order and replace duplicate values at their original position.
+enum Fields<'a> {
+    Empty,
+    One(FieldName<'a>, &'a RawValue),
+    Many(IndexMap<FieldName<'a>, &'a RawValue>),
+}
+
+impl<'de> serde::Deserialize<'de> for Fields<'de> {
+    fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
+        struct Object;
+        impl<'de> serde::de::Visitor<'de> for Object {
+            type Value = Fields<'de>;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a context object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let Some((key, value)) = map.next_entry()? else {
+                    return Ok(Fields::Empty);
+                };
+                let Some(second) = map.next_entry()? else {
+                    return Ok(Fields::One(key, value));
+                };
+                let mut fields = IndexMap::from([(key, value), second]);
+                while let Some((key, value)) = map.next_entry()? {
+                    fields.insert(key, value);
+                }
+                Ok(Fields::Many(fields))
+            }
+        }
+        decoder.deserialize_map(Object)
+    }
+}
+
+fn display_fields(fields: &Fields<'_>, out: &mut DisplayOutput) -> Result<(), String> {
     out.push_ascii("{");
-    for (index, (key, value)) in fields.iter().enumerate() {
-        if out.chars == OUTPUT_LIMIT {
-            break;
+    match fields {
+        Fields::Empty => (),
+        Fields::One(key, value) => member(key, value, out)?,
+        Fields::Many(fields) => {
+            for (index, (key, value)) in fields.iter().enumerate() {
+                if out.chars == OUTPUT_LIMIT {
+                    break;
+                }
+                if index > 0 {
+                    out.push_ascii(", ");
+                }
+                member(key, value, out)?;
+            }
         }
-        if index > 0 {
-            out.push_ascii(", ");
-        }
-        if key
-            .0
-            .bytes()
-            .all(|b| (b' '..=b'~').contains(&b) && !matches!(b, b'\'' | b'\\'))
-        {
-            out.push_ascii("'");
-            out.push(&key.0);
-            out.push_ascii("'");
-        } else {
-            out.push(&quoted_string(&key.0));
-        }
-        out.push_ascii(": ");
-        render(value, out)?;
     }
     out.push_ascii("}");
     Ok(())
+}
+
+fn member(key: &FieldName<'_>, value: &RawValue, out: &mut DisplayOutput) -> Result<(), String> {
+    if key
+        .0
+        .bytes()
+        .all(|b| (b' '..=b'~').contains(&b) && !matches!(b, b'\'' | b'\\'))
+    {
+        out.push_ascii("'");
+        out.push_ascii(&key.0);
+        out.push_ascii("'");
+    } else {
+        out.push(&quoted_string(&key.0));
+    }
+    out.push_ascii(": ");
+    render(value, out)
 }
 
 fn array(text: &str, out: &mut DisplayOutput) -> Result<(), String> {
@@ -103,12 +153,12 @@ fn array(text: &str, out: &mut DisplayOutput) -> Result<(), String> {
             b if b.is_ascii_whitespace() => 1,
             b'"' => render_array_string(rest, out)?,
             b'{' => {
-                let mut values = serde_json::Deserializer::from_str(rest).into_iter::<&RawValue>();
+                let mut values = serde_json::Deserializer::from_str(rest).into_iter::<Fields>();
                 let value = values
                     .next()
                     .expect("validated array member")
                     .map_err(|e| e.to_string())?;
-                render(value, out)?;
+                display_fields(&value, out)?;
                 values.byte_offset()
             }
             _ => {
@@ -129,12 +179,14 @@ fn render_array_string(text: &str, out: &mut DisplayOutput) -> Result<usize, Str
     let content = &text[1..];
     let end = content
         .bytes()
-        .position(|b| matches!(b, b'"' | b'\\' | b'\'') || !b.is_ascii_graphic() && b != b' ')
+        .position(|b| matches!(b, b'"' | b'\\') || !b.is_ascii_graphic() && b != b' ')
         .expect("validated JSON string ends with a quote");
     if content.as_bytes()[end] == b'"' {
-        out.push_ascii("'");
-        out.push_ascii(&content[..end]);
-        out.push_ascii("'");
+        let value = &content[..end];
+        let quote = if value.contains('\'') { "\"" } else { "'" };
+        out.push_ascii(quote);
+        out.push_ascii(value);
+        out.push_ascii(quote);
         return Ok(end + 2);
     }
     let mut values = serde_json::Deserializer::from_str(text).into_iter::<String>();
@@ -180,6 +232,27 @@ fn short_decimal(text: &str) -> Option<&str> {
     Some(trimmed)
 }
 
+// Integers below 10^15 are exactly representable in binary64, and the
+// source prints integral floats of this magnitude in fixed-point notation.
+fn scaled_integer(text: &str, out: &mut DisplayOutput) -> bool {
+    let Some((mantissa, exponent)) = text.split_once(['e', 'E']) else {
+        return false;
+    };
+    let Ok(power) = exponent.parse::<usize>() else {
+        return false;
+    };
+    let digits = mantissa.trim_start_matches('-');
+    if power > 15 || digits.len() + power > 15 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    out.push_ascii(mantissa);
+    if digits != "0" {
+        out.push_ascii(&"000000000000000"[..power]);
+    }
+    out.push_ascii(".0");
+    true
+}
+
 fn scalar(text: &str, out: &mut DisplayOutput) -> Result<(), String> {
     match text.as_bytes()[0] {
         b'n' => out.push_ascii("None"),
@@ -188,6 +261,9 @@ fn scalar(text: &str, out: &mut DisplayOutput) -> Result<(), String> {
         _ if text.bytes().any(|b| matches!(b, b'.' | b'e' | b'E')) => {
             if let Some(decimal) = short_decimal(text) {
                 out.push_ascii(decimal);
+                return Ok(());
+            }
+            if scaled_integer(text, out) {
                 return Ok(());
             }
             let value = text.parse::<f64>().map_err(|e| e.to_string())?;

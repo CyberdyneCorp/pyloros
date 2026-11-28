@@ -53,6 +53,16 @@ def main():
         '{"v":[-0.00,0.000010,0.000100,1.23000,1.0,1.20e10,99999999999.9,9999999999999.9]}',
         json.dumps({"v": ["'", '\\', 'a"b', "雪", {"z": "a]b"}]}),
     ])
+    for values in ([{"x": 1}] * 800, [{"x": i} for i in range(800)],
+                   ["'"] * 2000, [f"item'{i}" for i in range(2000)],
+                   ["雪" * 16] * 1000):
+        contexts.append(json.dumps({"v": values}, separators=(",", ":"), ensure_ascii=False))
+    contexts.extend([
+        '{"v":[' + ",".join(["1e2"] * 2000) + "]}",
+        '{"v":[' + ",".join(f"{i}e2" for i in range(2000)) + "]}",
+        '{"v":[1,1,12,1e2,1e20,1e2,1e2,-0e2,3e-4,9e15,1.3e8]}',
+        '{"v":[{"x":1,"x":2},{"x":1,"x":2},{"x":3}]}',
+    ])
     for event in contexts:
         expected = (repr(json.loads(event)) + "\n")[:10_000]
         cases.append(("examples/context_hook", event, "success", expected))
