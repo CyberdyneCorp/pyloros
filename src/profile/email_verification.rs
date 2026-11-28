@@ -220,6 +220,34 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
+        sqlx::raw_sql(
+            "CREATE FUNCTION pg_temp.reject_verification() RETURNS trigger LANGUAGE plpgsql AS
+                $$ BEGIN RAISE EXCEPTION 'verification commit rejected'; END $$;
+             CREATE CONSTRAINT TRIGGER reject_verification AFTER UPDATE ON email_verification_tokens
+                DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_verification()",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let error = redeem(&pool, "test-digest", origin, None)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.as_database_error().unwrap().message(),
+            "verification commit rejected"
+        );
+        let reverted: (bool, bool, i64) = sqlx::query_as(
+            "SELECT is_email_verified, used_at IS NOT NULL, (SELECT count(*) FROM auth_events)
+             FROM users JOIN email_verification_tokens ON user_id=users.id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(reverted, (false, false, 0));
+        sqlx::query("DROP TRIGGER reject_verification ON email_verification_tokens")
+            .execute(&pool)
+            .await
+            .unwrap();
         assert_eq!(
             redeem(&pool, "test-digest", origin, None)
                 .await
