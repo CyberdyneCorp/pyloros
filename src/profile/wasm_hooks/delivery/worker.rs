@@ -45,18 +45,9 @@ async fn deliver(pool: &PgPool) -> sqlx::Result<bool> {
         return Ok(false);
     };
     let mut tx = pool.begin().await?;
-    let row = sqlx::query(
-        "SELECT q.id,q.hook_id,q.hook_name,q.event_type,
-        CASE WHEN q.event_type='user_deleted' THEN (q.payload->>'user_id')::uuid ELSE q.user_id END AS user_id,
-        (CASE WHEN q.event_type IN ('user_registered','user_logged_in') AND NOT h.receive_pii
-          THEN jsonb_build_object('event_type',q.event_type,'user_id',q.user_id)
-          ELSE q.payload END)::text AS payload,
-        q.timeout_seconds,a.component FROM pyloros_hook_deliveries q
-        JOIN hooks h ON h.id=q.hook_id JOIN pyloros_hook_artifacts a ON a.sha256=q.sha256 WHERE available_at<=clock_timestamp()
-        ORDER BY available_at,q.id LIMIT 1 FOR UPDATE OF q SKIP LOCKED",
-    )
-    .fetch_optional(&mut *tx)
-    .await?;
+    let row = sqlx::query(include_str!("claim.sql"))
+        .fetch_optional(&mut *tx)
+        .await?;
     let Some(row) = row else { return Ok(false) };
     let id: Uuid = row.try_get("id")?;
     let seconds: i32 = row.try_get("timeout_seconds")?;
@@ -158,6 +149,53 @@ fn history(value: &Value) -> (&'static str, Option<String>, Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn registration_claim_orders_stored_fields_after_checking_current_privacy() {
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE hooks(id int, receive_pii bool);
+            CREATE TEMP TABLE pyloros_hook_artifacts(sha256 text, component bytea);
+            CREATE TEMP TABLE pyloros_hook_deliveries(id int, hook_id int, hook_name text,
+              event_type text, user_id uuid, payload jsonb, timeout_seconds int,
+              sha256 text, available_at timestamptz);
+            INSERT INTO hooks VALUES(1, true);
+            INSERT INTO pyloros_hook_artifacts VALUES('digest', '');
+            INSERT INTO pyloros_hook_deliveries VALUES(1,1,'display','user_registered',NULL,
+              '{}',1,'digest',now())",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let public = r#"{"event_type": "user_registered", "user_id": "subject"}"#;
+        let private = r#"{"email": "person@example.org", "address": "addr", "event_type": "user_registered", "user_id": "subject"}"#;
+        for (stored, enabled, expected) in [
+            (private, true, private),
+            (private, false, public),
+            (public, true, public),
+            (public, false, public),
+        ] {
+            sqlx::query("UPDATE pyloros_hook_deliveries SET payload=$1::jsonb")
+                .bind(stored)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            sqlx::query("UPDATE hooks SET receive_pii=$1")
+                .bind(enabled)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            let row = sqlx::query(include_str!("claim.sql"))
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+            assert_eq!(row.get::<&str, _>("payload"), expected);
+        }
+    }
 
     #[test]
     fn history_distinguishes_reported_timeouts_from_other_errors() {
