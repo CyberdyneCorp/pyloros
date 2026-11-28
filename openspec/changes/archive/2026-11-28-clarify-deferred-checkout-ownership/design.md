@@ -1,0 +1,1 @@
+Track the customer mapping, event record and entitlement separately. Compare two replicas handling signed checkouts for different users with the same new customer. Restore product availability and redeliver the original payload concurrently. Use a missing-metadata control to verify which deferrals can establish ownership.

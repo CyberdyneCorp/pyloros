@@ -1,0 +1,2 @@
+- [x] Verify the missing, inactive and absent-metadata cases on independent replicas with signed requests.
+- [x] Document customer ownership before and after catalog repair.
