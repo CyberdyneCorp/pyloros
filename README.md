@@ -41,7 +41,9 @@ A completed check returns HTTP 200 and `{"allowed":true}` or `{"allowed":false}`
 
 ## Frontend
 
-Pyloros will use the existing frontend source and build. For compatibility testing, run the same frontend artifact against both backends and switch the API destination through deployment routing. Browser workflows must pass with the existing client code.
+Run the existing frontend build at one origin and switch its API upstream through deployment routing. Record the frontend source revision and build digest once. During cutover and rollback, fetch the browser assets through the deployment URL and compare their bytes to that build. For assets with an ETag, send the previous ETag in `If-None-Match` and verify that the server returns 304. This checks that browsers can reuse the files they cached before the switch.
+
+Load the console routes against each upstream with the same authenticated account. Compare the final URLs, page headings, API methods, paths and response statuses, and check for uncaught browser errors. Exercise writes and their stored effects separately.
 
 Set `CORS_ALLOWED_ORIGINS` to the frontend origins that may make credentialed requests, as a comma-separated list or JSON array. The default is `http://localhost:3001`. Active PostgreSQL web origins enabled for CORS also take effect on the registry refresh interval. Responses to allowed origins expose `X-CSRF-Token`.
 
