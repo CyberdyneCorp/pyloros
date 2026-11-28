@@ -203,3 +203,14 @@ The operator SHALL be able to request position or rule-content counts across all
 #### Scenario: Complete replacement clears local collisions
 - **WHEN** an operator replaces the affected statements with uniquely positioned, distinct rules
 - **THEN** both all-policy reports cease counting that policy after commit
+
+### Requirement: Validate stored policies for PostgreSQL attachments
+Group, role and direct user attachments and identity permission boundaries SHALL validate the stored policy before writing the relationship.
+
+#### Scenario: Historical actions can be loaded
+- **WHEN** a stored action array contains a historical numeric entry within the supported integer range
+- **THEN** the operator can attach the policy and the successful write records its audit entry
+
+#### Scenario: Stored rules cannot be loaded
+- **WHEN** an operator attempts to attach a policy with a nonzero scalar action collection or an integer wider than 4,300 digits
+- **THEN** the request returns HTTP 500 and creates neither a relationship nor a success audit entry

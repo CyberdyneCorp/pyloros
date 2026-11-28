@@ -96,7 +96,46 @@ pub(super) async fn lock_policy(
             .fetch_optional(&mut **tx)
             .await?;
     if locked.is_some() {
-        statements::policies(tx, Some(policy)).await?;
+        statements::validate_stored_policy(tx, policy).await?;
     }
     Ok(locked.is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn attachment_validates_stored_rules_before_linking() -> sqlx::Result<()> {
+        let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = pool.begin().await?;
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE iam_policies(id uuid primary key,name text,description text,version int,
+                is_active bool,chain_policy_id int,created_at timestamptz default now());
+             CREATE TEMP TABLE iam_policy_statements(id uuid,policy_id uuid,sid text,effect text,
+                actions jsonb,resources jsonb,conditions jsonb,sort_order int);",
+        ).execute(&mut *tx).await?;
+        let policy = Uuid::new_v4();
+        sqlx::query("INSERT INTO iam_policies(id) VALUES($1)")
+            .bind(policy)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "INSERT INTO iam_policy_statements(policy_id,effect,actions,resources,conditions)
+                     VALUES($1,'allow','[17]','[]','[]')",
+        )
+        .bind(policy)
+        .execute(&mut *tx)
+        .await?;
+        assert!(lock_policy(&mut tx, policy).await?);
+        sqlx::query("UPDATE iam_policy_statements SET actions='17'")
+            .execute(&mut *tx)
+            .await?;
+        assert!(matches!(
+            lock_policy(&mut tx, policy).await,
+            Err(sqlx::Error::Decode(_))
+        ));
+        tx.rollback().await
+    }
 }
