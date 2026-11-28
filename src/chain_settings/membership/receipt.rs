@@ -65,7 +65,7 @@ impl Chain {
         }
     }
 
-    async fn wait_for_receipt(
+    pub(super) async fn wait_for_receipt(
         &self,
         hash: B256,
         contract: Option<Address>,

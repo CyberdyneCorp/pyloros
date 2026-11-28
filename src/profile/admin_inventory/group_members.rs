@@ -5,12 +5,14 @@ use crate::{
     grant_response::SessionOrigin,
 };
 
-pub(super) async fn prepare_chain(
+pub(super) async fn write_chain(
     chain: &Chain,
     mut tx: Transaction<'_, Postgres>,
     user: Uuid,
     group: Uuid,
     add: bool,
+    actor: (Uuid, Option<&str>),
+    origin: SessionOrigin<'_>,
 ) -> Response {
     match chain.check_group_namespace(group).await {
         Ok(()) => {}
@@ -22,16 +24,20 @@ pub(super) async fn prepare_chain(
         Ok(token) => token,
         Err(error) => return *error,
     };
-    writes::prepare_chain_write(
-        tx,
-        chain,
-        IamMutation::GroupMember {
-            group,
-            identity,
-            add,
-        },
-    )
-    .await
+    if chain.lock_signer(&mut tx).await.is_err() {
+        return internal();
+    }
+    let mutation = IamMutation::GroupMember {
+        group,
+        identity,
+        add,
+    };
+    if let Err(error) = chain.submit_group_member(&mutation).await {
+        return writes::preparation_error(&mutation, error);
+    }
+    finish(tx, user, group, add, actor, origin)
+        .await
+        .unwrap_or_else(|_| internal())
 }
 
 pub(super) async fn store(
@@ -54,7 +60,7 @@ pub(super) async fn store(
         Ok(id) => id,
         Err(response) => return Ok(*response),
     };
-    let action = if add {
+    if add {
         if name.is_none() {
             return Ok(delete_group::missing(group));
         }
@@ -66,15 +72,27 @@ pub(super) async fn store(
         .bind(identity)
         .execute(&mut *tx)
         .await?;
+    } else if name.is_some() {
+        sqlx::query("DELETE FROM iam_group_members WHERE group_id=$1 AND identity_id=$2")
+            .bind(group)
+            .bind(identity)
+            .execute(&mut *tx)
+            .await?;
+    }
+    finish(tx, user, group, add, actor, origin).await
+}
+
+async fn finish(
+    mut tx: Transaction<'_, Postgres>,
+    user: Uuid,
+    group: Uuid,
+    add: bool,
+    actor: (Uuid, Option<&str>),
+    origin: SessionOrigin<'_>,
+) -> Result<Response, sqlx::Error> {
+    let action = if add {
         "iam.user.group.add"
     } else {
-        if name.is_some() {
-            sqlx::query("DELETE FROM iam_group_members WHERE group_id=$1 AND identity_id=$2")
-                .bind(group)
-                .bind(identity)
-                .execute(&mut *tx)
-                .await?;
-        }
         "iam.user.group.remove"
     };
     crate::admin_audit::append(

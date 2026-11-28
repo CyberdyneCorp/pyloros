@@ -1,0 +1,97 @@
+//! Submit exactly one envelope and reconcile the node's result with the local hash.
+use super::*;
+use alloy_primitives::{B256, keccak256};
+use alloy_rlp::Encodable;
+use k256::ecdsa::SigningKey;
+
+static SUBMISSION_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
+        .build()
+        .expect("transaction submission client")
+});
+
+impl UnsignedIamTransaction {
+    fn signed(&self, key: &k256::SecretKey) -> Result<Vec<u8>, PrepareError> {
+        let digest = keccak256(self.signing_payload());
+        let (signature, recovery) = SigningKey::from(key)
+            .sign_prehash_recoverable(digest.as_slice())
+            .map_err(|_| PrepareError::Invalid)?;
+        if recovery.is_x_reduced() {
+            return Err(PrepareError::Invalid);
+        }
+        Ok(self.signed_envelope(
+            recovery.is_y_odd(),
+            TokenId::from_be_bytes::<32>(signature.r().to_bytes().into()),
+            TokenId::from_be_bytes::<32>(signature.s().to_bytes().into()),
+        ))
+    }
+
+    fn signed_envelope(&self, odd: bool, r: TokenId, s: TokenId) -> Vec<u8> {
+        let mut fields = self.encoded_fields();
+        u8::from(odd).encode(&mut fields);
+        r.encode(&mut fields);
+        s.encode(&mut fields);
+        Self::envelope(&fields)
+    }
+}
+
+impl Chain {
+    pub(crate) async fn submit_group_member(
+        &self,
+        mutation: &IamMutation<'_>,
+    ) -> Result<(), PrepareError> {
+        let call = mutation.calldata(self).await?;
+        let tx = self.prepare_envelope(self.group.as_deref(), call).await?;
+        let signed = tx.signed(self.signing_key.as_ref().ok_or(PrepareError::Invalid)?)?;
+        let expected = keccak256(&signed);
+        let body = json!({"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction",
+                          "params":[format!("0x{}", HEXLOWER.encode(&signed))]});
+        let reply = self
+            .request(&SUBMISSION_CLIENT, &body.to_string(), RpcRead::Contract)
+            .await
+            .map_err(|_| PrepareError::Unavailable)?;
+        if reply.as_str().and_then(|s| s.parse::<B256>().ok()) != Some(expected) {
+            return Err(PrepareError::Unavailable);
+        }
+        match self
+            .wait_for_receipt(expected, Some(tx.to), Duration::from_secs(60))
+            .await
+        {
+            Ok("reported_success") => Ok(()),
+            Ok("reported_revert") => Err(PrepareError::Reverted(format!(
+                "transaction reverted (tx={expected})"
+            ))),
+            _ => Err(PrepareError::Unavailable),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signed_membership_envelope_matches_mined_transaction() {
+        let tx = UnsignedIamTransaction {
+            to: "0x6FF819f11aE9aab60538DEB231726269fD695B47".parse().unwrap(),
+            nonce: TokenId::from(3),
+            data: HEXLOWER.decode(b"1783efc300000000000000000000000000000000000000000000000000000000000000070000000000000000000000000000000000000000000000000000000000000009").unwrap(),
+            chain_id: TokenId::from(31337),
+            gas: TokenId::from(68510),
+            max_priority_fee_per_gas: TokenId::from(1_000_000_000u64),
+            max_fee_per_gas: TokenId::from(2_541_679_034u64),
+        };
+        let r = "0xe51e607c5c07fb35ff5fa0c4c7075f39b4ad96aa93814e3f8939c40c5e91bbc4"
+            .parse()
+            .unwrap();
+        let s = "0x0e52c7f8c0216c9bf70d93c986d04549f3e7b4c88830f877f801eabfb39944c8"
+            .parse()
+            .unwrap();
+        let expected: B256 = "0xae7fe424a7b63e7d6e270023317cbd48afd463e2c870f1791b34c5cf57bfbe1e"
+            .parse()
+            .unwrap();
+        assert_eq!(keccak256(tx.signed_envelope(false, r, s)), expected);
+    }
+}

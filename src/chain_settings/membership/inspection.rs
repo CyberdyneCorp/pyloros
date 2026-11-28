@@ -12,6 +12,7 @@ pub(super) fn inspection_chain() -> Result<Chain, Box<dyn Error>> {
         policy: None,
         group: None,
         signer: None,
+        signing_key: None,
         timeout: super::super::rpc_timeout()?,
     })
 }

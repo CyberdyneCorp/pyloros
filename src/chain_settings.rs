@@ -121,7 +121,7 @@ fn merge<T>(current: &mut Option<T>, value: Option<T>) {
     }
 }
 
-fn address(key: &str) -> Option<String> {
+fn secret_key(key: &str) -> Option<SecretKey> {
     let raw = key
         .strip_prefix("0x")
         .or_else(|| key.strip_prefix("0X"))
@@ -139,7 +139,11 @@ fn address(key: &str) -> Option<String> {
     HEXLOWER_PERMISSIVE
         .decode_mut(digits, bytes.as_mut())
         .ok()?;
-    let key = SecretKey::from_slice(bytes.as_slice()).ok()?;
+    SecretKey::from_slice(bytes.as_slice()).ok()
+}
+
+fn address(key: &str) -> Option<String> {
+    let key = secret_key(key)?;
     Some(crate::managed_wallet::ethereum_address(
         key.public_key().to_encoded_point(false).as_bytes(),
     ))

@@ -6,3 +6,4 @@
 - [ ] Implement submission, nonce coordination, receipt validation and error mapping.
 - [ ] Wire policy mutations, audit their results and compare the original clients.
 - [x] Verify a known receipt against an expected IAM contract address.
+- [x] Submit ordinary group membership changes and audit confirmed receipts.

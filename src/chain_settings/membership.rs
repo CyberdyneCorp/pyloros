@@ -47,6 +47,7 @@ pub(crate) struct Chain {
     policy: Option<String>,
     group: Option<String>,
     signer: Option<String>,
+    signing_key: Option<k256::SecretKey>,
     timeout: Duration,
 }
 
@@ -78,6 +79,11 @@ impl ChainSettings {
             policy: view.policy_contract_address,
             group: view.group_contract_address,
             signer: view.signer_address,
+            signing_key: state
+                .values
+                .private_key
+                .as_ref()
+                .and_then(|key| super::secret_key(key)),
             timeout: self.rpc_timeout.unwrap_or(Duration::from_secs(10)),
         })
     }
@@ -245,6 +251,7 @@ impl Chain {
             policy: None,
             group: None,
             signer: Some("configured".into()),
+            signing_key: None,
             timeout: Duration::from_secs(1),
         }
     }
@@ -265,6 +272,7 @@ impl Chain {
             endpoint,
             identity: Some(identity),
             signer: super::address(&key),
+            signing_key: super::secret_key(&key),
             policy: env::var("POLICY_CONTRACT_ADDRESS").ok(),
             group: env::var("GROUP_CONTRACT_ADDRESS").ok(),
             timeout,
@@ -655,6 +663,7 @@ mod tests {
             policy: Some(format!("0x{}", "11".repeat(20))),
             group: Some(format!("0x{}", "22".repeat(20))),
             signer: Some("0x0000000000000000000000000000000000000001".into()),
+            signing_key: None,
             timeout: Duration::from_secs(2),
         };
         let server = tokio::spawn(async move {
@@ -703,6 +712,7 @@ mod tests {
             policy: None,
             group: None,
             signer: Some("0x0000000000000000000000000000000000000001".into()),
+            signing_key: None,
             timeout: Duration::from_secs(2),
         };
         let server = tokio::spawn(async move { axum::serve(socket, app).await.unwrap() });

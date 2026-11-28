@@ -68,3 +68,18 @@ The receipt inspector SHALL optionally compare the receipt destination with an o
 #### Scenario: Receipt matches the intended contract
 - **WHEN** the requested hash, contract address and successful status all match
 - **THEN** the inspector reports success and includes the requested contract in the report
+
+### Requirement: Confirm ordinary group membership writes
+The operator membership endpoints SHALL submit the configured group mutation and require a matching successful transaction receipt for the selected contract before committing the success audit and acknowledging the change.
+
+#### Scenario: An operator grants or removes group membership
+- **WHEN** the chain provider confirms the signed mutation for the requested group and identity
+- **THEN** commit the corresponding operator audit and return the ordinary membership success response
+
+#### Scenario: Submission or confirmation fails
+- **WHEN** the provider rejects the transaction or supplies a missing, mismatched or reverted receipt
+- **THEN** return an error and omit the success audit
+
+#### Scenario: PostgreSQL rejects the audit commit after confirmation
+- **WHEN** the contract successfully executes the membership change and PostgreSQL rejects the audit commit
+- **THEN** return HTTP 500 and leave the confirmed chain effect available for reconciliation

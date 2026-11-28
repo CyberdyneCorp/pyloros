@@ -218,13 +218,19 @@ async fn change(
         Err(error) => return *error,
     };
     let add = matches!(child, Child::Body(_));
+    let origin = SessionOrigin {
+        ip: crate::token_http::client_ip(headers, peer.ip(), state.proxies),
+        user_agent: crate::token_http::header(headers, "user-agent"),
+    };
+    let actor = (actor, email.as_deref());
     if let Some(chain) = chain {
         let mutation = match parent {
             Relation::UserPolicy(_) => {
                 return user_policies::prepare_chain(&chain, tx, owner, target, add).await;
             }
             Relation::Membership(_) => {
-                return group_members::prepare_chain(&chain, tx, owner, target, add).await;
+                return group_members::write_chain(&chain, tx, owner, target, add, actor, origin)
+                    .await;
             }
             Relation::RolePolicy(_) => {
                 if tx.commit().await.is_err() {
@@ -245,11 +251,6 @@ async fn change(
         };
         return writes::prepare_chain_write(tx, &chain, mutation).await;
     }
-    let origin = SessionOrigin {
-        ip: crate::token_http::client_ip(headers, peer.ip(), state.proxies),
-        user_agent: crate::token_http::header(headers, "user-agent"),
-    };
-    let actor = (actor, email.as_deref());
     match parent {
         Relation::UserPolicy(_) => {
             user_policies::store(tx, owner, target, add, actor, origin).await

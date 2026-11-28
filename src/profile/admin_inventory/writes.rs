@@ -85,7 +85,7 @@ pub(super) async fn prepare_chain_write(
     response
 }
 
-fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError) -> Response {
+pub(super) fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError) -> Response {
     match error {
         PrepareError::MissingGroup(_) | PrepareError::MissingPolicy(_)
             if matches!(mutation, IamMutation::GroupPolicy { attach: false, .. }) => internal(),

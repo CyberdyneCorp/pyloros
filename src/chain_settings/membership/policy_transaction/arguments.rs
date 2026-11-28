@@ -102,6 +102,7 @@ mod tests {
             endpoint: format!("http://{}", socket.local_addr().unwrap()),
             identity: Some(address.clone()),
             signer: Some(address),
+            signing_key: None,
             group: None,
             policy: None,
             timeout: Duration::from_secs(2),

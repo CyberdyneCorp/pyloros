@@ -4,6 +4,7 @@ use serde::Deserialize;
 mod arguments;
 mod quantities;
 mod revert;
+mod submission;
 pub(super) use quantities::QuantityResult;
 
 sol! {
@@ -264,7 +265,7 @@ struct UnsignedIamTransaction {
 }
 
 impl UnsignedIamTransaction {
-    fn signing_payload(&self) -> Vec<u8> {
+    fn encoded_fields(&self) -> Vec<u8> {
         use alloy_rlp::Encodable;
         let mut fields = Vec::new();
         self.chain_id.encode(&mut fields);
@@ -276,14 +277,22 @@ impl UnsignedIamTransaction {
         TokenId::ZERO.encode(&mut fields);
         self.data.as_slice().encode(&mut fields);
         fields.push(alloy_rlp::EMPTY_LIST_CODE);
+        fields
+    }
+
+    fn envelope(fields: &[u8]) -> Vec<u8> {
         let mut payload = vec![0x02];
         alloy_rlp::Header {
             list: true,
             payload_length: fields.len(),
         }
         .encode(&mut payload);
-        payload.extend_from_slice(&fields);
+        payload.extend_from_slice(fields);
         payload
+    }
+
+    fn signing_payload(&self) -> Vec<u8> {
+        Self::envelope(&self.encoded_fields())
     }
 }
 
@@ -523,6 +532,17 @@ impl Chain {
         address: Option<&str>,
         call: Vec<u8>,
     ) -> Result<Vec<u8>, PrepareError> {
+        Ok(self
+            .prepare_envelope(address, call)
+            .await?
+            .signing_payload())
+    }
+
+    async fn prepare_envelope(
+        &self,
+        address: Option<&str>,
+        call: Vec<u8>,
+    ) -> Result<UnsignedIamTransaction, PrepareError> {
         let to = address.ok_or(PrepareError::Unavailable)?;
         validate_address(to).map_err(|_| PrepareError::Unavailable)?;
         let from = self.signer.as_deref().ok_or(PrepareError::Invalid)?;
@@ -561,8 +581,7 @@ impl Chain {
             gas,
             max_priority_fee_per_gas,
             max_fee_per_gas,
-        }
-        .signing_payload())
+        })
     }
 }
 
@@ -710,6 +729,7 @@ mod tests {
             identity: None,
             endpoint: format!("http://{}", socket.local_addr().unwrap()),
             signer: Some(SIGNER.into()),
+            signing_key: None,
             policy: Some(CONTRACT.into()),
             group: None,
             timeout: Duration::from_secs(2),
