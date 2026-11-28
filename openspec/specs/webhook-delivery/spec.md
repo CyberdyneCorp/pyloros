@@ -30,3 +30,12 @@ The webhook worker SHALL accept valid raw and zlib-wrapped streams labeled with 
 #### Scenario: A receiver reports a temporary failure
 - **WHEN** a receiver returns HTTP 503 with a zlib-wrapped or raw deflate body while retries remain
 - **THEN** record the response code and decoded excerpt and schedule a retry
+
+### Requirement: Preserve the retry schedule after receiver throttling
+After a first delivery attempt returns HTTP 429, the worker SHALL record the response and persist a retry time using the five-second base delay with up to ten percent jitter. The worker SHALL use this schedule for both delay-seconds and HTTP-date Retry-After values.
+
+#### Scenario: Transfer a throttled delivery
+- **WHEN** the original worker stops after recording the first attempt and another worker claims pending deliveries before the stored retry time
+- **THEN** the throttled delivery remains pending
+- **WHEN** the incoming worker claims it at or after the stored time
+- **THEN** send the same event ID and body with a valid signature and retain the first attempt in its history

@@ -104,9 +104,7 @@ mod postgres_tests {
     use super::*;
     use sqlx::postgres::PgPoolOptions;
 
-    #[tokio::test]
-    #[ignore = "requires PostgreSQL"]
-    async fn expired_lease_can_be_reclaimed_and_attempt_history_is_atomic() {
+    async fn fixture() -> PgPool {
         let pool = PgPoolOptions::new()
             .max_connections(1)
             .connect(&env::var("DATABASE_URL").unwrap())
@@ -120,6 +118,13 @@ mod postgres_tests {
             INSERT INTO webhook_subscriptions SELECT gen_random_uuid(),v,'https://example.test','key','old',now()+interval '1 minute' FROM unnest(array[true,false]) v;
             INSERT INTO webhook_deliveries SELECT gen_random_uuid(),s.id,e.id,'pending',0,now(),now(),null,null FROM webhook_subscriptions s CROSS JOIN webhook_events e;")
             .execute(&pool).await.unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn expired_lease_can_be_reclaimed_and_attempt_history_is_atomic() {
+        let pool = fixture().await;
         let now = Utc::now();
         let until = now + chrono::Duration::seconds(40);
         let initial = claim(&pool, now, until, 5).await.unwrap();
@@ -168,5 +173,47 @@ mod postgres_tests {
                 .await
                 .unwrap();
         assert_eq!(durations, [3]);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn throttled_delivery_is_available_to_the_next_owner_only_when_due() {
+        let pool = fixture().await;
+        let start = Utc::now();
+        let lease = chrono::Duration::seconds(40);
+        let first = claim(&pool, start, start + lease, 1)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let throttled = Attempt {
+            code: Some(429),
+            error: Some("HTTP 429".into()),
+            duration_ms: 1,
+            excerpt: Some("busy".into()),
+        };
+        record(&pool, &first, start, throttled).await.unwrap();
+        let due: DateTime<Utc> =
+            sqlx::query_scalar("SELECT next_attempt_at FROM webhook_deliveries WHERE id=$1")
+                .bind(first.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let just_before = due - chrono::Duration::microseconds(1);
+        assert!(
+            claim(&pool, just_before, just_before + lease, 1)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let second = claim(&pool, due, due + lease, 1)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(
+            (second.id, second.event, second.body, second.attempts),
+            (first.id, first.event, first.body, 1)
+        );
     }
 }
