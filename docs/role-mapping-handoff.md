@@ -21,4 +21,19 @@ On a disposable PostgreSQL database, a deferred audit trigger held the outgoing 
 | CyberdyneAuth | HTTP 200 for all four requests | Both APIs read `export` and the audit recorded the original caller | Both APIs read `read` and the attempted change had no committed audit event |
 | Pyloros | All four requests waited | HTTP 200, with the same mapping and audit outcome | HTTP 500, with the same mapping and audit outcome |
 
-In each trial both read APIs saw the previous mapping during the hold. After the handoff both saw `list`, with one committed event attributed to the incoming caller. Repeating the eight trials on a fresh database produced the same results. The driver controlled admission directly. Deployment signoff still requires exercising the actual ingress and all writer replicas.
+In each trial both read APIs saw the previous mapping during the hold. After the handoff both saw `list`, with one committed event attributed to the incoming caller. Repeating the eight trials on a fresh database produced the same results. The driver controlled admission directly in these trials.
+
+## Four-replica proxy rehearsal
+
+A local Apache 2.4.67 reverse proxy routed requests to one of two backend pools. Each pool had two API processes connected to the same PostgreSQL primary. The proxy could independently pause the two mapping PUT routes and select the active pool. During the pause it returned HTTP 503 for replacement attempts. Clients using this approach must retain their intended changes for reconciliation and resubmission after the handoff.
+
+Eight handoffs exercised both writer directions, both caller types, and both commit outcomes. The proxy kept the pause active through the pool switch and the readback of the outgoing transaction. Its upstream selection identified the replica for every admitted write.
+
+| Check | Observed |
+|---|---|
+| Mapping PUTs attempted during the pause | All 32 received HTTP 503 at the proxy without reaching an API process. |
+| Mapping GETs during the pause | All 64 returned the expected committed permission set. Both replicas in each selected pool served reads. |
+| Unrelated PUTs during the pause | All 16 reached the active pool and returned the expected HTTP 401 for a request without credentials. |
+| Setup, outgoing and incoming replacements | All 24 reached the intended pool, with writes observed on all four replicas. The final mapping and audit actor matched in all eight handoffs. |
+
+The test used loopback traffic and a local admission rule. A production canary still needs to verify the deployed routing rules, every path to the writers, and how callers handle a paused replacement.
