@@ -1,3 +1,3 @@
 - [x] Implement and compare account creation, audit state and duplicate handling.
 - [x] Verify cross-backend login, webhook enqueue, rollback and unchanged clients.
-- [ ] Verify active registration hooks through the shared dispatcher.
+- [x] Verify active registration hooks through the shared dispatcher.
