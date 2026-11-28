@@ -40,6 +40,16 @@ def main():
         ("event_name_hook", event, "success", "ready\n"),
         ("examples/counter_hook", event, "success", "42\n"),
     ])
+    contexts = [
+        r'{"z":true,"a":[null,"snow"],"z":false}',
+        r'{"z":0,"a":{"x":1,"b":-0,"x":2},"\u007a":1e-5}',
+        json.dumps({"text": "'quoted'\n\t\u200b雪"}, ensure_ascii=False),
+        json.dumps({"text": "雪" * 10001}, ensure_ascii=False),
+        json.dumps({str(i): i for i in range(1000)}, separators=(",", ":")),
+    ]
+    for event in contexts:
+        expected = (repr(json.loads(event)) + "\n")[:10_000]
+        cases.append(("examples/context_hook", event, "success", expected))
     for guest, event, status, output in cases:
         check(args.worker.resolve(), args.guests / (guest + ".wasm"), event,
               {"status": status, "output": output})

@@ -128,6 +128,10 @@ build-silent-hook:
 build-message-hook message:
     PYLOROS_HOOK_MESSAGE="$1" cargo component build --release --locked --example message_hook --target wasm32-unknown-unknown --target-dir target/hook-message --manifest-path examples/event-name-hook/Cargo.toml
 
+# Build the source-compatible context display guest.
+build-context-hook:
+    cargo component build --release --locked --example context_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
+
 # Build the numeric counter guest.
 build-counter-hook:
     cargo component build --release --locked --example counter_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
