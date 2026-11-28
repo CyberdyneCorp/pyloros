@@ -5,6 +5,9 @@ use std::collections::{HashSet, VecDeque};
 
 const MAX_DEPTH: usize = 16;
 const WORK_LIMIT: usize = 1024;
+const BATCH_SIZE: usize = 32;
+const MIN_BATCH_SIZE: usize = 8;
+const INLINE_EDGES: usize = 4;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -139,23 +142,28 @@ impl Search {
         owner: Uuid,
         user: Uuid,
     ) -> sqlx::Result<Option<bool>> {
-        while let Some((node, depth)) = self.queue.pop_front() {
-            let Some(rules) = model.rules(&node.kind, &node.permission) else {
-                return Ok(None);
-            };
-            let count = rules.len().min(self.remaining);
-            self.incomplete |= count < rules.len();
-            let rules = &rules[..count];
-            self.remaining -= count;
-            if node.direct(tx, owner, user, rules).await? {
-                return Ok(Some(true));
-            }
-            for rule in rules {
-                if let Proof::Inherited { via, permission } = rule {
-                    let rows = node
-                        .destinations(tx, owner, via, self.remaining + 1)
-                        .await?;
-                    self.enqueue(rows, model, &node.kind, via, permission, depth + 1);
+        while !self.queue.is_empty() {
+            let count = self.queue.len().min(BATCH_SIZE);
+            let batch: Vec<_> = self.queue.drain(..count).collect();
+            let outgoing = read_batch(tx, owner, &batch, self.remaining).await?;
+            for ((node, depth), edges) in batch.into_iter().zip(outgoing) {
+                let Some(rules) = model.rules(&node.kind, &node.permission) else {
+                    return Ok(None);
+                };
+                let count = rules.len().min(self.remaining);
+                self.incomplete |= count < rules.len();
+                let rules = &rules[..count];
+                self.remaining -= count;
+                if node.direct(tx, owner, user, rules).await? {
+                    return Ok(Some(true));
+                }
+                for rule in rules {
+                    if let Proof::Inherited { via, permission } = rule {
+                        let rows = edges
+                            .destinations(tx, owner, &node, via, self.remaining + 1)
+                            .await?;
+                        self.enqueue(rows, model, &node.kind, via, permission, depth + 1);
+                    }
                 }
             }
         }
@@ -193,6 +201,78 @@ impl Search {
             }
         }
     }
+}
+
+// These edges belong to this check's read-only snapshot.
+#[derive(Clone)]
+enum Outgoing {
+    Individual,
+    Complete(Vec<(String, String, String)>),
+}
+
+impl Outgoing {
+    async fn destinations(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        owner: Uuid,
+        node: &Node,
+        via: &str,
+        limit: usize,
+    ) -> sqlx::Result<Vec<(String, String)>> {
+        match self {
+            Self::Individual => node.destinations(tx, owner, via, limit).await,
+            Self::Complete(edges) => Ok(edges
+                .iter()
+                .filter(|(relation, _, _)| relation == via)
+                .take(limit)
+                .map(|(_, kind, id)| (kind.clone(), id.clone()))
+                .collect()),
+        }
+    }
+}
+
+async fn read_batch(
+    tx: &mut Transaction<'_, Postgres>,
+    owner: Uuid,
+    batch: &[(Node, usize)],
+    remaining: usize,
+) -> sqlx::Result<Vec<Outgoing>> {
+    if batch.len() < MIN_BATCH_SIZE || remaining == 0 {
+        return Ok(vec![Outgoing::Individual; batch.len()]);
+    }
+    let (kinds, ids): (Vec<_>, Vec<_>) = batch
+        .iter()
+        .map(|(node, _)| (node.kind.as_str(), node.id.as_str()))
+        .unzip();
+    let rows = sqlx::query_as::<_, (i64, String, String, String)>(
+        "SELECT n.pos, e.relation, e.subject_type, e.subject_id
+         FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS n(kind,id,pos)
+         CROSS JOIN LATERAL (
+             SELECT relation,subject_type,subject_id FROM pyloros_object_relationships
+             WHERE client_id=$1 AND object_type=n.kind AND object_id=n.id
+             ORDER BY relation,subject_type,subject_id LIMIT $4
+         ) e ORDER BY n.pos,e.relation,e.subject_type,e.subject_id",
+    )
+    .bind(owner)
+    .bind(kinds)
+    .bind(ids)
+    .bind((INLINE_EDGES + 1) as i64)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut outgoing = vec![Vec::new(); batch.len()];
+    for (pos, relation, kind, id) in rows {
+        outgoing[pos as usize - 1].push((relation, kind, id));
+    }
+    Ok(outgoing
+        .into_iter()
+        .map(|edges| {
+            if edges.len() <= INLINE_EDGES {
+                Outgoing::Complete(edges)
+            } else {
+                Outgoing::Individual
+            }
+        })
+        .collect())
 }
 
 impl Node {
@@ -241,6 +321,55 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn wide_leaf_grant_requires_its_direct_rule_to_fit_the_budget() -> sqlx::Result<()> {
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = pool.begin().await?;
+        sqlx::raw_sql("CREATE TEMP TABLE pyloros_user_relationships(client_id uuid,object_type text,object_id text,relation text,user_id uuid);
+            CREATE TEMP TABLE pyloros_object_relationships(client_id uuid,object_type text,object_id text,relation text,subject_type text,subject_id text);")
+            .execute(&mut *tx).await?;
+        let owner = Uuid::new_v4();
+        let user = Uuid::new_v4();
+        let model: Model = serde_json::from_value(json!({"types":{"folder":{
+            "relations":{"child":["folder"],"member":["user"]},
+            "permissions":{"read":[{"via":"child","permission":"read"},{"relation":"member"}]}
+        }}}))
+        .unwrap();
+        sqlx::query("INSERT INTO pyloros_object_relationships SELECT $1,'folder','root','child','folder',i::text FROM generate_series(1,8) i")
+            .bind(owner).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO pyloros_user_relationships VALUES($1,'folder','8','member',$2)")
+            .bind(owner)
+            .bind(user)
+            .execute(&mut *tx)
+            .await?;
+        for (budget, expected) in [(25, None), (26, Some(true))] {
+            let mut search = Search::new(Node {
+                kind: "folder".into(),
+                id: "root".into(),
+                permission: "read".into(),
+            });
+            search.remaining = budget;
+            assert_eq!(search.run(&mut tx, &model, owner, user).await?, expected);
+        }
+        // A fifth child forces the full lookup, including that child's own proof.
+        sqlx::query(
+            "UPDATE pyloros_user_relationships SET object_id='nested-5' WHERE client_id=$1",
+        )
+        .bind(owner)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("INSERT INTO pyloros_object_relationships SELECT $1,'folder','8','child','folder','nested-'||i FROM generate_series(1,5) i")
+            .bind(owner).execute(&mut *tx).await?;
+        let mut search = Search::new(Node {
+            kind: "folder".into(),
+            id: "root".into(),
+            permission: "read".into(),
+        });
+        assert_eq!(search.run(&mut tx, &model, owner, user).await?, Some(true));
+        tx.rollback().await
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]

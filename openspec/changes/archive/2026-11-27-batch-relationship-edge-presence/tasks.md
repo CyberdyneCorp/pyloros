@@ -1,0 +1,3 @@
+- [x] Batch bounded outgoing edge reads within the existing permission-check transaction.
+- [x] Verify direct grants on leaves, fallback for a fifth child, tenant isolation and budget boundaries.
+- [x] Compare database traces and decisions on sparse and populated wide graphs.

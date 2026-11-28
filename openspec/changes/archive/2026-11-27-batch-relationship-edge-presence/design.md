@@ -1,0 +1,3 @@
+Take up to 32 pending nodes in queue order. For groups of eight or more with remaining work, fetch at most five outgoing object edges per node in one indexed PostgreSQL query. Use ordinality to associate each result with its source. Four or fewer rows cover that object completely. A fifth row selects the ordinary per-rule lookup, which can read later edges within the remaining work budget.
+
+Process direct grants and inherited rules in their existing order using the same repeatable-read transaction. Charge every visited rule and every consumed edge against the decision budget. Newly discovered nodes join the tail of the queue. Discard each batch when its nodes have been visited.
