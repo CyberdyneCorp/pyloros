@@ -61,6 +61,11 @@ check-hook-examples:
     cargo build --locked --manifest-path hook-worker/Cargo.toml --target-dir hook-worker/target
     python3 scripts/check_hook_examples.py hook-worker/target/debug/pyloros-hook-worker target/hook-examples/wasm32-unknown-unknown/release
 
+# Sample webhook routing using an unsigned, empty request.
+[positional-arguments]
+check-stripe-route url *flags:
+    python3 scripts/check_stripe_route.py "$@"
+
 # Inspect one known transaction on the configured chain RPC endpoint.
 [positional-arguments]
 inspect-iam-receipt hash *flags:

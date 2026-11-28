@@ -99,6 +99,14 @@ Pyloros intentionally fulfills correctly signed events that the previous provide
 
 During coexistence, the Stripe webhook can move to Pyloros while account reads and v1 hook administration still use the existing backend. Before switching the webhook route, run `just hook-inventory entitlement_granted entitlement_revoked`. If a hook source edit invalidates its binding, a payment or refund that needs that hook returns HTTP 503 and leaves access as it was. Review the edited hook, bind its component, then redeliver the same Stripe event ID. Concurrent retries on Rust replicas sharing PostgreSQL apply the change once and enqueue one execution per selected hook. If one request returns HTTP 500 at commit, another delivery of the same event may already be completing on a peer. Retain the original Stripe event ID when retrying.
 
+To sample the deployed webhook route, use an ingress response header that identifies the upstream actually selected. Substitute your webhook URL, header name and expected replica identifiers in this command.
+
+```sh
+just check-stripe-route "$WEBHOOK_URL" --upstream-header X-Upstream --expect billing-a --expect billing-b --attempts 4
+```
+
+Each unsigned POST sends an empty JSON object. A sample passes when the upstream belongs to the expected pool and the handler returns HTTP 400 for an invalid signature. The report includes a request ID for correlation with ingress logs. This checks the sampled requests. Verify deployed hook bindings separately with the reviewed inventory.
+
 A subscription update can arrive before checkout maps the customer. Redelivery after checkout applies the new plan and its expiry. An `invoice.created` event is informational and returns `handled: false`. A refund for a separate one-time payment revokes only the grants tied to that payment reference.
 
 ## App Store purchases

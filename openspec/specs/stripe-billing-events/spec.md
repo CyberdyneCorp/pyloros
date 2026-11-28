@@ -68,3 +68,14 @@ For subscription grants, the service SHALL use the product and optional plan fro
 #### Scenario: A later item supplies a date
 - **WHEN** neither the subscription nor the first item supplies an integer date
 - **THEN** leave the expiry null even if a subsequent item supplies a date
+
+### Requirement: Sample webhook routing during cutover
+An operator SHALL be able to sample the webhook ingress without a signing key. For each request the probe SHALL report whether the handler refused the unsigned payload and whether the ingress-reported upstream belongs to the expected pool.
+
+#### Scenario: The previous pool still serves a request
+- **WHEN** the response has the expected invalid-signature error but identifies an upstream outside the selected pool
+- **THEN** report the sample as failed and return an unsuccessful exit status
+
+#### Scenario: Ingress omits the upstream
+- **WHEN** the response omits the configured upstream identifier
+- **THEN** report the sample as failed even if the handler refused the unsigned payload
