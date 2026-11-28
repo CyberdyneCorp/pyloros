@@ -12,6 +12,10 @@ A request can finish on the outgoing service while its PostgreSQL transaction is
 3. Read the mapping from the primary through the API and reconcile the permission set and its committed audit event with the last submitted write. A rolled-back write leaves the previous mapping in place. Resolve any discrepancy before releasing queued writes.
 4. Route both paths to the incoming writer, release held requests in order, and verify the resulting mapping from the other backend. Use the same sequence when switching back.
 
+If the handoff includes retiring or recreating a role, apply the same hold to role deletion and creation. Cover `DELETE …/roles/{role_key}` and `POST …/roles` under both the administrator and delegated client paths, including trailing-slash forms. A create carries the role key in its body, so a path-only rule must cover the collection. Keep role and permission reads available through the switch.
+
+After the outgoing mapping transaction finishes, verify its committed permissions and audit entry, or the previous permissions if it rolled back. Then admit the retirement on the incoming pool. A mapping lookup for the retired role returns 404. If the role is recreated, verify its mapping is empty before applying the intended permissions. The create, delete and subsequent replacement each record their caller.
+
 ## Local rehearsal
 
 On a disposable PostgreSQL database, a deferred audit trigger held the outgoing replacement at commit. Each outgoing backend handled both operator and delegated writes. For each caller, one transaction committed and one rolled back. All eight trials began with `read`, requested `export`, and ended with a replacement of `list` from the new writer through the other route.
