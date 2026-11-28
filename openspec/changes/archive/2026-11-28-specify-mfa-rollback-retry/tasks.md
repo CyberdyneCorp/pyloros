@@ -1,0 +1,3 @@
+- [x] Check password-bound retry with authenticator and recovery codes across both writers.
+- [x] Verify rejection of the consumed passkey ceremony and completion after a fresh assertion.
+- [x] Record the retry contract for both primary sign-in methods.
