@@ -63,16 +63,16 @@ fn conditions<T: DeserializeOwned>(raw: &RawValue) -> Result<Vec<T>, sqlx::Error
         .collect()
 }
 
-#[derive(Serialize)]
-struct Statement<T, C> {
-    effect: String,
-    sid: Option<String>,
-    actions: Vec<T>,
-    resources: Vec<T>,
-    conditions: Vec<C>,
+#[derive(Serialize, Deserialize)]
+pub(super) struct Statement<T, C> {
+    pub(super) effect: String,
+    pub(super) sid: Option<String>,
+    pub(super) actions: Vec<T>,
+    pub(super) resources: Vec<T>,
+    pub(super) conditions: Vec<C>,
 }
 
-fn project<T: DeserializeOwned, C: DeserializeOwned>(
+pub(super) fn project<T: DeserializeOwned, C: DeserializeOwned>(
     raw: &str,
 ) -> Result<Vec<Statement<T, C>>, sqlx::Error> {
     crate::stored_json::check_integers(raw)?;
@@ -212,7 +212,7 @@ async fn refresh_observed(
     Ok(())
 }
 
-async fn records(
+pub(super) async fn records(
     tx: &mut Transaction<'_, Postgres>,
     ids: Option<&[Uuid]>,
 ) -> Result<Vec<(Value, DateTime<Utc>, String)>, sqlx::Error> {

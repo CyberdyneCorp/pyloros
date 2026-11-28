@@ -20,7 +20,7 @@ pub fn matches_target(
             .any(|pattern| matches_pattern(pattern, resource))
 }
 
-fn matches_pattern(pattern: &str, value: &str) -> bool {
+pub(crate) fn matches_pattern(pattern: &str, value: &str) -> bool {
     let Some((prefix, rest)) = pattern.split_once('*') else {
         return value == pattern;
     };

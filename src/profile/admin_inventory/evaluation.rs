@@ -1,12 +1,10 @@
 //! Explain operator access checks against the selected IAM provider.
 use super::*;
-use crate::{
-    iam_evaluation::{Condition, matches_target},
-    login_http::problem,
-    request_json::iam_document,
-};
+use crate::{iam_evaluation::Condition, login_http::problem, request_json::iam_document};
 use serde::Deserialize;
 use std::collections::HashMap;
+mod target;
+use target::Target;
 
 #[derive(Deserialize)]
 pub(super) struct Request {
@@ -20,14 +18,7 @@ struct Policy {
     id: Uuid,
     statements: Vec<Statement>,
 }
-#[derive(Deserialize)]
-struct Statement {
-    actions: Vec<String>,
-    resources: Vec<String>,
-    effect: String,
-    conditions: Vec<Condition>,
-    sid: Option<String>,
-}
+type Statement = statements::Statement<Target, Condition>;
 
 pub(in crate::profile) async fn evaluate(
     State(state): State<Arc<Profile>>,
@@ -112,10 +103,10 @@ async fn postgres(
             .fetch_optional(&mut **tx)
             .await?;
     if let Some(boundary) = boundary {
-        let policies = statements::policies(tx, Some(boundary)).await?;
-        if let Some(doc) = policies.into_iter().next() {
+        let policies = load(tx, &[boundary]).await?;
+        if let Some(policy) = policies.into_iter().next() {
             let mut effects = Effects::default();
-            effects.apply(&policy(doc)?, "boundary", req, &mut matched)?;
+            effects.apply(&policy, "boundary", req, &mut matched)?;
             if !effects.allowed() {
                 return Ok(decision(matched, Some("denied by permission boundary")));
             }
@@ -136,8 +127,17 @@ fn decision(matched: Vec<Value>, reason: Option<&str>) -> Response {
     Json(json!({"matched":matched,"decision":if reason.is_none() {"allow"}else{"deny"},"reason":reason})).into_response()
 }
 
-fn policy(doc: Value) -> Result<Policy, sqlx::Error> {
-    serde_json::from_value(doc).map_err(|e| sqlx::Error::Decode(Box::new(e)))
+async fn load(tx: &mut Transaction<'_, Postgres>, ids: &[Uuid]) -> sqlx::Result<Vec<Policy>> {
+    let rows = statements::records(tx, Some(ids)).await?;
+    rows.into_iter()
+        .map(|(header, _, raw)| {
+            Ok(Policy {
+                id: serde_json::from_value(header["id"].clone())
+                    .map_err(|e| sqlx::Error::Decode(e.into()))?,
+                statements: statements::project(&raw)?,
+            })
+        })
+        .collect()
 }
 
 async fn evaluate_links(
@@ -150,8 +150,7 @@ async fn evaluate_links(
     ids.sort_unstable();
     ids.dedup();
     let mut by_id = HashMap::new();
-    for doc in statements::load(tx, Some(&ids)).await? {
-        let p = policy(doc)?;
+    for p in load(tx, &ids).await? {
         by_id.insert(p.id, p);
     }
     let mut effects = Effects::default();
@@ -191,7 +190,9 @@ impl Effects {
 }
 impl Statement {
     fn applies(&self, req: &Request) -> Result<bool, sqlx::Error> {
-        if !matches_target(&self.actions, &self.resources, &req.action, &req.resource) {
+        if !target::any(&self.actions, &req.action)?
+            || !target::any(&self.resources, &req.resource)?
+        {
             return Ok(false);
         }
         for condition in &self.conditions {
@@ -213,13 +214,14 @@ mod tests {
     #[test]
     fn a_deny_keeps_ordered_explanations_and_unmatched_targets_skip_conditions() {
         let id = Uuid::new_v4();
-        let policy=policy(json!({"id":id,"statements":[
-            {"effect":"allow","actions":["read"],"resources":["*"],"conditions":[],"sid":"grant"},
-            {"effect":"deny","actions":["write"],"resources":["*"],"conditions":[
-                {"operator":"DateTimeGreaterThan","key":"time","value":"2026-01-01"}
-            ]},
-            {"effect":"deny","actions":["read"],"resources":["*"],"conditions":[],"sid":"restriction"}
-        ]})).unwrap();
+        let doc = json!({"id":id,"statements":[
+           {"effect":"allow","actions":["read"],"resources":["*"],"conditions":[],"sid":"grant"},
+           {"effect":"deny","actions":["write"],"resources":["*"],"conditions":[
+               {"operator":"DateTimeGreaterThan","key":"time","value":"2026-01-01"}
+           ]},
+           {"effect":"deny","actions":["read"],"resources":["*"],"conditions":[],"sid":"restriction"}
+        ]});
+        let policy: Policy = serde_json::from_str(&doc.to_string()).unwrap();
         let req = Request {
             identity_id: Uuid::new_v4(),
             action: "read".into(),

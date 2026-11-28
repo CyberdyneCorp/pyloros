@@ -43,3 +43,18 @@ The evaluation endpoint SHALL apply IAM JSON decoding before authentication. It 
 #### Scenario: Non-finite context value
 - **WHEN** rendering a context field validation error would include a non-finite number
 - **THEN** return the unhandled HTTP 500 response
+
+### Requirement: Evaluate historical PostgreSQL targets in order
+Evaluation SHALL check action entries in stored order until one matches. It SHALL check resources only for a matching action and stop at the first matching resource. This applies to direct grants, inherited grants and permission boundaries.
+
+#### Scenario: A later entry is invalid
+- **WHEN** both target lists match before reaching a historical numeric entry
+- **THEN** the statement contributes its effect and source to the decision
+
+#### Scenario: A numeric target is reached
+- **WHEN** evaluation reaches a numeric action or resource entry before any match in that list
+- **THEN** the endpoint returns HTTP 500
+
+#### Scenario: Historical character sequence
+- **WHEN** a target entry is an array of individual characters containing a wildcard character
+- **THEN** evaluate the sequence as an anchored wildcard pattern
