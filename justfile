@@ -145,6 +145,11 @@ test:
 test-db:
     cargo test --locked --tests -- --ignored
 
+# Verify the console source archive against its reviewed Git tree.
+[positional-arguments]
+check-frontend-context repository tree archive:
+    python3 scripts/check_frontend_context.py "$@"
+
 # Print the frontend build digest or compare it with the reviewed digest.
 [positional-arguments]
 check-frontend-build directory *expected:
