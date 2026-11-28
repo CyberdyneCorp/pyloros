@@ -112,6 +112,7 @@ Install stable Rust with rustfmt and Clippy, OpenSSL development headers and lib
 - `just health` calls both probes. A fresh database returns 503 for readiness until the supported schema is migrated. The service never stamps a blank database as migrated. A readiness request can wait up to 30 seconds for one of the pool’s 15 connections. PostgreSQL statement and lock timeouts govern the migration query. A timed-out connection attempt can trigger one diagnostic connection at a time to identify the failure.
 - `just check` checks formatting, runs Clippy and executes the offline tests.
 - `just test-db` runs the real PostgreSQL integration test after `just db-up`.
+- `just db-commit-checks` inventories deferrable table constraints and triggers before a database handoff. Set `DATABASE_URL` to a read-only login for the target database. The JSON includes initially immediate checks and disabled triggers. An empty array means the database catalogs list no deferrable checks on application tables. Connection or storage failures can still interrupt commit.
 - `just db-down` stops local PostgreSQL and retains its volume.
 
 For an existing PostgreSQL instance, set `DATABASE_URL` and use `just run`. Set `BIND_ADDR` to change the listen address, `PYLOROS_URL` for the probe recipe, or `PYLOROS_PG_PORT` to choose a different local database port.

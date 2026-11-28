@@ -23,6 +23,10 @@ db-down:
 db-shell:
     docker compose exec postgres psql -U pyloros -d pyloros
 
+# List deferrable PostgreSQL table constraints and triggers in application schemas.
+db-commit-checks:
+    uv run --script scripts/inspect_commit_checks.py
+
 # Run the API with the current environment.
 run: hook-worker
     PYLOROS_HOOK_WORKER="${PYLOROS_HOOK_WORKER:-$PWD/hook-worker/target/debug/pyloros-hook-worker}" cargo run --locked
