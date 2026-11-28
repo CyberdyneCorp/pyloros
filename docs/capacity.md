@@ -76,3 +76,15 @@ Two further trials used the same mixed pair and 16 clients. Each trial started w
 | 2 | 1,434 of 1,440 | 718 ms | 132 ms | 238 | 470 |
 
 All 2,880 requests succeeded. Each trial exercised credential handoffs in both directions and ended with the expected 376 sessions and 752 refresh-token rows, including warmup. This measures one local minute with hook delivery disabled. Production canary sizing still requires the deployment's traffic mix and latency budget.
+
+### Canary with one quarter of requests routed to Rust
+
+Two local trials used one reference process, one Rust process and 16 clients. Each client sent every fourth request to Rust, starting at a different point in the cycle. Each phase scheduled 512 requests and drained before the next phase. Rust received 764 of the 3,072 measured requests (24.9%). Hooks and webhooks were disabled.
+
+| Offered requests/s | Rust requests (trial 1 / 2) | Finished within window (trial 1 / 2) | End-to-end p99 (trial 1 / 2) | Drain (trial 1 / 2) |
+|---|---:|---:|---:|---:|
+| 24 | 127 / 128 | 441 / 428 | 3.49 / 4.48 s | 3.27 / 4.28 s |
+| 32 | 127 / 124 | 340 / 339 | 7.59 / 8.58 s | 7.50 / 8.56 s |
+| 24 | 128 / 130 | 445 / 422 | 3.66 / 4.69 s | 3.41 / 4.58 s |
+
+All requests succeeded. Across both trials, 352 refreshes and 805 introspections used credentials issued by the other backend. Each database reconciled to 400 sessions and 800 refresh-token rows including warmup. Even at 24 requests/s, the pair needed additional time to finish each phase on this host. Measure the deployment's expected split against its latency budget before increasing canary traffic.
