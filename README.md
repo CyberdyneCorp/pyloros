@@ -349,7 +349,7 @@ The [silent example](examples/event-name-hook/examples/silent_hook.rs) completes
 
 During coexistence, an operator can create, validate, edit and delete v1 definitions through Pyloros while the existing service runs unported scripts. Route manual tests for those scripts and the operations that trigger them to the existing executor. Pyloros can read their execution history from shared PostgreSQL. The registration lifecycle has been exercised with this routing and one executor per request.
 
-For a v1 manual test with a selected component, inspect the response’s `success` field. The component accepts a JSON context of up to 65,536 UTF-8 bytes, including whitespace inside the object. A larger context returns HTTP 200 with `success: false` and records a failed test in the operator audit. Whitespace outside the context object does not count toward the limit. Keep manual tests that require larger contexts on the existing executor during migration.
+For a v1 manual test with a selected component, inspect the response’s `success` field. The component accepts a JSON context of up to 65,536 UTF-8 bytes. When a v1 context exceeds that size, Pyloros removes formatting whitespace outside strings and retries the size check. A context whose data still exceeds the limit returns HTTP 200 with `success: false` and records a failed test in the operator audit. Whitespace outside the context object does not count toward the limit. Keep manual tests that require larger contexts on the existing executor during migration.
 
 ### Stage a hook artifact
 

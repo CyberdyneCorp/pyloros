@@ -1,0 +1,2 @@
+- [x] Implement bounded context compaction and regression tests.
+- [x] Compare manual outcomes and audit effects against the reference.

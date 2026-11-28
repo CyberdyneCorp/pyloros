@@ -1,0 +1,1 @@
+Pass existing in-budget inputs through verbatim. For larger validated objects, copy tokens into a buffer capped at the worker limit. Preserve string contents, escapes, number spelling, object order and repeated keys. Stop once the compact representation exceeds the limit.

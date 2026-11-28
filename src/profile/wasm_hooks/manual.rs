@@ -7,7 +7,10 @@ use crate::{
 };
 use axum::{body::Bytes, extract::Path};
 use serde_json::value::RawValue;
-use std::time::{Duration, Instant};
+use std::{
+    borrow::Cow,
+    time::{Duration, Instant},
+};
 use tokio::time::timeout;
 
 pub(in crate::profile) async fn test(
@@ -101,6 +104,33 @@ fn input<'a>(path: &str, raw: &'a RawValue) -> Result<(Uuid, &'a str), Box<Respo
     Ok((id.expect("validated identifier"), context))
 }
 
+// The request decoder already validated this JSON object. Keep the original
+// token bytes so even duplicate fields and escaped Unicode retain their spelling.
+fn worker_context(context: &str) -> Option<Cow<'_, [u8]>> {
+    if context.len() <= dry_run::MAX_EVENT {
+        return Some(Cow::Borrowed(context.as_bytes()));
+    }
+    let mut compact = Vec::with_capacity(dry_run::MAX_EVENT);
+    let mut quoted = false;
+    let mut escaped = false;
+    for byte in context.bytes() {
+        if !quoted && byte.is_ascii_whitespace() {
+            continue;
+        }
+        if compact.len() == dry_run::MAX_EVENT {
+            return None;
+        }
+        compact.push(byte);
+        match byte {
+            _ if escaped => escaped = false,
+            b'\\' if quoted => escaped = true,
+            b'"' => quoted = !quoted,
+            _ => (),
+        }
+    }
+    Some(Cow::Owned(compact))
+}
+
 async fn execute(seconds: i32, component: &[u8], context: &str) -> Result<Value, Box<Response>> {
     let started = Instant::now();
     if !(1..=30).contains(&seconds) {
@@ -112,12 +142,10 @@ async fn execute(seconds: i32, component: &[u8], context: &str) -> Result<Value,
             "Hook workers are busy",
         ))
     })?;
-    let (output, error) = if context.len() > dry_run::MAX_EVENT {
-        (None, Some("Hook event exceeds 64 KiB".to_owned()))
-    } else {
+    let (output, error) = if let Some(event) = worker_context(context) {
         match timeout(
             Duration::from_secs(seconds as u64),
-            dry_run::invoke(component, context.as_bytes()),
+            dry_run::invoke(component, &event),
         )
         .await
         {
@@ -130,6 +158,8 @@ async fn execute(seconds: i32, component: &[u8], context: &str) -> Result<Value,
             }
             Ok(Ok(value)) => outcome(&value).ok_or_else(|| Box::new(internal()))?,
         }
+    } else {
+        (None, Some("Hook event exceeds 64 KiB".to_owned()))
     };
     Ok(
         json!({"success":error.is_none(),"output":output,"error":error,"execution_time_ms":started.elapsed().as_millis() as u64}),
@@ -148,6 +178,29 @@ fn outcome(value: &Value) -> Option<(Option<String>, Option<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oversized_formatting_preserves_exact_json_tokens() {
+        let original = r#"{ "z": [ "雪 \" a", "\\", "\u0061" ], "x": 1.00e+2, "x": null }"#;
+        assert!(matches!(worker_context(original), Some(Cow::Borrowed(_))));
+        let padded = original.replacen('{', &format!("{{{}", "\r\n\t ".repeat(16_384)), 1);
+        let expected = r#"{"z":["雪 \" a","\\","\u0061"],"x":1.00e+2,"x":null}"#;
+        assert_eq!(
+            worker_context(&padded).unwrap().as_ref(),
+            expected.as_bytes()
+        );
+    }
+
+    #[test]
+    fn compact_budget_counts_all_string_bytes() {
+        let make = |n| format!(r#"{{  "x" : "{}" }}"#, " ".repeat(n));
+        let budget = dry_run::MAX_EVENT - r#"{"x":""}"#.len();
+        assert_eq!(
+            worker_context(&make(budget)).unwrap().len(),
+            dry_run::MAX_EVENT
+        );
+        assert!(worker_context(&make(budget + 1)).is_none());
+    }
 
     #[test]
     fn manual_results_preserve_stdout_and_distinguish_guest_errors() {
