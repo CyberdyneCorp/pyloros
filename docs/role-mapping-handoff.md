@@ -81,3 +81,13 @@ For a canary that assigns catalog creation to Pyloros, route both the operator a
 In the local four-replica rehearsal, two distinct keys competed for the last slot. With both creates routed to Pyloros, one returned HTTP 201 and the other returned HTTP 409. Both reference replicas saw the committed winner and the catalog contained exactly 64 roles or 256 permissions. The audit identified the winning caller. While both requests waited for the target client's database lock, a create for another client completed.
 
 With both creates routed to reference replicas and both transactions held before insertion, both returned HTTP 201. The resulting catalogs contained 65 roles or 257 permissions and recorded both callers. This concurrency difference remains a migration signoff decision.
+
+## Recovering a user role grant or revocation
+
+An operator or delegated service can grant or revoke the same user's client role. If a response arrives while the outgoing transaction is finishing, hold further writes to that assignment until the database outcome is known. Check the role on the primary through `GET /api/v1/admin/users/{user_id}/roles`. For a scoped assignment, check the entry for the intended organization.
+
+Also reconcile the grant or revocation audit for the target, client, role and caller. A repeated grant can leave the same membership in place and still produce another audit entry and webhook event. When webhooks are enabled, check the stored event and delivery records for the subscriptions that matched at write time. A receiver can acknowledge delivery later.
+
+With two active subscribers on a disposable PostgreSQL database, an injected delivery insertion failure rolled back the role change, audit and webhook records together. Both APIs returned HTTP 500 on an immediate failure. When PostgreSQL rejected the insert at commit, Pyloros returned HTTP 500 and the reference API returned HTTP 201 for a grant or HTTP 204 for a revocation. This held for both operators and delegated clients.
+
+After confirming rollback, retry the intended change once on the incoming writer and read the assignment again. In the rehearsal each retry committed the intended membership state, one audit entry, one event and two deliveries.
