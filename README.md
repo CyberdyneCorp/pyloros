@@ -627,6 +627,14 @@ organization ID and a null user ID. Renewing a grant or repeating a withdrawal
 delivers an event for each committed administrator action. The audit record,
 entitlement change and queued deliveries commit together.
 
+If PostgreSQL explicitly rejects the commit, Pyloros returns HTTP 500. During a
+mixed-version rollout the legacy writer can return 201 for a grant or 204 for a
+withdrawal even though PostgreSQL rolled it back. Confirm the rollback before
+retrying on the other writer. For a personal grant, check the user's effective
+access and the administrator audit record. A rejected write leaves both intact
+and adds no hook delivery. A successful retry with one active, bound hook adds
+one audit record and runs that hook once in the tested handoff.
+
 When handing administrator entitlement writes back to the legacy service, pause new grants and withdrawals and let in-flight writes commit. If downstream consumers require earlier Rust hooks to finish before later legacy hooks, keep the component worker running until the pending grant and revoke deliveries finish, confirm their execution histories, then switch writers and resume. Switching writers first lets a later legacy hook finish while an earlier Rust delivery is still queued. Editing the hook source clears its binding for new Rust writes. Already queued deliveries retain their selected component.
 
 ### Assign a component delivery worker
