@@ -1,0 +1,1 @@
+Continue using the UUID library for value parsing. For rejected text, inspect the submitted string with at most one optional wrapper. Locate the first invalid character before evaluating the number and widths of groups. Count groups without building a collection proportional to the submitted length.

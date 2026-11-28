@@ -1,0 +1,3 @@
+- [x] Compare path and query diagnostics through operator and service routes.
+- [x] Correct shared validation and run regression tests.
+- [x] Repeat the comparison against the packaged service.

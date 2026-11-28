@@ -79,42 +79,46 @@ pub(crate) fn boolean(name: &str, value: &str) -> Result<bool, serde_json::Value
     }
 }
 
-// The REST diagnostic includes wrapping braces or the URN prefix in the final length.
-fn invalid_final_uuid_group(path: &str) -> Option<usize> {
-    let body = path
-        .strip_prefix("urn:uuid:")
-        .or_else(|| path.strip_prefix('{')?.strip_suffix('}'))
-        .unwrap_or(path);
-    let mut groups = body.splitn(5, '-');
-    for width in [8, 4, 4, 4] {
-        let group = groups.next()?;
-        if group.len() != width || !group.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return None;
-        }
-    }
-    let last = groups.next()?;
-    (last.len() != 12 && last.bytes().all(|b| b.is_ascii_hexdigit()))
-        .then(|| last.len() + (path.len() - body.len()))
-}
-
 fn uuid_reason(path: &str, error: uuid::Error) -> String {
-    if path.bytes().all(|c| c.is_ascii_hexdigit()) {
+    let (body, offset) = if let Some(body) = path.strip_prefix("urn:uuid:") {
+        (body, 9)
+    } else if let Some(body) = path.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+        (body, 1)
+    } else {
+        (path, 0)
+    };
+    if let Some((index, ch)) = body
+        .char_indices()
+        .find(|(_, ch)| !ch.is_ascii_hexdigit() && *ch != '-')
+    {
+        return format!("invalid character: found `{ch}` at {}", offset + index + 1);
+    }
+    let groups = body.split('-');
+    let count = groups.clone().count();
+    if offset == 0 && count == 1 {
         return format!(
             "invalid length: expected length 32 for simple format, found {}",
-            path.len()
+            body.len()
         );
     }
-    if let Some(length) = invalid_final_uuid_group(path) {
-        return format!("invalid group length in group 4: expected 12, found {length}");
+    if count != 5 {
+        return format!("invalid group count: expected 5, found {count}");
     }
-    let message = error.to_string();
-    if message.starts_with("invalid character:")
-        && let Some((prefix, offset)) = message.rsplit_once(" at ")
-        && let Ok(index) = offset.parse::<usize>()
-    {
-        return format!("{prefix} at {}", index + 1);
+    for (index, (group, expected)) in groups.zip([8, 4, 4, 4, 12]).enumerate() {
+        if group.len() != expected {
+            // The last-group diagnostic includes the submitted wrapper.
+            let found = group.len()
+                + if index == 4 {
+                    path.len() - body.len()
+                } else {
+                    0
+                };
+            return format!(
+                "invalid group length in group {index}: expected {expected}, found {found}"
+            );
+        }
     }
-    message
+    error.to_string()
 }
 
 pub(crate) fn path_uuid(path: &str, field: &str) -> Result<uuid::Uuid, serde_json::Value> {
@@ -256,6 +260,25 @@ mod integer_tests {
 #[cfg(test)]
 mod uuid_tests {
     use super::*;
+
+    #[test]
+    fn long_uuid_fields_report_character_and_group_errors() {
+        for (input, reason) in [
+            ("٠".repeat(32), "invalid character: found `٠` at 1"),
+            (
+                format!("urn:uuid:{{{}}}", uuid::Uuid::nil()),
+                "invalid character: found `{` at 10",
+            ),
+            ("-".repeat(60), "invalid group count: expected 5, found 61"),
+            (
+                format!("{}-b-c-d-e", "a".repeat(50)),
+                "invalid group length in group 0: expected 8, found 50",
+            ),
+        ] {
+            let error = uuid_field(&input, "query", "organization_id").unwrap_err();
+            assert_eq!(error["ctx"]["error"], reason);
+        }
+    }
 
     #[test]
     fn final_uuid_group_length_includes_the_submitted_wrapper() {
