@@ -1,3 +1,3 @@
 - [x] Implement signature recovery and validated, rate-limited verification.
 - [x] Verify mixed-backend session, identity, webhook, audit and race outcomes with the original clients.
-- [ ] Verify HTTP 500 and session rollback on explicit commit rejection.
+- [x] Verify HTTP 500 and session rollback on explicit commit rejection.

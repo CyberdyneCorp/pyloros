@@ -89,6 +89,8 @@ The design starts from the experience of application developers, users and opera
 
 Pyloros returns HTTP 500 if PostgreSQL explicitly rejects a transaction at commit. This is an intentional compatibility exception for routes where a migrating client previously received success before rollback. For example, a rejected export audit withholds the download, and a rejected session change withholds its success cookies. A lost connection while awaiting commit acknowledgement leaves the database outcome uncertain.
 
+When a sign-in transaction is explicitly rejected at commit, retry wallet verification with the same unexpired challenge and signature. For password-based MFA, retry the original MFA credential with a valid authenticator code or the unspent recovery code. For passkey-based MFA, start a fresh passkey assertion before resubmitting the factor. A successful retry issues one session.
+
 ## Extension hooks
 
 With hooks enabled, Pyloros starts a CONNECT proxy on `HOOKS_PROXY_HOST` and `HOOKS_PROXY_PORT` (default `127.0.0.1:8787`). Set `HOOKS_EGRESS_ALLOWLIST` to a comma-separated list or JSON array of allowed domains. The default is empty. The proxy checks each resolved address before connecting and permits ports 80 and 443. Readiness includes `hook_egress_proxy` while hooks are enabled. If the listener cannot bind, this field is false and database readiness is evaluated independently.

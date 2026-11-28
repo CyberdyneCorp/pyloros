@@ -19,3 +19,9 @@ The service SHALL accept a challenge identifier and a personal-message signature
 
 - **WHEN** the challenge is missing, expired, previously consumed, signed by a different wallet or linked to an inactive account
 - **THEN** refuse the login, retain the prior challenge state and record the reason
+
+#### Scenario: PostgreSQL rejects the login at commit
+
+- **WHEN** the wallet proof is valid and PostgreSQL explicitly rejects the transaction at commit
+- **THEN** return HTTP 500 without tokens or session cookies and leave the challenge pending
+- **AND** either replica can accept the same proof while the challenge remains valid and issue one session
