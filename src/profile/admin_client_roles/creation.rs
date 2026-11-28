@@ -131,11 +131,12 @@ async fn insert(
         );
     }
     let prefix = format!("rp:{client}:");
-    let names: Vec<String> =
-        sqlx::query_scalar("SELECT name FROM iam_groups WHERE starts_with(name,$1)")
-            .bind(&prefix)
-            .fetch_all(&mut *tx)
-            .await?;
+    let names: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM iam_groups WHERE starts_with(name,$1) AND strpos(name,'@')=0",
+    )
+    .bind(&prefix)
+    .fetch_all(&mut *tx)
+    .await?;
     if let Some(response) = conflict(client, &role.key, names.into_iter()) {
         return Ok(response);
     }

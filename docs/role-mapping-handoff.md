@@ -57,3 +57,9 @@ Four Chromium trials exercised a grant and a revocation in each handoff directio
 Both writers can list an existing catalog above 256 permissions. A request to create a duplicate returns HTTP 409 with the duplicate-key diagnostic. A new key also returns 409 while the catalog holds 256 or more entries.
 
 In a local handoff rehearsal, both services read all 257 stored keys. Deleting one key left the catalog full. A second deletion brought the count to 255, and creating a retired key then succeeded. Both writers showed the recreated permission with its former role mappings removed. Reassign it explicitly if the role still needs it. The two deletions and one creation each had a committed audit entry attributed to their caller.
+
+## Global role capacity
+
+The PostgreSQL catalog limit is 64 global roles per client. In two handoff trials, a client started with 65 global roles and 1,000 organization-scoped groups. The administrator and delegated APIs listed all 65 global roles with the same member counts on both services. Removing one global role left the catalog full. After a second removal, recreating a retired role succeeded with zero members and an empty permission mapping.
+
+On this fixture, PostgreSQL query plans showed 65 executions of the inventory's membership count after filtering scoped groups, down from 1,065. This measures database work for the catalog read.

@@ -181,7 +181,7 @@ async fn catalog(
     } else {
         sqlx::query_as(
             "SELECT g.name,g.description,(SELECT count(*) FROM iam_group_members m WHERE m.group_id=g.id)
-             FROM iam_groups g WHERE starts_with(g.name,$1) ORDER BY g.name"
+             FROM iam_groups g WHERE starts_with(g.name,$1) AND strpos(g.name,'@')=0 ORDER BY g.name"
         ).bind(format!("rp:{client}:")).fetch_all(&mut *tx).await?
     };
     let roles = roles(client, groups);
