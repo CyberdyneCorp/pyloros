@@ -7,7 +7,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 
 from check_frontend_build import file_digest
-from check_frontend_runtime import payload_manifest
+from check_frontend_runtime import payload_manifest, verify_manifest
 
 
 def docker(*args):
@@ -49,6 +49,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("build_image")
     p.add_argument("runtime_image")
+    p.add_argument("expected", nargs="?", type=Path, help="reviewed image manifest")
     args = p.parse_args()
     try:
         build = inspect(args.build_image, True)
@@ -56,6 +57,8 @@ if __name__ == "__main__":
         changed = [key for key in runtime if runtime[key] != build[key]]
         if changed:
             raise ValueError("Image differs from build stage in " + ", ".join(changed))
+        if args.expected is not None:
+            verify_manifest(build, args.expected)
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         p.exit(1, f"{error}\n")
     print(json.dumps(build, indent=2))

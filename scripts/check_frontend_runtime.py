@@ -61,6 +61,16 @@ def runtime_manifest(root):
     return {**payload_manifest(root), "package-lock.json": file_digest(lock).hex(), "node": json.loads(node)}
 
 
+def verify_manifest(observed, path):
+    expected = json.loads(path.read_text())
+    if not isinstance(expected, dict):
+        raise ValueError("Expected a runtime manifest object")
+    changed = observed.keys() ^ expected.keys()
+    changed.update(key for key in observed.keys() & expected.keys() if observed[key] != expected[key])
+    if changed:
+        raise ValueError("Frontend runtime differs in " + ", ".join(sorted(changed)))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
@@ -69,13 +79,7 @@ if __name__ == "__main__":
     try:
         observed = runtime_manifest(args.directory)
         if args.expected is not None:
-            expected = json.loads(args.expected.read_text())
-            if not isinstance(expected, dict):
-                raise ValueError("Expected a runtime manifest object")
-            changed = observed.keys() ^ expected.keys()
-            changed.update(key for key in observed.keys() & expected.keys() if observed[key] != expected[key])
-            if changed:
-                raise ValueError("Frontend runtime differs in " + ", ".join(sorted(changed)))
+            verify_manifest(observed, args.expected)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         parser.exit(1, f"{error}\n")
     print(json.dumps(observed, indent=2))

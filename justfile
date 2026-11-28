@@ -109,7 +109,7 @@ check-frontend-runtime directory *expected:
 
 # Compare /app in local console builder and runtime images.
 [positional-arguments]
-check-frontend-image build_image runtime_image:
+check-frontend-image build_image runtime_image *expected:
     python3 scripts/check_frontend_image.py "$@"
 
 # Start the shipped console command and check its login page on loopback.

@@ -36,16 +36,23 @@ jobs:
           COPY --from=build /app/node_modules ./node_modules
           USER node
           CMD ["node", "build"]
+          FROM build AS changed-lock
+          RUN echo '{"name":"another-build"}' > package-lock.json
           FROM runtime AS stopped
           CMD ["node", "--version"]
           FROM runtime AS drift
           USER root
           RUN chmod -x node_modules/sample/run
           DOCKER
-          for stage in build runtime drift stopped; do
+          for stage in build runtime drift stopped changed-lock; do
             docker build --target "$stage" -t "console-$stage" "$fixture"
           done
-          python3 scripts/check_frontend_image.py console-build console-runtime
+          python3 scripts/check_frontend_image.py console-build console-runtime > "$fixture/reviewed.json"
+          python3 scripts/check_frontend_image.py console-build console-runtime "$fixture/reviewed.json"
+          if python3 scripts/check_frontend_image.py console-changed-lock console-runtime "$fixture/reviewed.json" 2>"$fixture/lock-error"; then
+            exit 1
+          fi
+          grep -Fx 'Frontend runtime differs in package-lock.json' "$fixture/lock-error"
           python3 scripts/check_frontend_start.py console-runtime
           if python3 scripts/check_frontend_start.py console-stopped 2>"$fixture/start-error"; then
             exit 1
