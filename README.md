@@ -635,6 +635,13 @@ access and the administrator audit record. A rejected write leaves both intact
 and adds no hook delivery. A successful retry with one active, bound hook adds
 one audit record and runs that hook once in the tested handoff.
 
+For an organization grant or withdrawal, query `GET /api/v1/admin/entitlements`
+with `organization_id` and `product_key`, then check the row for the affected
+plan. A member with a matching personal grant keeps the same effective access
+after a successful organization withdrawal. Conversely, secondary organization
+membership alone does not expose the grant through `GET /api/v1/users/me/entitlements`.
+Use the owner-filtered record and its status to decide whether a retry is needed.
+
 When handing administrator entitlement writes back to the legacy service, pause new grants and withdrawals and let in-flight writes commit. If downstream consumers require earlier Rust hooks to finish before later legacy hooks, keep the component worker running until the pending grant and revoke deliveries finish, confirm their execution histories, then switch writers and resume. Switching writers first lets a later legacy hook finish while an earlier Rust delivery is still queued. Editing the hook source clears its binding for new Rust writes. Already queued deliveries retain their selected component.
 
 ### Assign a component delivery worker
