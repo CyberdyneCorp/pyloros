@@ -1,0 +1,2 @@
+- [x] Cover combinations of content codings and decoded size boundaries.
+- [x] Enable provider content negotiation and verify normal callback delivery.

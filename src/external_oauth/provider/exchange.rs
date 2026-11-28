@@ -249,9 +249,8 @@ mod tests {
                 authorization: String::new(),
                 token: format!("{base}/token"),
                 profile: format!("{base}/profile"),
-                http: reqwest::Client::builder()
-                    .no_gzip()
-                    .no_deflate()
+                http: super::super::provider_http()
+                    .https_only(false)
                     .no_proxy()
                     .build()
                     .unwrap(),
@@ -270,3 +269,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod content_coding;

@@ -47,6 +47,15 @@ enum Backend {
 
 pub struct Provider(Backend);
 
+fn provider_http() -> reqwest::ClientBuilder {
+    Client::builder()
+        .gzip(true)
+        .deflate(true)
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(10))
+}
+
 impl Provider {
     pub(super) fn configured(name: &str, stub: bool) -> Result<Option<Self>, reqwest::Error> {
         let (kind, prefix) = match name {
@@ -88,13 +97,7 @@ impl Provider {
                 )
             }
         };
-        let http = Client::builder()
-            .no_gzip()
-            .no_deflate()
-            .https_only(true)
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(10))
-            .build()?;
+        let http = provider_http().build()?;
         Ok(Some(Self(Backend::Remote(Box::new(Remote {
             kind,
             id,

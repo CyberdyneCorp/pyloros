@@ -2836,6 +2836,7 @@ dependencies = [
  "data-encoding",
  "der-parser",
  "dns-lookup",
+ "flate2",
  "futures-util",
  "http-body-util",
  "hyper",

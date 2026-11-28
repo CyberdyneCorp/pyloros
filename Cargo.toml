@@ -66,4 +66,5 @@ dns-lookup = "4"
 libc = "0.2"
 
 [dev-dependencies]
+flate2 = "1"
 wat = "1.263.0"

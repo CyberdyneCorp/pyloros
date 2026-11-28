@@ -1,0 +1,1 @@
+Use streaming content decoding in the existing HTTP client. Keep the body reader responsible for counting bytes ahead of JSON parsing. Exercise the same transport configuration in local HTTP tests with synthetic token and profile documents.
