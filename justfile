@@ -70,6 +70,7 @@ lint:
 
 # Run tests that do not require a database.
 test:
+    cargo test --locked --manifest-path examples/event-name-hook/Cargo.toml --lib
     cargo test --manifest-path hook-worker/Cargo.toml --locked
     cargo test --locked
 

@@ -329,7 +329,10 @@ concurrent uploads or validations (503 when busy). Uploads have a 4 MiB limit
 ### Build a hook from Rust
 
 The [event-name example](examples/event-name-hook/src/lib.rs) reads a JSON
-context and returns the event type followed by a newline. Its bindings are
+context and returns the event type followed by a newline. It decodes the selected
+field and borrows the remaining values as raw JSON. On a 65,536-byte event with
+an unrelated numeric array, this reduced Wasmtime fuel use from 14.56 million
+to 6.18 million units. Its bindings are
 generated from this repository's WIT file. To build it with the same toolchain
 used for the migration check:
 
