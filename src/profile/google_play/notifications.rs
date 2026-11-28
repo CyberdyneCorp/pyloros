@@ -33,13 +33,13 @@ fn message(bytes: &[u8], package: &str) -> Result<(String, Option<Change>), Fail
         .decode(envelope.message.data)
         .map_err(|_| Failure::Invalid)?;
     let data: Data = serde_json::from_slice(&data).map_err(|_| Failure::Invalid)?;
-    if id.is_empty() || id.len() > 128 || data.package_name != package {
+    if id.is_empty() || id.chars().nth(128).is_some() || data.package_name != package {
         return Err(Failure::Invalid);
     }
     if data
         .subscription_notification
         .as_ref()
-        .is_some_and(|c| c.purchase_token.is_empty() || c.purchase_token.len() > 512)
+        .is_some_and(|c| c.purchase_token.is_empty() || c.purchase_token.chars().nth(512).is_some())
     {
         return Err(Failure::Invalid);
     }
@@ -238,6 +238,35 @@ async fn revoke(tx: &mut Tx<'_>, user: Uuid, token: &str, hooks: bool) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn counts_notification_identifiers_in_unicode_characters() {
+        for (id_length, token_length, accepted) in [
+            (128, 1, true),
+            (1, 512, true),
+            (128, 512, true),
+            (129, 1, false),
+            (1, 513, false),
+            (0, 1, false),
+            (1, 0, false),
+        ] {
+            let id = "é".repeat(id_length);
+            let token = "🐢".repeat(token_length);
+            let payload = json!({"packageName":"org.example","subscriptionNotification":{
+                "notificationType":2,"purchaseToken":token
+            }});
+            let bytes = serde_json::to_vec(&json!({"message":{
+                "messageId":id,"data":STANDARD.encode(payload.to_string())
+            }}))
+            .unwrap();
+            let result = message(&bytes, "org.example");
+            assert_eq!(result.is_ok(), accepted, "{id_length}, {token_length}");
+            if let Ok((decoded_id, change)) = result {
+                assert_eq!(decoded_id, id);
+                assert_eq!(change.unwrap().purchase_token, token);
+            }
+        }
+    }
 
     #[test]
     fn parses_package_scoped_push_without_a_legacy_product_id() {

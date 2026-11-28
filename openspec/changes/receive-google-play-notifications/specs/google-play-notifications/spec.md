@@ -18,3 +18,7 @@ The service SHALL accept Google-authenticated notifications for its configured A
 #### Scenario: Store unavailable
 - **WHEN** the purchase state cannot be retrieved due to a transient provider failure
 - **THEN** leave the message available for retry and preserve access
+
+#### Scenario: Match a multibyte identifier
+- **WHEN** an authenticated delivery for the configured package has a nonempty message ID of up to 128 Unicode code points and a nonempty purchase token of up to 512 Unicode code points
+- **THEN** accept their lengths and use the exact decoded identifiers for delivery tracking and purchase lookup
