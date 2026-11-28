@@ -76,3 +76,10 @@ The login options endpoint SHALL preserve the caller's quota on allowed CORS pre
 - **GIVEN** the caller has exhausted the current login options allowance
 - **WHEN** the caller submits a 65,537-byte upload followed by a valid small request within that window
 - **THEN** the uploads receive HTTP 413 and HTTP 429 respectively, neither creates a ceremony, and an allowed preflight still succeeds
+
+### Requirement: Report a rejected passkey rename
+The service SHALL return HTTP 500 when PostgreSQL explicitly rejects a passkey rename at commit.
+
+#### Scenario: Retry a rename after rollback
+- **WHEN** PostgreSQL rejects the rename transaction at commit
+- **THEN** account and administrator inventories continue to show the original name, and a later successful rename returns the committed metadata

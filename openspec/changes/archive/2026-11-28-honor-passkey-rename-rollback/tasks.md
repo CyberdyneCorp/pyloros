@@ -1,0 +1,2 @@
+- [x] Apply the HTTP 500 contract to rename commit rejection.
+- [x] Verify rollback, inventory visibility and retry.

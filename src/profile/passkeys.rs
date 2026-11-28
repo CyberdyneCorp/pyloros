@@ -419,18 +419,7 @@ async fn session_operation(
         return revoke::apply(tx, id, rp, key, origin, request_id).await;
     }
     if let Operation::Rename(Ok((key, name))) = operation {
-        let record = match rename::save(&mut tx, id.user, rp, key, name).await {
-            Ok(Some(record)) => record,
-            Ok(None) => return Ok(problem(StatusCode::NOT_FOUND, "Passkey not found")),
-            Err(sqlx::Error::Database(error))
-                if error.code().is_some_and(|code| code.starts_with("22")) =>
-            {
-                return Ok(internal());
-            }
-            Err(error) => return Err(error),
-        };
-        tx.commit().await?;
-        return Ok(Json(record).into_response());
+        return rename::apply(tx, id.user, rp, key, name).await;
     }
     let rows = metadata(&mut tx, id.user, rp).await?;
     Ok(([(header::CACHE_CONTROL, "no-store")], Json(rows)).into_response())
