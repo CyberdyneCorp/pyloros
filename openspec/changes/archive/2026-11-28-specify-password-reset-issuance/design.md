@@ -1,0 +1,1 @@
+Each admitted request for a known address creates a distinct credential and submits its email in the request transaction. Relay refusal aborts the transaction. A later database rejection can discard a credential whose email has already reached the relay. Password hashing and redemption occur in the separate confirmation operation.

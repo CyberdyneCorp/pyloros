@@ -1,0 +1,3 @@
+- [x] Verify concurrent issuance and credential ownership across both password configurations.
+- [x] Compare authenticated and unauthenticated STARTTLS, implicit TLS, mock delivery and refused recipients.
+- [x] Verify that neither writer can redeem an emailed credential discarded by PostgreSQL.
