@@ -34,23 +34,24 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
         .connect_lazy(&env::var("DATABASE_URL")?)?;
     let mut args = env::args_os().skip(1);
     if args.next().as_deref() == Some(std::ffi::OsStr::new("--check-hook-bindings")) {
-        let event = args.next();
-        let selected = match event.as_deref().map(|s| s.to_str()) {
-            None => None,
-            Some(Some(name))
-                if pyloros::profile::HOOK_EVENTS.contains(&name) && args.next().is_none() =>
-            {
-                Some(name)
-            }
-            _ => {
-                return Err(format!(
-                    "expected at most one hook event from {}",
-                    pyloros::profile::HOOK_EVENTS.join(", ")
-                )
-                .into());
-            }
-        };
-        let report = hook_inventory::read(&pool, selected).await?;
+        let mut selected = Vec::new();
+        for arg in args {
+            let name = arg
+                .to_str()
+                .and_then(|name| {
+                    pyloros::profile::HOOK_EVENTS
+                        .iter()
+                        .find(|&&event| event == name)
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "expected hook events from {}",
+                        pyloros::profile::HOOK_EVENTS.join(", ")
+                    )
+                })?;
+            selected.push(*name);
+        }
+        let report = hook_inventory::read(&pool, &selected).await?;
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(if report.active_unbound == 0 {
             ExitCode::SUCCESS

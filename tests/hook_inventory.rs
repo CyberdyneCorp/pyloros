@@ -128,6 +128,21 @@ async fn inventory_tracks_active_hooks_across_binding_migration() -> sqlx::Resul
             json!({"hooks":expected_rows,"active_unbound":usize::from(expected_code==2)})
         );
     }
+    let combined = inventory(
+        &url,
+        &["user_registered", "role_granted", "user_registered"],
+    );
+    assert_eq!(combined.status.code(), Some(2));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&combined.stdout).unwrap(),
+        edited
+    );
+    let unrelated = inventory(&url, &["entitlement_granted", "entitlement_revoked"]);
+    assert_eq!(unrelated.status.code(), Some(0));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&unrelated.stdout).unwrap(),
+        json!({"hooks":[],"active_unbound":0})
+    );
     for invalid in [&["user_register"][..], &["role_granted", "extra"], &[""]] {
         let output = inventory(&url, invalid);
         assert_eq!(output.status.code(), Some(1));

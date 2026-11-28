@@ -1,0 +1,1 @@
+The CLI validates each argument against the existing event catalog. Pass the resulting names as one bound PostgreSQL array. An empty array selects all events. Array membership includes each matching definition once and preserves the existing hook ID order. Use the existing repeatable-read transaction and report format.

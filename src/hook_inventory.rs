@@ -8,7 +8,7 @@ pub struct Report {
     hooks: Vec<Value>,
 }
 
-pub async fn read(pool: &PgPool, event: Option<&str>) -> sqlx::Result<Report> {
+pub async fn read(pool: &PgPool, events: &[&str]) -> sqlx::Result<Report> {
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
@@ -42,10 +42,10 @@ pub async fn read(pool: &PgPool, event: Option<&str>) -> sqlx::Result<Report> {
             'source_sha256', encode(sha256(convert_to(h.code, 'UTF8')), 'hex'),
             'component_sha256', b.sha256, {settings})
          FROM hooks h LEFT JOIN ({selections}) b ON h.id = b.hook_id
-         WHERE $1::text IS NULL OR h.event_type = $1 ORDER BY h.id"
+         WHERE cardinality($1::text[]) = 0 OR h.event_type = ANY($1) ORDER BY h.id"
     );
     let rows: Vec<(bool, Value)> = sqlx::query_as(&query)
-        .bind(event)
+        .bind(events)
         .fetch_all(&mut *tx)
         .await?;
     tx.commit().await?;
