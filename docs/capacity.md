@@ -236,3 +236,14 @@ Two fresh PostgreSQL 17.12 trials on the same M3 Pro host doubled the wave to 32
 All 256 Rust-issued sessions authenticated against the challenge issuer. Each account had one persisted session, one successful MFA audit and the expected authenticator step advance or recovery-code consumption. The trials used loopback networking, RS256 signing and disabled hooks and webhooks. Sustained arrival rates and production tail latency remain unmeasured for this workload.
 
 Rust executable SHA-256 `884d9f24030d10c40d753ab03ca61a9b353b0ee4f5f3dc8b76d0b909e5dc2c80`.
+
+### One minute of scheduled MFA completions
+
+Two trials on the same M3 Pro host scheduled eight MFA verification requests per second for 60 seconds. The driver used 16 HTTP clients and two receiving Rust processes. Each request used a fresh account and a previously issued password-bound challenge. Half used authenticator codes and half used recovery codes. Each trial started with a fresh PostgreSQL 17.12 database. The release executable was the same as in the 32-account burst trial above.
+
+| Trial | Successful / offered | HTTP p50 (ms) | HTTP p95 (ms) | HTTP p99 (ms) | Dispatch lag p99 (ms) |
+|---|---:|---:|---:|---:|---:|
+| 1 | 480 / 480 | 15.32 | 17.45 | 18.22 | 2.38 |
+| 2 | 480 / 480 | 15.48 | 17.81 | 18.70 | 2.42 |
+
+HTTP latency covers request preparation through receipt of the response. Dispatch lag measures how late the driver started relative to the scheduled arrival. All 960 sessions authenticated against the challenge issuer, and PostgreSQL recorded one session, one success audit and the expected factor consumption per account. Both trials finished within their arrival window. Peak concurrent Rust requests was one at this rate, so the saturation point remains open. Password verification, challenge issuance and post-run reconciliation were outside the timed window.
