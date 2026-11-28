@@ -105,3 +105,14 @@ The workload used one process per backend and 16 synthetic accounts. Each phase 
 | 24 (recovery) | 75% | 512 / 512 | 223 / 221 | 0 / 0 |
 
 All 6,144 requests succeeded. Across the four trials, 597 refreshes rotated credentials issued by the other backend and 1,404 introspections verified the expected account across backends. Both handoff directions succeeded in every phase. Each database reconciled to 400 sessions and 800 refresh-token rows. The Rust executable had SHA-256 `9312cc4fcbab135489c4c77b035c6bc200418bd3f6fe0978d8cb7b722d15d922`. These short loopback phases excluded hooks and webhooks. Production canary signoff still requires the deployment workload, ingress and latency objective.
+
+### ReBAC revocation under concurrent reads
+
+Two Rust API processes shared a PostgreSQL 17 primary. A client alternated 12 grants and 12 revocations of a library membership, distributing writes across both processes. After each HTTP 204, the driver issued eight concurrent permission checks to each process for a child collection that inherited access from the library. Eight background readers continuously checked an unrelated collection for the same user.
+
+| Loopback trial | Post-commit checks | Post-commit check p95 | Unrelated checks | Unrelated check p95 |
+|---|---:|---:|---:|---:|
+| 1 | 384 | 57.7 ms | 1,280 | 20.7 ms |
+| 2 | 384 | 54.8 ms | 1,212 | 18.1 ms |
+
+Both replicas allowed every inherited check after a grant and denied every check after a revocation. Every unrelated check returned a denial. Latencies include the HTTP round trip as measured by the driver. Each trial used a fresh database and a single parent edge. The measured phases lasted 1.6–1.8 seconds. Sustained throughput on deployment-sized graphs remains to be measured.
