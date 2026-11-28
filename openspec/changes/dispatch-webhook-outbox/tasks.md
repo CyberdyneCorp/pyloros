@@ -1,3 +1,4 @@
 - [x] Implement leased delivery, signing, bounded transport and retry history.
 - [x] Verify receiver-visible behavior, concurrent replicas and recovery on PostgreSQL.
+- [x] Add a Linux transport test for signed HTTPS delivery, hostname mismatch and retry with process-local CA trust.
 - [ ] Verify production TLS receiver behavior, remaining transport failure details and special-use IPv6 policy before migration signoff.

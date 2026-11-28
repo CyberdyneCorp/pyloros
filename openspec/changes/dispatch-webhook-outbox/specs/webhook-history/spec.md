@@ -14,3 +14,8 @@ When webhook delivery is enabled, the service SHALL deliver queued notifications
 #### Scenario: Enforce destination policy
 - **WHEN** sending a production notification
 - **THEN** use HTTPS with certificate verification, connect only to an approved public address, and decline redirects
+
+#### Scenario: Authenticate an HTTPS receiver
+- **WHEN** the receiver presents a certificate issued by a trusted authority for its configured hostname
+- **THEN** send the signed event and record the receiver's HTTP outcome
+- **AND** reject a certificate for another hostname before transmitting the event
