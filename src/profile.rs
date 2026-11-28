@@ -855,6 +855,11 @@ fn build_routes(
         )
         .route("/api/v1/auth/passkeys", any(passkeys::list))
         .route("/api/v1/auth/passkeys/{passkey_id}", any(passkeys::modify))
+        .route(
+            "/api/v1/auth/passkeys/capabilities",
+            axum::routing::patch(passkeys::modify_capabilities_path)
+                .delete(passkeys::modify_capabilities_path),
+        )
         .route("/api/v1/auth/register", any(registration::handle))
         .route(
             "/api/v1/users/provision",

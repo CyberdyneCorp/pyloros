@@ -1,0 +1,2 @@
+- [x] 1. Exercise method dispatch through the normal routers and compare both services.
+- [x] 2. Implement the method fallback and credential path overlap, then repeat the inventory.

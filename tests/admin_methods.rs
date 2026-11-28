@@ -379,3 +379,71 @@ async fn bodyless_product_methods_respond_before_the_upload_finishes() {
             .unwrap();
     }
 }
+
+#[tokio::test]
+async fn token_and_passkey_method_dispatch_matches_the_public_routes() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pyloros")
+        .unwrap();
+    let app = pyloros::profile::routes(pool.clone(), false)
+        .unwrap()
+        .merge(pyloros::login_methods::routes("dev").unwrap())
+        .merge(
+            pyloros::token_http::routes(None, pool, false)
+                .await
+                .unwrap(),
+        );
+    for (method, path, status, allow, detail) in [
+        (
+            Method::GET,
+            "/api/v1/auth/oauth2/token",
+            StatusCode::METHOD_NOT_ALLOWED,
+            Some("POST"),
+            "Method Not Allowed",
+        ),
+        (
+            Method::POST,
+            "/api/v1/auth/passkeys/capabilities",
+            StatusCode::METHOD_NOT_ALLOWED,
+            Some("GET"),
+            "Method Not Allowed",
+        ),
+        (
+            Method::PATCH,
+            "/api/v1/auth/passkeys/capabilities",
+            StatusCode::UNAUTHORIZED,
+            None,
+            "Not authenticated",
+        ),
+        (
+            Method::DELETE,
+            "/api/v1/auth/passkeys/capabilities",
+            StatusCode::UNAUTHORIZED,
+            None,
+            "Not authenticated",
+        ),
+    ] {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), status);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::ALLOW)
+                .map(|v| v.to_str().unwrap()),
+            allow
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["detail"],
+            detail
+        );
+    }
+}

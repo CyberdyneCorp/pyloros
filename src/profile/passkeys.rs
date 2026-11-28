@@ -115,6 +115,20 @@ pub(super) async fn list(
     run(&state, &headers, peer.ip(), Operation::List).await
 }
 
+pub(super) async fn modify_capabilities_path(
+    state: State<Arc<Profile>>,
+    peer: ConnectInfo<SocketAddr>,
+    req: Request,
+) -> Response {
+    modify(
+        state,
+        peer,
+        axum::extract::Path("capabilities".to_owned()),
+        req,
+    )
+    .await
+}
+
 pub(super) async fn modify(
     State(state): State<Arc<Profile>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,

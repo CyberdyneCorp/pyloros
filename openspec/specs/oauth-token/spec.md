@@ -198,3 +198,10 @@ The interactive authorization page SHALL resolve managed scope descriptions from
 #### Scenario: The registry publishes
 - **WHEN** a registry update publishes a new description on this process
 - **THEN** the next consent page on this process displays the updated description
+
+### Requirement: Token exchange method errors
+The token endpoint SHALL respond to unsupported HTTP methods with status 405 and Allow set to POST.
+
+#### Scenario: Read the token endpoint
+- **WHEN** a caller sends GET to the token endpoint
+- **THEN** return the standard method error document with the detail Method Not Allowed

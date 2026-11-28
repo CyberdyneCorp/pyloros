@@ -78,7 +78,10 @@ pub(crate) async fn routes_with_resources(
         proxies,
     };
     let token = Router::new()
-        .route("/api/v1/auth/oauth2/token", post(exchange))
+        .route(
+            "/api/v1/auth/oauth2/token",
+            post(exchange).fallback(post_only),
+        )
         .with_state(Arc::new(state))
         .merge(device)
         .merge(browser)
