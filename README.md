@@ -543,6 +543,8 @@ When handing administrator entitlement writes back to the legacy service, pause 
 
 By default, a process with hooks enabled consumes queued component deliveries when any producer is enabled. Set `PYLOROS_COMPONENT_WORKER_ENABLED=false` on a publisher to leave execution to another replica. A dedicated worker can set `HOOKS_ENABLED=true` and `PYLOROS_COMPONENT_WORKER_ENABLED=true` to drain queued deliveries with all producers disabled. Keep a compatible Rust worker available until pending component deliveries have finished during rollback.
 
+After PostgreSQL promotion, point `DATABASE_URL` at the new writer and run `just verify-hook-inventory REVIEWED_FILE entitlement_granted entitlement_revoked` before reopening billing writes. Use a report captured for those events. A standby can serve the same report during recovery, so check writer readiness separately. A changed binding affects future deliveries. A replacement worker draining committed deliveries uses the component digest stored with each delivery, including jobs committed on the former primary.
+
 After pausing the outgoing writer and waiting for in-flight transactions to finish, run `just hook-queue entitlement_granted entitlement_revoked` against the PostgreSQL primary. The packaged equivalent is `pyloros --check-hook-queue entitlement_granted entitlement_revoked`. The command returns a JSON pending count. Exit code 2 means deliveries remain, including delayed retries and work still in progress. Exit code 0 means the selected queue was empty at the time of the query. Review execution history for failed or timed-out hooks before resuming writes. Omit the event names to count the entire queue.
 
 ### Deliver PostgreSQL role hooks
