@@ -37,7 +37,7 @@ async fn provider(Json(req): Json<Value>) -> Json<Value> {
 }
 
 #[tokio::test]
-async fn both_role_writes_propagate_a_refusal_after_successful_estimation() {
+async fn role_membership_and_catalog_writes_propagate_submission_refusal() {
     let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = "0x0000000000000000000000000000000000000001".to_owned();
     let chain = Chain {
@@ -60,5 +60,11 @@ async fn both_role_writes_propagate_a_refusal_after_successful_estimation() {
             Err(PrepareError::Rpc(detail)) if detail.contains("submission refused"))
         );
     }
+    assert!(matches!(chain.delete_role_group(TokenId::from(7)).await,
+        Err(PrepareError::Rpc(detail)) if detail.contains("submission refused")));
+    assert!(
+        matches!(chain.create_group_entry("rp:client:editor", None).await,
+        Err(PrepareError::Rpc(detail)) if detail.contains("submission refused"))
+    );
     server.abort();
 }

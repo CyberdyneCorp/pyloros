@@ -14,3 +14,11 @@ A service client authenticated for delegated role discovery SHALL be able to cre
 #### Scenario: Isolate role names
 - **WHEN** two clients use the same role key
 - **THEN** deleting one client's role preserves the other client's assignments and mappings
+
+#### Scenario: Confirm client-role catalog changes on chain
+
+- **WHEN** an operator or delegated client creates a role in the chain-backed catalog
+- **THEN** verify the newly assigned group against the confirmed block before committing the role audit and clearing any previous permission mapping
+- **WHEN** a caller retires the role
+- **THEN** confirm removal of each organization-scoped group before removing the global group and committing the deletion audit
+- **AND** if a later transaction fails, roll back the local mapping and audit changes while retaining earlier confirmed chain effects

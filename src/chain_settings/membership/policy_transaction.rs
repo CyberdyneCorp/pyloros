@@ -559,27 +559,15 @@ impl Chain {
         self.submit_envelope(envelope).await.map(|_| ())
     }
 
-    pub(crate) async fn prepare_role_group_removal(
-        &self,
-        group_id: TokenId,
-    ) -> Result<Vec<u8>, PrepareError> {
+    pub(crate) async fn delete_role_group(&self, group_id: TokenId) -> Result<(), PrepareError> {
         self.require_role_group(group_id).await?;
-        self.prepare_contract(
-            self.group.as_deref(),
-            deleteGroupCall { id: group_id }.abi_encode(),
-        )
-        .await
-    }
-
-    pub(crate) async fn prepare_group_creation(
-        &self,
-        name: &str,
-        description: Option<&str>,
-    ) -> Result<Vec<u8>, PrepareError> {
-        Ok(self
-            .group_creation_envelope(name, description)
-            .await?
-            .signing_payload())
+        let envelope = self
+            .prepare_envelope(
+                self.group.as_deref(),
+                deleteGroupCall { id: group_id }.abi_encode(),
+            )
+            .await?;
+        self.submit_envelope(envelope).await.map(|_| ())
     }
 
     async fn group_creation_envelope(
@@ -593,17 +581,6 @@ impl Chain {
         };
         self.prepare_envelope(self.group.as_deref(), call.abi_encode())
             .await
-    }
-
-    async fn prepare_contract(
-        &self,
-        address: Option<&str>,
-        call: Vec<u8>,
-    ) -> Result<Vec<u8>, PrepareError> {
-        Ok(self
-            .prepare_envelope(address, call)
-            .await?
-            .signing_payload())
     }
 
     async fn prepare_envelope(

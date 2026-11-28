@@ -730,6 +730,12 @@ subject user, resolved client and role key. Scoped assignments also include
 the organization ID. Removing an organization membership queues one revocation
 per withdrawn scoped role. Audit, membership and delivery changes commit together.
 
+### Create and retire chain-backed client roles
+
+Operators and delegated clients can create a catalog role after the group contract confirms its new identifier. Retiring a role removes its organization-scoped groups first and its global group last. PostgreSQL commits the permission mapping change and the audit together.
+
+If retirement stops after a scoped group is removed, its confirmed deletion persists. The global role and its mapping remain available when the global deletion fails. A retry discovers the remaining groups and resumes retirement. If the final database commit fails after a confirmed creation or retirement, the API returns HTTP 500. Inspect both the catalog and the permission mapping before retrying.
+
 ### Confirm chain-backed role assignments
 
 Operator and delegated role grants return HTTP 201 after the group contract confirms membership and PostgreSQL commits the audit. Revocations return HTTP 204. A first grant in an organization can require two transactions, one to create the scoped group and one to add its member. Revoking a role whose scoped group was never created returns HTTP 204 and records the request without a role event.

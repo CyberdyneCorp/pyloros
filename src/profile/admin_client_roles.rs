@@ -254,6 +254,19 @@ fn missing_role(client: &str, key: &str) -> Response {
     )
 }
 
+async fn clear_role_mapping(
+    tx: &mut Transaction<'_, Postgres>,
+    client: &str,
+    key: &str,
+) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM client_role_permissions WHERE client_id=$1 AND role_key=$2")
+        .bind(client)
+        .bind(key)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 async fn lock_role(
     tx: &mut Transaction<'_, Postgres>,
     client: &str,

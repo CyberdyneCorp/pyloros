@@ -47,32 +47,34 @@ fn matches_role(token: &str, name: &str) -> bool {
     crate::token_authorization::assignment(name).is_some_and(|(role, _)| role == token)
 }
 
-async fn prepare_removal(
+async fn remove_chain_groups(
+    tx: &mut Transaction<'_, Postgres>,
     chain: &crate::chain_settings::Chain,
     client: &str,
     key: &str,
-) -> Response {
+) -> sqlx::Result<Option<Response>> {
+    chain.lock_signer(tx).await?;
     let inventory = match chain.snapshot().await {
         Ok(inventory) => inventory,
-        Err(error) => return chain_error(error),
+        Err(error) => return Ok(Some(chain_error(error))),
     };
     let token = format!("{client}:{key}");
-    // The provider removes organization-bound assignments before retiring the global role.
-    let first = inventory
+    let mut groups: Vec<_> = inventory
         .groups
-        .iter()
+        .into_iter()
         .filter(|g| matches_role(&token, &g.name))
-        .min_by_key(|g| !g.name.contains('@'));
-    let Some(group) = first else {
-        return missing_role(client, key);
-    };
-    match chain.prepare_role_group_removal(group.id).await {
-        Ok(_) => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Blockchain role deletion unavailable",
-        ),
-        Err(error) => preparation_error(error),
+        .collect();
+    if groups.is_empty() {
+        return Ok(Some(missing_role(client, key)));
     }
+    clear_role_mapping(tx, client, key).await?;
+    groups.sort_by_key(|g| !g.name.contains('@'));
+    for group in groups {
+        if let Err(error) = chain.delete_role_group(group.id).await {
+            return Ok(Some(preparation_error(error)));
+        }
+    }
+    Ok(None)
 }
 
 async fn delete(
@@ -88,31 +90,29 @@ async fn delete(
     }
     let token = format!("{client}:{key}");
     if let Some(chain) = chain {
-        tx.commit().await?;
-        return Ok(prepare_removal(&chain, client, key).await);
-    }
-    lock_role(&mut tx, client, key).await?;
-    let name = format!("rp:{token}");
-    let candidates: Vec<(Uuid, String)> = sqlx::query_as(
+        if let Some(response) = remove_chain_groups(&mut tx, &chain, client, key).await? {
+            return Ok(response);
+        }
+    } else {
+        lock_role(&mut tx, client, key).await?;
+        let name = format!("rp:{token}");
+        let candidates: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT id,name FROM iam_groups WHERE name=$1 OR starts_with(name,$2) ORDER BY id FOR UPDATE"
     ).bind(&name).bind(format!("{name}@")).fetch_all(&mut *tx).await?;
-    let ids: Vec<_> = candidates
-        .into_iter()
-        .filter(|(_, name)| matches_role(&token, name))
-        .map(|(id, _)| id)
-        .collect();
-    if ids.is_empty() {
-        return Ok(missing_role(client, key));
+        let ids: Vec<_> = candidates
+            .into_iter()
+            .filter(|(_, name)| matches_role(&token, name))
+            .map(|(id, _)| id)
+            .collect();
+        if ids.is_empty() {
+            return Ok(missing_role(client, key));
+        }
+        clear_role_mapping(&mut tx, client, key).await?;
+        sqlx::query("DELETE FROM iam_groups WHERE id=ANY($1)")
+            .bind(ids)
+            .execute(&mut *tx)
+            .await?;
     }
-    sqlx::query("DELETE FROM client_role_permissions WHERE client_id=$1 AND role_key=$2")
-        .bind(client)
-        .bind(key)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM iam_groups WHERE id=ANY($1)")
-        .bind(ids)
-        .execute(&mut *tx)
-        .await?;
     crate::admin_audit::append_sorted_record(
         &mut tx,
         "client_role.delete",

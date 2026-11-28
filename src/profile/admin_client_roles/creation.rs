@@ -107,36 +107,21 @@ async fn insert(
     if !active_client_for_update(&mut tx, client).await? {
         return Ok(admin_permissions::unknown_client(client));
     }
-    if let Some(chain) = chain {
-        tx.commit().await?;
-        let groups = match chain.group_catalog().await {
-            Ok(groups) => groups,
-            Err(error) => return Ok(chain_error(error)),
-        };
-        if let Some(response) = conflict(client, &role.key, groups.into_iter().map(|g| g.0)) {
-            return Ok(response);
-        }
-        let name = format!("rp:{client}:{}", role.key);
-        return Ok(
-            match chain
-                .prepare_group_creation(&name, role.description.as_deref())
-                .await
-            {
-                Ok(_) => problem(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "Blockchain role creation unavailable",
-                ),
-                Err(_) => internal(),
-            },
-        );
-    }
     let prefix = format!("rp:{client}:");
-    let names: Vec<String> = sqlx::query_scalar(
-        "SELECT name FROM iam_groups WHERE starts_with(name,$1) AND strpos(name,'@')=0",
-    )
-    .bind(&prefix)
-    .fetch_all(&mut *tx)
-    .await?;
+    let names: Vec<String> = if let Some(chain) = &chain {
+        chain.lock_signer(&mut tx).await?;
+        match chain.group_catalog().await {
+            Ok(groups) => groups.into_iter().map(|g| g.0).collect(),
+            Err(error) => return Ok(chain_error(error)),
+        }
+    } else {
+        sqlx::query_scalar(
+            "SELECT name FROM iam_groups WHERE starts_with(name,$1) AND strpos(name,'@')=0",
+        )
+        .bind(&prefix)
+        .fetch_all(&mut *tx)
+        .await?
+    };
     if let Some(response) = conflict(client, &role.key, names.into_iter()) {
         return Ok(response);
     }
@@ -144,17 +129,23 @@ async fn insert(
     if global_key(client, &name).is_none() {
         return Ok(internal());
     }
-    sqlx::query("INSERT INTO iam_groups(id,name,description) VALUES($1,$2,$3)")
-        .bind(Uuid::new_v4())
-        .bind(name)
-        .bind(&role.description)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM client_role_permissions WHERE client_id=$1 AND role_key=$2")
-        .bind(client)
-        .bind(&role.key)
-        .execute(&mut *tx)
-        .await?;
+    clear_role_mapping(&mut tx, client, &role.key).await?;
+    if let Some(chain) = chain {
+        if chain
+            .create_group_entry(&name, role.description.as_deref())
+            .await
+            .is_err()
+        {
+            return Ok(internal());
+        }
+    } else {
+        sqlx::query("INSERT INTO iam_groups(id,name,description) VALUES($1,$2,$3)")
+            .bind(Uuid::new_v4())
+            .bind(name)
+            .bind(&role.description)
+            .execute(&mut *tx)
+            .await?;
+    }
     crate::admin_audit::append_sorted_record(
         &mut tx,
         "client_role.create",
