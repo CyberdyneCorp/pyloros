@@ -1,0 +1,1 @@
+Read the selected JSON token without converting integer literals to floating point. Use arbitrary-precision arithmetic for integers and binary64 arithmetic for floating values. Compare the built component through the isolated worker with recorded source outcomes before binding it.

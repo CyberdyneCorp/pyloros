@@ -1,0 +1,2 @@
+- [x] Build the guest and provide a just recipe.
+- [x] Verify numeric output and diagnostics against recorded source runs.

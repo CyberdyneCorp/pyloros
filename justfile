@@ -72,6 +72,10 @@ check-hook-fixture component event expected:
 build-silent-hook:
     cargo component build --release --locked --example silent_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
 
+# Build the numeric counter guest.
+build-counter-hook:
+    cargo component build --release --locked --example counter_hook --target wasm32-unknown-unknown --target-dir target/hook-examples --manifest-path examples/event-name-hook/Cargo.toml
+
 # Build the release backend and matching worker side by side.
 build-release:
     cargo build --locked --release --bin pyloros
@@ -98,7 +102,7 @@ lint:
 
 # Run tests that do not require a database.
 test:
-    cargo test --locked --manifest-path examples/event-name-hook/Cargo.toml --lib
+    cargo test --locked --manifest-path examples/event-name-hook/Cargo.toml --lib --example counter_hook
     cargo test --manifest-path hook-worker/Cargo.toml --locked
     cargo test --locked
 

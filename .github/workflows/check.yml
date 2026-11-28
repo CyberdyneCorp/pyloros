@@ -97,4 +97,4 @@ jobs:
       - run: cargo fmt --manifest-path hook-worker/Cargo.toml -- --check
       - run: cargo clippy --manifest-path hook-worker/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo test --manifest-path hook-worker/Cargo.toml --locked
-      - run: cargo test --locked --manifest-path examples/event-name-hook/Cargo.toml --lib
+      - run: cargo test --locked --manifest-path examples/event-name-hook/Cargo.toml --lib --example counter_hook

@@ -19,3 +19,11 @@ strip = true
 name = "silent_hook"
 path = "examples/silent_hook.rs"
 crate-type = ["cdylib"]
+
+[dev-dependencies]
+ryu = "1"
+
+[[example]]
+name = "counter_hook"
+path = "examples/counter_hook.rs"
+crate-type = ["cdylib"]
