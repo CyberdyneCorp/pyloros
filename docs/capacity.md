@@ -39,3 +39,15 @@ Revision `7e07b24` ran the same mix for 60 seconds per configuration using 16 cl
 | 2 | 9,596 | 177 | 1 | 0.061 | 159.84 |
 
 Each row represents one local trial. The load generator and PostgreSQL shared the API host. The results cover this endpoint mix and password-hashing configuration. Production sizing still requires the deployed traffic mix and latency budget. [Per-operation measurements](capacity-minute.csv)
+
+## Two-process baseline at 32 to 64 requests/s
+
+Two repetitions at revision `1d42455` measured the login, refresh and introspection mix described above. Each repetition used a fresh PostgreSQL database, two API processes and 16 clients. Each phase offered 512 requests and allowed outstanding work to finish before the next phase. The arrival windows were 16, 10.7 and 8 seconds respectively.
+
+| Offered requests/s | End-to-end p99 across repetitions (ms) | Completed within arrival window per repetition | Peak queued | Drain (ms) |
+|---:|---:|---:|---:|---:|
+| 32 | 82.09–82.56 | 512/512 | 1 | 0 |
+| 48 | 77.91–78.09 | 512/512 | 1 | 0 |
+| 64 | 81.80–82.03 | 511/512 | 1 | 17.01–17.38 |
+
+All 3,072 measured requests succeeded. Including warmup, each database contained 400 sessions and 800 refresh-token rows. These short phases establish a repeatable local latency baseline for this workload. The tested Rust executable had SHA-256 `6c97706df5af72943a2dc1f2b143fb64d81ea128aec51472d0ccfaa8be88dd15`.
