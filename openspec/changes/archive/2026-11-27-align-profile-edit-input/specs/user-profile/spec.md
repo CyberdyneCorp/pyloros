@@ -18,3 +18,8 @@ The service SHALL process profile update requests in UTF-8, UTF-16 and UTF-32. I
 
 - **WHEN** two requests both read the old phone before either writes the same new phone
 - **THEN** each committed edit records a rectification event. A later sequential request setting the stored value adds no event.
+
+#### Scenario: Plain-text request produces an unhandled error
+
+- **WHEN** an authenticated profile edit receives a plain-text body
+- **THEN** return HTTP 500 with the unhandled-error headers specified by the shared HTTP response policy.

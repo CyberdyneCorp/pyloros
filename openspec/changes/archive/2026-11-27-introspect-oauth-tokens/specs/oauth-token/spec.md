@@ -23,3 +23,8 @@ Pyloros SHALL accept a token at POST /api/v1/auth/introspect and authenticate th
 
 - **WHEN** the caller supplies no acceptable service credential
 - **THEN** reject the request without disclosing the submitted token's state.
+
+#### Scenario: IAM authority changes during a session
+
+- **WHEN** the service introspects a user token after the running process changes IAM authority
+- **THEN** resolve the current role projection using the selected authority, including after a switch back to PostgreSQL.

@@ -1,3 +1,3 @@
 - [x] Share request decoding and preserve original field values on validation failures.
 - [x] Compare recipient and polling requests, quotas, and mixed-backend decisions.
-- [ ] Resolve the shared response policy for non-JSON requests that produce an internal error.
+- [x] Resolve the shared response policy for non-JSON requests that produce an internal error.

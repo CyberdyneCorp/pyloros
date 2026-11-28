@@ -60,3 +60,27 @@ A caller SHALL be able to verify an account email by presenting an unused, unexp
 #### Scenario: Concurrent use
 - **WHEN** multiple callers present the same credential concurrently
 - **THEN** at most one verification succeeds.
+
+### Requirement: Profile edit input compatibility
+
+The service SHALL process profile update requests in UTF-8, UTF-16 and UTF-32. Invalid encodings and malformed JSON SHALL return request errors before account access checks.
+
+#### Scenario: Invalid field type
+
+- **WHEN** an authenticated user submits a non-string, non-null phone
+- **THEN** return a validation error identifying the field and its submitted value.
+
+#### Scenario: Unrelated profile fields
+
+- **WHEN** an authenticated user submits a valid object containing only unrelated fields
+- **THEN** return the current profile with the stored phone and verification state intact.
+
+#### Scenario: Overlapping edits
+
+- **WHEN** two requests both read the old phone before either writes the same new phone
+- **THEN** each committed edit records a rectification event. A later sequential request setting the stored value adds no event.
+
+#### Scenario: Plain-text request produces an unhandled error
+
+- **WHEN** an authenticated profile edit receives a plain-text body
+- **THEN** return HTTP 500 with the unhandled-error headers specified by the shared HTTP response policy.
