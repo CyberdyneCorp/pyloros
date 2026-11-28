@@ -1,0 +1,1 @@
+Use one ordered PostgreSQL cursor in the existing read-only transaction. Encode one record at a time into a temporary file. Copy the completed array to standard output after the read and connection cleanup succeed. The temporary file grows with the report and is released when the command exits.

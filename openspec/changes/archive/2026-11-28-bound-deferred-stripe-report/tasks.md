@@ -1,0 +1,2 @@
+- [x] Bound database fetches and JSON serialization while preserving the report format and exit statuses.
+- [x] Compare empty and large reports and verify output on a late database failure.
