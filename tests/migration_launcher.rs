@@ -15,7 +15,7 @@ fn migration_launcher_resolves_packaged_assets_and_preserves_overrides() {
     .unwrap();
     let binary = package.join("pyloros");
     fs::write(&binary, r#"#!/bin/sh
-printf '%s\n' "$PYLOROS_SIGNED_OUT_HTML_PATH" "$PYLOROS_CONSENT_UI_PATH" "$PYLOROS_DEVICE_UI_PATH" "$PYLOROS_ERASURE_REPORT_PATH" "$PYLOROS_OPENAPI_PATH" "$PYLOROS_OPENAPI_CSP" "$@"
+printf '%s\n' "$PYLOROS_SIGNED_OUT_HTML_PATH" "$PYLOROS_CONSENT_UI_PATH" "$PYLOROS_DEVICE_UI_PATH" "$PYLOROS_ERASURE_REPORT_PATH" "$PYLOROS_OPENAPI_PATH" "$PYLOROS_OPENAPI_CSP" "${PYLOROS_REGISTRATION_TIME_ZONE-unset}" "$@"
 "#).unwrap();
     fs::set_permissions(binary, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(
@@ -41,6 +41,7 @@ printf '%s\n' "$PYLOROS_SIGNED_OUT_HTML_PATH" "$PYLOROS_CONSENT_UI_PATH" "$PYLOR
     .into();
     expected.extend([
         "default-src 'none'".to_owned(),
+        "unset".to_owned(),
         "argument with spaces".to_owned(),
     ]);
     assert_eq!(
@@ -51,10 +52,22 @@ printf '%s\n' "$PYLOROS_SIGNED_OUT_HTML_PATH" "$PYLOROS_CONSENT_UI_PATH" "$PYLOR
         expected
     );
 
+    fs::write(package.join("registration-time-zone"), "\n").unwrap();
+    assert!(!cmd.output().unwrap().status.success());
+    fs::write(package.join("registration-time-zone"), "America/Barbados\n").unwrap();
+    let calendar = cmd.output().unwrap();
+    assert!(calendar.status.success());
+    assert_eq!(
+        String::from_utf8(calendar.stdout).unwrap().lines().nth(6),
+        Some("America/Barbados")
+    );
+
     fs::remove_file(package.join("migration-openapi.csp")).unwrap();
     assert!(!cmd.output().unwrap().status.success());
     cmd.env("PYLOROS_SIGNED_OUT_HTML_PATH", "/alternate/page.html")
-        .env("PYLOROS_OPENAPI_CSP", "custom policy");
+        .env("PYLOROS_OPENAPI_CSP", "custom policy")
+        .env("PYLOROS_REGISTRATION_TIME_ZONE", "Asia/Kathmandu");
+    expected[6] = "Asia/Kathmandu".into();
     expected[0] = "/alternate/page.html".into();
     expected[5] = "custom policy".into();
     let overridden = cmd.output().unwrap();

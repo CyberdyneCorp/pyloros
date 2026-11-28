@@ -27,3 +27,14 @@ Pyloros SHALL provide authenticated administrators with GET operations for overv
 #### Scenario: Registrations span local midnight
 - **WHEN** a deployment sets PYLOROS_REGISTRATION_TIME_ZONE to its reporting calendar
 - **THEN** registrations are assigned to dates in that time zone while the lookback covers elapsed 24-hour periods
+
+### Requirement: Use the deployment registration calendar
+The migration launcher SHALL accept an optional registration-time-zone file containing the reference PostgreSQL session’s time zone.
+
+#### Scenario: Read a captured calendar
+- **WHEN** a package includes the time zone and no explicit report setting is supplied
+- **THEN** set PYLOROS_REGISTRATION_TIME_ZONE to the file value
+
+#### Scenario: Override a packaged calendar
+- **WHEN** the operator sets PYLOROS_REGISTRATION_TIME_ZONE
+- **THEN** use the supplied setting in preference to the package value

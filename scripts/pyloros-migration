@@ -12,4 +12,9 @@ if [ -z "${PYLOROS_OPENAPI_CSP:-}" ]; then
 fi
 export PYLOROS_SIGNED_OUT_HTML_PATH PYLOROS_CONSENT_UI_PATH PYLOROS_DEVICE_UI_PATH
 export PYLOROS_ERASURE_REPORT_PATH PYLOROS_OPENAPI_PATH PYLOROS_OPENAPI_CSP
+if [ -z "${PYLOROS_REGISTRATION_TIME_ZONE:-}" ] && [ -f "$package_dir/registration-time-zone" ]; then
+    PYLOROS_REGISTRATION_TIME_ZONE=$(cat "$package_dir/registration-time-zone")
+    : "${PYLOROS_REGISTRATION_TIME_ZONE:?registration-time-zone is empty}"
+    export PYLOROS_REGISTRATION_TIME_ZONE
+fi
 exec "$package_dir/pyloros" "$@"

@@ -1,0 +1,2 @@
+- [x] 1. Verify the launcher with and without a packaged zone and with an environment override.
+- [x] 2. Compare registration date buckets across backend and issuer combinations on PostgreSQL.
