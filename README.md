@@ -117,6 +117,20 @@ just check-stripe-route "$WEBHOOK_URL" --upstream-header X-Upstream --expect bil
 
 Each unsigned POST sends an empty JSON object. A sample passes when the upstream belongs to the expected pool and the handler returns HTTP 400 for an invalid signature. The report includes a request ID for correlation with ingress logs. This checks the sampled requests. Verify deployed hook bindings separately with the reviewed inventory.
 
+An account can have multiple Stripe customer IDs. Hosted checkout can select any ID mapped to that account, and PostgreSQL can return a different one after reorganizing the table. For cancellation or refund reconciliation, use the external reference on the entitlement. When purchases under two customer IDs grant the same product and plan, the grant retains the latest purchase reference. Purchases for distinct plans with separate subscription references can be cancelled independently.
+
+This query counts accounts with multiple Stripe customer IDs in the migration database.
+
+```sql
+SELECT count(*) AS accounts_with_multiple_stripe_customers
+FROM (
+    SELECT user_id
+    FROM stripe_customers
+    GROUP BY user_id
+    HAVING count(*) > 1
+) AS accounts;
+```
+
 A subscription update can arrive before checkout maps the customer. Redelivery after checkout applies the new plan and its expiry. An `invoice.created` event is informational and returns `handled: false`. A refund for a separate one-time payment revokes only the grants tied to that payment reference.
 
 Account erasure removes the Stripe customer mapping and the account’s grants. Processed event IDs survive, so replaying the old checkout cannot restore access. If someone registers again with the same email, subscription updates for the former customer remain deferred as `unmapped customer`. A fresh signed checkout identifying the new account UUID can establish the mapping. Redelivering the deferred update then applies the subscription plan to that account.

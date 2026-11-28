@@ -1,0 +1,2 @@
+- [x] Compare checkout forms with zero, one and multiple owned customer mappings.
+- [x] Verify entitlement and cancellation behavior across repeated purchases and distinct plans.

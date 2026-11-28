@@ -1,0 +1,1 @@
+A checkout selects a customer mapping by account UUID. The database lookup has no ordering clause. Document the ownership guarantee without making a particular customer ID sticky. Compare outgoing provider requests on multiple replicas before and after a physical table reorder. Check cancellation separately using the external reference stored on the grant.
