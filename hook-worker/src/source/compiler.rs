@@ -63,6 +63,13 @@ impl<'a> Namespace<'a> {
         }
     }
 
+    fn contains(&self, range: TextRange) -> bool {
+        self.body.contains_range(range)
+            && !self
+                .outer_iter
+                .is_some_and(|iter| iter.contains_range(range))
+    }
+
     fn for_node(node: Node<'a>) -> Option<Self> {
         Some(match node {
             Node::StmtFunctionDef(f) => Self::new(body_range(&f.body)?, Some(&f.parameters)),
@@ -79,13 +86,11 @@ impl<'a> Namespace<'a> {
 
 impl<'a> Context<'a> {
     fn names(&mut self, node: Node<'_>) -> &mut HashSet<&'a str> {
-        let namespace = self.namespaces.iter_mut().rev().find(|n| {
-            n.body.contains_range(node.range())
-                && match n.outer_iter {
-                    None => true,
-                    Some(iter) => !iter.contains_range(node.range()),
-                }
-        });
+        let namespace = self
+            .namespaces
+            .iter_mut()
+            .rev()
+            .find(|n| n.contains(node.range()));
         namespace.map_or(&mut self.module_names, |n| &mut n.names)
     }
 
@@ -128,8 +133,15 @@ impl<'a> SourceOrderVisitor<'a> for Context<'a> {
     fn enter_node(&mut self, node: Node<'a>) -> TraversalSignal {
         self.invalid |= self.conflicting_declaration(node);
         self.invalid |= match node {
-            Node::StmtReturn(_) | Node::ExprYield(_) | Node::ExprYieldFrom(_) => {
+            Node::StmtReturn(_) => !self.allows(node, Scope::Function),
+            Node::ExprYield(_) | Node::ExprYieldFrom(_) => {
+                let namespace = self
+                    .namespaces
+                    .iter()
+                    .rev()
+                    .find(|n| n.contains(node.range()));
                 !self.allows(node, Scope::Function)
+                    || namespace.is_some_and(|n| n.outer_iter.is_some())
             }
             Node::StmtBreak(_) | Node::StmtContinue(_) => !self.allows(node, Scope::Loop),
             Node::Arguments(a) => {
@@ -182,6 +194,34 @@ pub(super) fn fails(body: &[Stmt]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::super::inspect;
+
+    #[test]
+    fn yield_uses_the_innermost_evaluation_namespace() {
+        for (expression, expected) in [
+            ("[(yield item) for item in items]", "compiler_error"),
+            ("{(yield item) for item in items}", "compiler_error"),
+            ("{item: (yield item) for item in items}", "compiler_error"),
+            ("((yield item) for item in items)", "compiler_error"),
+            (
+                "[x for group in groups for x in (yield group)]",
+                "compiler_error",
+            ),
+            ("[x for x in items if (yield from x)]", "compiler_error"),
+            ("[x for x in (yield items)]", "parsed"),
+            ("[(lambda: (yield x)) for x in items]", "parsed"),
+            (
+                "[[x for x in (yield items)] for items in groups]",
+                "compiler_error",
+            ),
+        ] {
+            let source = format!("def collect():\n    return {expression}");
+            assert_eq!(
+                inspect(source.as_bytes()).unwrap()["status"],
+                expected,
+                "{source}"
+            );
+        }
+    }
 
     #[test]
     fn global_conflicts_use_the_current_namespace() {

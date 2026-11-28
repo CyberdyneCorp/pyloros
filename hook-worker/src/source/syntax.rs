@@ -1,11 +1,30 @@
 //! Adapt parser diagnostics to the legacy authoring interface.
 use ruff_python_ast::{
-    Expr,
+    Expr, Stmt,
+    helpers::any_over_body,
     token::{TokenKind, Tokens},
 };
 use ruff_python_parser::{LexicalErrorType, ParseError, ParseErrorType, parse_expression};
 use ruff_source_file::LineIndex;
 use ruff_text_size::Ranged;
+
+// Generator delimiters do not count as parentheses around a yield expression.
+pub(super) fn bare_generator_yield(body: &[Stmt], tokens: &Tokens) -> bool {
+    any_over_body(body, |expr| {
+        let Expr::Generator(generator) = expr else {
+            return false;
+        };
+        if !matches!(&*generator.elt, Expr::Yield(_) | Expr::YieldFrom(_)) {
+            return false;
+        }
+        tokens
+            .in_range(generator.range)
+            .iter()
+            .filter(|t| !t.kind().is_trivia())
+            .nth(usize::from(generator.parenthesized))
+            .is_some_and(|t| t.kind() == TokenKind::Yield)
+    })
+}
 
 fn missing_suite(source: &str, tokens: &Tokens, error: &ParseError) -> Option<String> {
     let ParseErrorType::OtherError(message) = &error.error else {

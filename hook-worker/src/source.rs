@@ -61,6 +61,11 @@ fn rejection(source: &str, parsed: &Parsed<ModModule>) -> Option<String> {
     if let Some(error) = parsed.errors().first() {
         return Some(syntax::diagnostic(source, parsed.tokens(), error));
     }
+    if source.contains("yield")
+        && syntax::bare_generator_yield(&parsed.syntax().body, parsed.tokens())
+    {
+        return Some("syntax error: invalid syntax".into());
+    }
     let mut scan = Prescan::default();
     for stmt in &parsed.syntax().body {
         scan.visit_stmt(stmt);
@@ -98,6 +103,17 @@ fn diagnostic(source: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generator_delimiters_do_not_parenthesize_a_yield() {
+        for expression in ["(yield x for x in xs)", "(yield from x for x in xs)"] {
+            let source = format!("def collect():\n    return {expression}");
+            assert_eq!(
+                diagnostic(&source).as_deref(),
+                Some("syntax error: invalid syntax")
+            );
+        }
+    }
 
     #[test]
     fn checks_the_entire_large_module() {
