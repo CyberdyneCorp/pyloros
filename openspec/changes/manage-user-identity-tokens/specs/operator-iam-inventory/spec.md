@@ -93,3 +93,9 @@ Authorized operators SHALL be able to retry issuance for a user's wallet and upd
 - **THEN** report a successful mint with its transaction hash and a null token ID
 - **WHEN** the provider rejects minting or the first log contains an invalid integer
 - **THEN** return the failed provider result and persist the mint error with its operator audit
+
+#### Scenario: Stored wallet name cannot be encoded for minting
+
+- **WHEN** an operator retries a remote mint with a stored wallet name
+- **THEN** return HTTP 200 with the provider's failed mint result and record its diagnostic in the user metadata and audit
+- **AND** reject malformed name syntax before reading the pending nonce, and report encoding failures for accepted names after the nonce lookup and before submission

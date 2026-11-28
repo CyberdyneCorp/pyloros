@@ -33,21 +33,19 @@ impl Chain {
             let (hash, receipt) = self.submit_identity_token(envelope).await?;
             return Ok((hash, super::creation::mint_id(&receipt, contract)?));
         }
-        let digits = owner
-            .strip_prefix("0x")
-            .or_else(|| owner.strip_prefix("0X"));
-        if let Some(hex) = digits
-            && hex.bytes().all(|b| b.is_ascii_hexdigit())
-            && hex.len() != 40
-        {
-            return Err(incompatible_first(
+        let issue = owner_diagnostic(owner).ok_or_else(|| {
+            let provided = if validate_address(public_key).is_ok() {
+                "str,address,str,str"
+            } else {
+                "str,str,str,str"
+            };
+            incompatible_first(
                 "mint",
                 &["address", "string", "string", "string"],
-                "str,str,str,str",
+                provided,
                 &[owner, public_key, "", ""],
-            ));
-        }
-        let issue = owner_diagnostic(owner, digits).ok_or(PrepareError::Invalid)?;
+            )
+        })?;
         let address = self.identity.as_deref().ok_or(PrepareError::Unavailable)?;
         validate_address(address).map_err(|_| PrepareError::Unavailable)?;
         let signer = self.signer.as_deref().ok_or(PrepareError::Invalid)?;
@@ -57,22 +55,57 @@ impl Chain {
     }
 }
 
-fn owner_diagnostic(owner: &str, digits: Option<&str>) -> Option<String> {
-    if digits.is_some_and(|s| s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit())) {
-        let message = if owner.bytes().any(|b| b.is_ascii_uppercase()) {
-            "Address has an invalid EIP-55 checksum. After looking up the address from the original source, try again."
-        } else {
-            "web3.py only accepts checksum addresses. The software that gave you this non-checksum address should be considered unsafe, please file it as a bug on their platform. Try using an ENS name instead. Or, if you must accept lower safety, use Web3.to_checksum_address(lower_case_address)."
-        };
-        return Some(format!("('{message}', '{owner}')"));
+fn owner_diagnostic(owner: &str) -> Option<String> {
+    let digits = owner
+        .strip_prefix("0x")
+        .or_else(|| owner.strip_prefix("0X"));
+    let hex = digits.unwrap_or(owner);
+    if hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if hex.len() == 40 {
+            return Some(checksum_diagnostic(owner));
+        }
+        if digits.is_some() {
+            return None;
+        }
     }
-    if !owner.is_empty()
-        && owner.bytes().all(|b| b.is_ascii_alphanumeric())
-        && !(owner.len() == 40 && owner.bytes().all(|b| b.is_ascii_hexdigit()))
-    {
-        return Some(format!("ENS name: '{owner}' is invalid."));
+    if !owner.split('.').all(valid_wallet_label) {
+        return None;
     }
-    None
+    if owner.contains('.') {
+        let literal = crate::browser_prompt::quoted_string(owner);
+        return Some(format!(
+            "when sending a str, it must be a hex string. Got: {literal}"
+        ));
+    }
+    Some(format!("ENS name: '{owner}' is invalid."))
+}
+
+fn valid_wallet_label(label: &str) -> bool {
+    use ens_normalize_rs::{DisallowedSequence, EnsNameNormalizer, ProcessError};
+
+    static NORMALIZER: LazyLock<EnsNameNormalizer> = LazyLock::new(EnsNameNormalizer::default);
+    // The provider strips emoji presentation selectors, but accepts nonempty labels
+    // made entirely of other ignored code points.
+    let label = label.replace('\u{fe0f}', "");
+    if label.trim().is_empty() {
+        return false;
+    }
+    matches!(
+        NORMALIZER.process(label),
+        Ok(_)
+            | Err(ProcessError::DisallowedSequence(
+                DisallowedSequence::EmptyLabel
+            ))
+    )
+}
+
+fn checksum_diagnostic(owner: &str) -> String {
+    let message = if owner.bytes().any(|b| b.is_ascii_uppercase()) {
+        "Address has an invalid EIP-55 checksum. After looking up the address from the original source, try again."
+    } else {
+        "web3.py only accepts checksum addresses. The software that gave you this non-checksum address should be considered unsafe, please file it as a bug on their platform. Try using an ENS name instead. Or, if you must accept lower safety, use Web3.to_checksum_address(lower_case_address)."
+    };
+    format!("('{message}', '{owner}')")
 }
 
 #[cfg(test)]
@@ -83,6 +116,16 @@ mod tests {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
+
+    #[test]
+    fn wallet_labels_follow_the_provider_unicode_tables() {
+        for label in ["病院", "bücher", "🦊", "\u{200b}", "a\u{fe0f}"] {
+            assert!(valid_wallet_label(label), "{label:?}");
+        }
+        for label in ["", "a b", "раураl", "\u{fe0f}", "\u{1faea}"] {
+            assert!(!valid_wallet_label(label), "{label:?}");
+        }
+    }
 
     #[tokio::test]
     async fn malformed_hex_fails_before_nonce_lookup_and_checksum_failure_follows_it() {
@@ -119,6 +162,26 @@ mod tests {
             matches!(chain.mint_retry(&format!("0x{}","ab".repeat(20)),"key").await,Err(PrepareError::Argument(s)) if s.contains("only accepts checksum addresses"))
         );
         assert_eq!(calls.load(Ordering::Relaxed), 1);
+        for owner in ["bad..eth", "a b.eth", ".eth"] {
+            assert!(matches!(chain.mint_retry(owner, "key").await,
+                Err(PrepareError::Argument(s)) if s.contains("Argument 1 value") && s.contains(owner)));
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        for (owner, detail) in [
+            (
+                "bücher.eth",
+                "when sending a str, it must be a hex string. Got: 'bücher.eth'",
+            ),
+            (
+                "a'b.eth",
+                r#"when sending a str, it must be a hex string. Got: "a'b.eth""#,
+            ),
+            ("a-b", "ENS name: 'a-b' is invalid."),
+        ] {
+            assert!(matches!(chain.mint_retry(owner, "key").await,
+                Err(PrepareError::Argument(s)) if s == detail));
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), 4);
         server.abort();
     }
 }
