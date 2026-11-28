@@ -21,6 +21,7 @@ def main():
     args = parser.parse_args()
     cases = [
         ("event_name_hook", '{"event_type":"Δ"}', "success", "Δ\n"),
+        ("event_name_hook", json.dumps({"event_type": "雪" * 10_001}, ensure_ascii=False), "success", "雪" * 10_000),
         ("event_name_hook", "{}", "error", "ValueError: Expected an event_type string"),
         ("examples/silent_hook", "{}", "success", ""),
         ("examples/counter_hook", '{"n":41}', "success", "42\n"),
