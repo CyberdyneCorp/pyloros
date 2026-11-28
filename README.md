@@ -394,7 +394,9 @@ and the same SHA-256 digest. Administrators can download the exact component fro
 
 Run `just check-hook-fixture component.wasm event.json expected.json` before
 uploading a reviewed component. Supply the exact event JSON bytes and the
-expected worker result. For example, a silent hook returns
+expected worker result. The component receives the original number tokens,
+including integers and exponents outside the host floating-point range.
+For example, a silent hook returns
 `{"status":"success","output":""}`. A guest-declared error uses status
 `error` and its exact output string. Whitespace inside output strings matters.
 

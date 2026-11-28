@@ -28,6 +28,7 @@ mod hook_egress;
 pub mod iam_evaluation;
 pub mod id_tokens;
 mod json_representation;
+mod json_syntax;
 pub mod key_encryption;
 pub mod login_http;
 pub mod login_methods;

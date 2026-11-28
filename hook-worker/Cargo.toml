@@ -9,7 +9,7 @@ ruff_python_ast = "=0.0.10"
 ruff_python_parser = "=0.0.10"
 ruff_source_file = "=0.0.10"
 ruff_text_size = "=0.0.10"
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 wasmtime = { version = "48.0.9", default-features = false, features = ["std", "runtime", "component-model", "cranelift", "anyhow"] }
 
 [dev-dependencies]

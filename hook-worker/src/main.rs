@@ -1,3 +1,5 @@
+#[path = "../../src/json_syntax.rs"]
+mod json_syntax;
 mod source;
 use serde_json::{Value, json};
 use std::io::{self, Read};
@@ -62,7 +64,7 @@ fn handle(mut input: impl Read) -> Option<Value> {
         .take(MAX_EVENT as u64 + 1)
         .read_to_string(&mut event)
         .ok()?;
-    if event.len() > MAX_EVENT || serde_json::from_str::<Value>(&event).is_err() {
+    if event.len() > MAX_EVENT || !json_syntax::valid_hook_event(event.as_bytes()) {
         return None;
     }
     Some(
@@ -125,6 +127,21 @@ mod tests {
         assert_eq!(
             execute(&err, event).unwrap(),
             json!({"status":"error","output":event})
+        );
+    }
+
+    #[test]
+    fn framed_events_reach_the_guest_with_original_number_tokens() {
+        let echo = "i32.const 4 local.get 0 i32.store i32.const 8 local.get 1 i32.store";
+        let module = FIXTURE.replace("i32.const 0))", &format!("{echo} i32.const 0))"));
+        let wasm = wat::parse_str(module).unwrap();
+        let mut frame = (wasm.len() as u32).to_be_bytes().to_vec();
+        frame.extend_from_slice(&wasm);
+        let event = r#"{ "n":-12.345E+999, "n":3e-999, "label":"1e999" }"#;
+        frame.extend_from_slice(event.as_bytes());
+        assert_eq!(
+            handle(frame.as_slice()).unwrap(),
+            json!({"status":"success","output":event})
         );
     }
 

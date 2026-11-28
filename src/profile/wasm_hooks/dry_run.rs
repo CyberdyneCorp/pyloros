@@ -95,12 +95,12 @@ async fn read_event(req: Request) -> Result<Bytes, Box<Response>> {
         }
         Ok(Ok(bytes)) => bytes,
     };
-    serde_json::from_slice::<Value>(&bytes).map_err(|_| {
-        Box::new(crate::login_http::problem(
+    if !crate::json_syntax::valid_hook_event(&bytes) {
+        return Err(Box::new(crate::login_http::problem(
             StatusCode::UNPROCESSABLE_ENTITY,
             "Expected a JSON event",
-        ))
-    })?;
+        )));
+    }
     Ok(bytes)
 }
 

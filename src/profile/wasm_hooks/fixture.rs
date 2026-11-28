@@ -1,6 +1,5 @@
 use super::{MAX_BYTES, dry_run, inspect};
 use serde::Deserialize;
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     fs::File,
@@ -43,7 +42,9 @@ pub async fn check_hook_fixture(
     let component = read_file(component, MAX_BYTES)?;
     inspect(&component).map_err(|_| io::Error::other("Invalid hook component"))?;
     let event = read_file(event, dry_run::MAX_EVENT)?;
-    serde_json::from_slice::<Value>(&event).map_err(|_| io::Error::other("Invalid JSON event"))?;
+    if !crate::json_syntax::valid_hook_event(&event) {
+        return Err(io::Error::other("Invalid JSON event"));
+    }
     let expected: Outcome = serde_json::from_slice(&read_file(expected, 1 << 20)?)
         .map_err(|_| io::Error::other("Expected a guest status and output string"))?;
     let result = tokio::time::timeout(Duration::from_secs(5), dry_run::invoke(&component, &event))

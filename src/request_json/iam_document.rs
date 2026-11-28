@@ -45,32 +45,7 @@ pub(crate) fn document(
         })
 }
 
-// Return complete non-string tokens without interpreting quoted escapes as delimiters.
-pub(crate) fn unquoted_tokens(text: &str) -> impl Iterator<Item = (usize, &str)> {
-    const SEPARATORS: &[char] = &['{', '}', ',', '[', ']', ':', ' ', '\n', '\r', '\t'];
-    let mut rest = text;
-    std::iter::from_fn(move || {
-        loop {
-            rest = rest.trim_start_matches(SEPARATORS);
-            if rest.is_empty() {
-                return None;
-            }
-            if rest.starts_with('"') {
-                let mut string = serde_json::Deserializer::from_str(rest).into_iter::<&RawValue>();
-                string.next()?.ok()?;
-                rest = &rest[string.byte_offset()..];
-                continue;
-            }
-            let end = rest
-                .find(|c| c == '"' || SEPARATORS.contains(&c))
-                .unwrap_or(rest.len());
-            let start = text.len() - rest.len();
-            let (token, next) = rest.split_at(end);
-            rest = next;
-            return Some((start, token));
-        }
-    })
-}
+pub(crate) use crate::json_syntax::unquoted_tokens;
 
 fn tokens(text: &str) -> Result<Cow<'_, str>, Box<Response>> {
     let mut output = String::new();
