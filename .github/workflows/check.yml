@@ -14,6 +14,40 @@ jobs:
       - run: openspec validate --all --strict --no-interactive
       - run: openspec validate --archived --strict --no-interactive
 
+  frontend-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare a relocated console and detect dependency drift
+        run: |
+          fixture=$(mktemp -d)
+          cat > "$fixture/Dockerfile" <<'DOCKER'
+          FROM node:22-alpine AS build
+          WORKDIR /app
+          RUN mkdir -p build node_modules/.bin node_modules/sample && \
+              echo '{}' > package.json && echo '{}' > package-lock.json && \
+              echo 'console.log("ok")' > build/index.js && \
+              echo 'sample' > node_modules/sample/run && chmod +x node_modules/sample/run && \
+              ln -s ../sample/run node_modules/.bin/sample
+          FROM node:22-alpine AS runtime
+          WORKDIR /app
+          COPY --from=build /app/build ./build
+          COPY --from=build /app/package.json ./
+          COPY --from=build /app/node_modules ./node_modules
+          USER node
+          FROM runtime AS drift
+          USER root
+          RUN chmod -x node_modules/sample/run
+          DOCKER
+          for stage in build runtime drift; do
+            docker build --target "$stage" -t "console-$stage" "$fixture"
+          done
+          python3 scripts/check_frontend_image.py console-build console-runtime
+          if python3 scripts/check_frontend_image.py console-build console-drift 2>"$fixture/error"; then
+            exit 1
+          fi
+          grep -Fx 'Image differs from build stage in node_modules' "$fixture/error"
+
   rebac-contract:
     runs-on: ubuntu-latest
     steps:

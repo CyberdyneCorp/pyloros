@@ -37,23 +37,28 @@ def raise_error(error):
     raise error
 
 
-def runtime_manifest(root):
+def payload_manifest(root):
     root = root.resolve(strict=True)
-    for name in ("package.json", "package-lock.json", "node_modules"):
+    for name in ("package.json", "node_modules"):
         path = root / name
         valid = path.is_dir() if name == "node_modules" else path.is_file()
         if path.is_symlink() or not valid:
             raise ValueError(f"Invalid runtime input: {name}")
-    node = subprocess.check_output(
-        ["node", "-p", "JSON.stringify([process.version, process.platform, process.arch])"], text=True
-    )
     return {
         "build": build_digest(root / "build"),
         "package.json": file_digest(root / "package.json").hex(),
-        "package-lock.json": file_digest(root / "package-lock.json").hex(),
         "node_modules": dependencies(root / "node_modules"),
-        "node": json.loads(node),
     }
+
+
+def runtime_manifest(root):
+    lock = root / "package-lock.json"
+    if lock.is_symlink() or not lock.is_file():
+        raise ValueError("Invalid runtime input: package-lock.json")
+    node = subprocess.check_output(
+        ["node", "-p", "JSON.stringify([process.version, process.platform, process.arch])"], text=True
+    )
+    return {**payload_manifest(root), "package-lock.json": file_digest(lock).hex(), "node": json.loads(node)}
 
 
 if __name__ == "__main__":
