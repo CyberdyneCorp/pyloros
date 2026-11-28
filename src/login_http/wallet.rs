@@ -231,7 +231,6 @@ fn audit_subject(account: Option<&Account>) -> AuditSubject {
 }
 
 fn metadata(doc: &str) -> Result<Option<String>, sqlx::Error> {
-    crate::stored_json::check_integers(doc)?;
     crate::profile::normalized_storage(doc)
 }
 

@@ -361,3 +361,14 @@ The service SHALL persist retained authentication events in bounded batches with
 #### Scenario: Several batches commit
 - **WHEN** erasure commits a history spanning multiple batches
 - **THEN** the receipt counts every rewritten event exactly once
+
+### Requirement: Validate stored user metadata before local IAM operations
+PostgreSQL user IAM and identity token reads, group membership edits and direct policy edits SHALL reject an integer wider than 4,300 digits anywhere in the target user's stored metadata before returning a successful read or changing an assignment.
+
+#### Scenario: Historical metadata contains an oversized integer
+- **WHEN** metadata contains an oversized integer in a nested object or a superseded entry of a historical key-value list
+- **THEN** the operation returns HTTP 500, preserves existing assignments and appends no successful edit audit
+
+#### Scenario: A long string contains only digits
+- **WHEN** a quoted metadata value contains more than 4,300 digits
+- **THEN** its length alone does not prevent the read or edit

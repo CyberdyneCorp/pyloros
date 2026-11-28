@@ -54,7 +54,6 @@ async fn provision(
     let Some((address, metadata)) = account else {
         return Ok(problem(StatusCode::NOT_FOUND, "User not found"));
     };
-    crate::stored_json::check_integers(&metadata)?;
     let normalized = admin_organizations::normalized_storage(&metadata)?;
     if let Some(address) = address.filter(|address| !address.is_empty()) {
         return Ok(Json(json!({"user_id":id,"address":address,"created":false})).into_response());

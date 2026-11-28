@@ -6,9 +6,13 @@ fn invalid() -> sqlx::Error {
 }
 
 pub(crate) fn check_integers(raw: &str) -> Result<(), sqlx::Error> {
+    const MAX_DIGITS: usize = 4300;
+    if raw.len() <= MAX_DIGITS {
+        return Ok(());
+    }
     for (_, token) in unquoted_tokens(raw) {
         let digits = token.trim_start_matches('-');
-        if digits.len() > 4300 && digits.bytes().all(|b| b.is_ascii_digit()) {
+        if digits.len() > MAX_DIGITS && digits.bytes().all(|b| b.is_ascii_digit()) {
             return Err(invalid());
         }
     }

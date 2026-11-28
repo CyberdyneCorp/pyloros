@@ -166,7 +166,6 @@ async fn project_groups<'e>(
         .fetch_all(executor)
         .await?;
         for (org, metadata) in memberships {
-            crate::stored_json::check_integers(&metadata)?;
             crate::profile::normalized_storage(&metadata)?;
             active.insert(org);
         }

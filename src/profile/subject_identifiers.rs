@@ -91,7 +91,6 @@ fn identity_email(raw: &str) -> sqlx::Result<Option<String>> {
     use serde_json::value::RawValue;
     use std::collections::BTreeMap;
     let invalid = || sqlx::Error::Decode("invalid stored identity metadata".into());
-    crate::stored_json::check_integers(raw)?;
     let normalized = admin_organizations::normalized_storage(raw)?;
     let fields: BTreeMap<String, &RawValue> =
         serde_json::from_str(normalized.as_deref().unwrap_or(raw)).map_err(|_| invalid())?;

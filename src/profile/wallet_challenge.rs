@@ -53,7 +53,6 @@ async fn read(
     let Some((address, status, expires_at, metadata)) = row else {
         return Ok(None);
     };
-    crate::stored_json::check_integers(&metadata)?;
     admin_organizations::normalized_storage(&metadata)?;
     let status = match status.as_str() {
         "pending" if expires_at.is_some_and(|expiry| expiry < Utc::now()) => {

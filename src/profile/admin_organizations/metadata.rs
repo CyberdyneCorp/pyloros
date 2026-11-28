@@ -30,6 +30,7 @@ fn invalid_metadata() -> serde_json::Error {
 }
 
 pub(crate) fn normalized_storage(input: &str) -> Result<Option<String>, sqlx::Error> {
+    crate::stored_json::check_integers(input)?;
     if input.starts_with('{') {
         return Ok(None);
     }
@@ -231,6 +232,15 @@ fn display(value: &RawValue) -> serde_json::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_integer_width_before_projecting_or_replacing_metadata_fields() {
+        let limit = "8".repeat(4300);
+        assert!(normalized_storage(&format!(r#"{{"old":[{limit}]}}"#)).is_ok());
+        assert!(normalized_storage(&format!(r#"{{"old":[{limit}8]}}"#)).is_err());
+        assert!(normalized_storage(&format!(r#"[["old",-{limit}8],["old",0]]"#)).is_err());
+        assert!(normalized_storage(&format!(r#"{{"old":"{limit}8"}}"#)).is_ok());
+    }
 
     #[test]
     fn membership_reads_reject_invalid_metadata_and_preserve_legacy_values_on_write() {

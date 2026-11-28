@@ -117,7 +117,6 @@ async fn validate_user(
     let Some(metadata) = metadata else {
         return Ok(false);
     };
-    crate::stored_json::check_integers(&metadata)?;
     admin_organizations::normalized_storage(&metadata)?;
     Ok(true)
 }

@@ -51,7 +51,6 @@ pub(super) async fn session(
 }
 
 pub(super) fn validate_metadata(metadata: &str) -> sqlx::Result<()> {
-    crate::stored_json::check_integers(metadata)?;
     admin_organizations::normalized_storage(metadata)?;
     Ok(())
 }

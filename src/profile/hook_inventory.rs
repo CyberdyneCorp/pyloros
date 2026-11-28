@@ -178,7 +178,6 @@ fn execution(row: &PgRow) -> sqlx::Result<Value> {
         ));
     }
     let context: &str = row.try_get("context")?;
-    crate::stored_json::check_integers(context)?;
     normalized_storage(context)?;
     Ok(json!({
         "id":row.try_get::<Uuid,_>("id")?,"hook_id":row.try_get::<Uuid,_>("hook_id")?,
