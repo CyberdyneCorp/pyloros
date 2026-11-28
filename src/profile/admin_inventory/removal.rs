@@ -52,7 +52,7 @@ async fn delete(
     if locked.is_none() {
         return Ok(writes::missing(id));
     }
-    statements::policies(&mut tx, Some(id)).await?;
+    statements::validate_stored_policy(&mut tx, id).await?;
     let attached = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT FROM iam_identity_policies WHERE policy_id=$1)
              OR EXISTS(SELECT FROM iam_group_policies WHERE policy_id=$1)
@@ -129,6 +129,13 @@ mod tests {
             .bind(id)
             .execute(&pool)
             .await?;
+        sqlx::query(
+            "INSERT INTO iam_policy_statements(id,policy_id,effect,actions,resources,conditions)
+             VALUES(gen_random_uuid(),$1,'allow','[123]','[]','[]')",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await?;
         sqlx::query("INSERT INTO iam_permission_boundaries VALUES($1)")
             .bind(id)
             .execute(&pool)

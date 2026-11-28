@@ -3,3 +3,4 @@
 - [x] Compare PostgreSQL deletion through the CLI and unchanged console, including audit rollback and simultaneous changes.
 - [ ] Resolve compatibility for overlapping attachments and duplicate deletions during coexistence.
 - [ ] Verify chain deletion with the original clients.
+- [x] Compare historical policy deletion, attachment conflicts, rollback and retry through both PostgreSQL writers.

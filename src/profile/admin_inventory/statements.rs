@@ -134,7 +134,7 @@ fn stored_statements(raw: &str) -> sqlx::Result<Vec<Statement<Box<RawValue>, Exp
     project(raw)
 }
 
-pub(super) async fn validate_for_replacement(
+pub(super) async fn validate_stored_policy(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> sqlx::Result<()> {

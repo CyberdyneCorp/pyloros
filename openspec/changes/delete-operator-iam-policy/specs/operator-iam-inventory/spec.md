@@ -13,3 +13,9 @@ An authenticated operator SHALL be able to remove an unused IAM policy from the 
 
 - **WHEN** the selected policy is attached to an identity, group or role, or serves as a permission boundary
 - **THEN** preserve the policy and its attachments and report the conflict
+
+#### Scenario: Delete a historical policy with non-string rule values
+
+- **WHEN** an authorized operator requests deletion of a policy whose stored rules decode successfully but include historical non-string entries
+- **THEN** remove the policy and record the deletion if it is unused
+- **AND** return HTTP 409 and preserve the policy if it is still attached

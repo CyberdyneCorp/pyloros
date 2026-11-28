@@ -166,7 +166,7 @@ async fn replace_metadata(
         return Ok(false);
     }
     // Historical statements must be readable before a replacement can proceed.
-    statements::validate_for_replacement(tx, id).await?;
+    statements::validate_stored_policy(tx, id).await?;
     sqlx::query("UPDATE iam_policies SET name=COALESCE($2,name), description=COALESCE($3,description),version=version+1,updated_at=now() WHERE id=$1")
         .bind(id).bind(policy["name"].as_str()).bind(policy["description"].as_str()).execute(&mut **tx).await?;
     sqlx::query("DELETE FROM iam_policy_statements WHERE policy_id=$1")
