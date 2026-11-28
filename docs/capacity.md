@@ -128,6 +128,22 @@ Two Rust replicas and PostgreSQL 17 shared an Apple M3 Pro with the HTTP driver.
 
 All 1,200 scheduled direct checks during the two load windows returned the expected decision. Direct latency includes driver scheduling delay. The before and after windows lasted 12 seconds each. These loopback measurements cover one graph shape with two clients and no concurrent writes. Deployment sizing still needs its own graph distribution, client mix and latency budget.
 
+### ReBAC permission checks as tenant graphs grow
+
+Two Rust replicas, PostgreSQL 17.12 and eight concurrent HTTP workers ran over loopback on an Apple M3 Pro. Each of two tenants had the same folder and team identifiers, with a different user assigned to each tenant’s teams. The driver sampled folders and teams uniformly at each size. A direct check looked up a team membership. An inherited check followed one folder-to-team edge to that membership.
+
+Each cell gives the range of p95 HTTP latencies across two fresh database trials. Each trial recorded 384 direct and 384 inherited checks per size after warmup, evenly split between grants and denials.
+
+| Folders per tenant | Total relationship rows across both tenants | Direct p95 (ms) | Inherited p95 (ms) |
+|---:|---:|---:|---:|
+| 100 | 11,614 | 4.76–5.40 | 5.31–5.46 |
+| 10,000 | 51,214 | 5.25–5.67 | 5.28–5.40 |
+| 100,000 | 411,214 | 5.01–5.07 | 4.84–5.00 |
+
+All 4,608 timed decisions matched the expected user and tenant. After each size increase, both replicas also observed membership withdrawals and restorations by either writer. All 96 post-write checks matched, including checks for the unaffected tenant. The trials held traversal depth and concurrency fixed. Production sizing still requires measurements with the deployment’s fanout, traffic mix and database network latency.
+
+Rust executable SHA-256: `897f4be10d897aed466458389ba1a24a9c9e58ccf20af7066f067726c51f3704`.
+
 ### Starting a ReBAC permission snapshot
 
 Each permission check opens a read-only repeatable-read transaction. Opening it with both modes in the initial SQL statement removes one round trip to PostgreSQL. Statement traces confirmed the change on direct, inherited and wide-graph checks.
