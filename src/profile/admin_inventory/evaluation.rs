@@ -1,8 +1,9 @@
 //! Explain operator access checks against the selected IAM provider.
 use super::*;
-use crate::{iam_evaluation::Condition, login_http::problem, request_json::iam_document};
+use crate::{login_http::problem, request_json::iam_document};
 use serde::Deserialize;
 use std::collections::HashMap;
+mod condition;
 mod target;
 use target::Target;
 
@@ -18,7 +19,7 @@ struct Policy {
     id: Uuid,
     statements: Vec<Statement>,
 }
-type Statement = statements::Statement<Target, Condition>;
+type Statement = statements::Statement<Target, condition::StoredCondition>;
 
 pub(in crate::profile) async fn evaluate(
     State(state): State<Arc<Profile>>,
@@ -196,10 +197,7 @@ impl Statement {
             return Ok(false);
         }
         for condition in &self.conditions {
-            if !condition
-                .matches(&req.context)
-                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?
-            {
+            if !condition.matches(&req.context)? {
                 return Ok(false);
             }
         }

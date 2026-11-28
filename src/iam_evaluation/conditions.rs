@@ -36,10 +36,19 @@ impl Condition {
         &self,
         context: &std::collections::HashMap<String, String>,
     ) -> Result<bool, IncomparableTimestamps> {
+        self.operator
+            .matches_text(context.get(&self.key).map(String::as_str), &self.value)
+    }
+}
+
+impl Operator {
+    pub(crate) fn matches_text(
+        &self,
+        actual: Option<&str>,
+        expected: &str,
+    ) -> Result<bool, IncomparableTimestamps> {
         use Operator::*;
-        let actual = context.get(&self.key).map(String::as_str);
-        let expected = self.value.as_str();
-        Ok(match self.operator {
+        Ok(match self {
             StringEquals => actual == Some(expected),
             StringNotEquals => actual != Some(expected),
             IpAddress => actual.is_some_and(|s| network_contains(expected, s)),
@@ -50,7 +59,7 @@ impl Condition {
                     .zip(number(expected))
                     .and_then(|(a, b)| a.partial_cmp(&b));
                 matches!(
-                    (&self.operator, order),
+                    (self, order),
                     (NumericEquals, Some(Ordering::Equal))
                         | (NumericLessThan, Some(Ordering::Less))
                         | (NumericGreaterThan, Some(Ordering::Greater))
@@ -59,7 +68,7 @@ impl Condition {
             DateTimeLessThan | DateTimeGreaterThan => {
                 let order = timestamp::compare(actual, expected)?;
                 matches!(
-                    (&self.operator, order),
+                    (self, order),
                     (DateTimeLessThan, Some(Ordering::Less))
                         | (DateTimeGreaterThan, Some(Ordering::Greater))
                 )

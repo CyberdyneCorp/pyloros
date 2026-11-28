@@ -58,3 +58,15 @@ Evaluation SHALL check action entries in stored order until one matches. It SHAL
 #### Scenario: Historical character sequence
 - **WHEN** a target entry is an array of individual characters containing a wildcard character
 - **THEN** evaluate the sequence as an anchored wildcard pattern
+
+### Requirement: Evaluate stored condition operands according to their types
+The PostgreSQL evaluator SHALL apply historical condition operands in statement order after both targets match. It SHALL use the operator to interpret stored JSON values and preserve the string type of request context entries.
+
+#### Scenario: Historical numeric operand
+- **WHEN** a numeric equality condition compares the stored number seven to a context value of `"7"`
+- **THEN** the condition matches, while string equality on the same operands is false
+
+#### Scenario: Unusable context key
+- **WHEN** evaluation reaches a condition whose stored key is an array or object
+- **THEN** return HTTP 500
+- **AND** a target mismatch or an earlier false condition skips that key without error
