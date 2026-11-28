@@ -121,7 +121,7 @@ By default each replica claims up to 50 deliveries per batch, runs eight sends c
 
 ## Capacity measurements
 
-[Mixed login, refresh and introspection results on PostgreSQL](docs/capacity.md) cover one and two API processes under scheduled traffic.
+The [PostgreSQL capacity measurements](docs/capacity.md) cover login, refresh and introspection on one and two API processes, plus ReBAC permission checks under concurrent traffic from a second client.
 
 ## Local development
 

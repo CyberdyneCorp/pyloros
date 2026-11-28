@@ -116,3 +116,14 @@ Two Rust API processes shared a PostgreSQL 17 primary. A client alternated 12 gr
 | 2 | 384 | 54.8 ms | 1,212 | 18.1 ms |
 
 Both replicas allowed every inherited check after a grant and denied every check after a revocation. Every unrelated check returned a denial. Latencies include the HTTP round trip as measured by the driver. Each trial used a fresh database and a single parent edge. The measured phases lasted 1.6–1.8 seconds. Sustained throughput on deployment-sized graphs remains to be measured.
+
+### ReBAC checks across two active clients
+
+Two Rust replicas and PostgreSQL 17 shared an Apple M3 Pro with the HTTP driver. One client issued ten direct membership checks per second, split equally between both replicas and between allowed and denied users. For 60 seconds a second client kept eight requests in flight, checking an inherited permission through 32 parent folders and their teams. Those checks all returned the expected denial. Each trial started with a fresh database containing 11,213 object relationships.
+
+| Trial | Direct p99 before load | Direct p99 under load | Direct p99 after load | Inherited checks completed during load |
+|---|---:|---:|---:|---:|
+| 1 | 14.05 ms | 12.71 ms | 13.43 ms | 91,735 |
+| 2 | 15.61 ms | 12.16 ms | 13.99 ms | 88,807 |
+
+All 1,200 scheduled direct checks during the two load windows returned the expected decision. Direct latency includes driver scheduling delay. The before and after windows lasted 12 seconds each. These loopback measurements cover one graph shape with two clients and no concurrent writes. Deployment sizing still needs its own graph distribution, client mix and latency budget.
