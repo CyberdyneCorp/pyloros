@@ -14,3 +14,11 @@ The service SHALL authenticate the caller and verify the purchase for the config
 #### Scenario: Reject a mismatched product
 - **WHEN** the purchased line items do not include the requested product
 - **THEN** reject the purchase and preserve the entitlement ledger
+
+#### Scenario: Repeat a claim with a grant hook
+- **WHEN** the same account successfully submits a verified purchase twice with one active bound entitlement grant hook
+- **THEN** retain one purchase owner and one active entitlement and dispatch the grant hook once for each successful submission
+
+#### Scenario: Claim while a grant hook lacks a binding
+- **WHEN** an otherwise eligible purchase requires an active grant hook whose component binding is missing
+- **THEN** respond with HTTP 503 and roll back ownership, entitlement and hook delivery so the same claim can be resubmitted after binding

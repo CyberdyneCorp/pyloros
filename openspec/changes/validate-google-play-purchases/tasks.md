@@ -1,4 +1,5 @@
 - [x] Implement and verify service-account authentication and authoritative purchase validation.
 - [x] Exercise claims, replays, ownership conflicts and rollback through the REST API.
-- [ ] Verify production store integration and active entitlement hooks for migration signoff.
+- [x] Verify grant hook execution on the first and repeated claims, ownership conflict, and retry after binding.
+- [ ] Verify production store integration for migration signoff.
 - [ ] Verify persistence across the full accepted purchase-token length on the deployment schema.
