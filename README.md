@@ -83,6 +83,8 @@ The response contains the hosted session's `id` and `url`. The service identifie
 
 Pyloros intentionally fulfills correctly signed events that the previous provider adapter could reject with HTTP 500 during decoding. When hook processing is enabled, an active entitlement hook without a selected version or enabled store dispatcher keeps the billing notification retryable with HTTP 503.
 
+During coexistence, the Stripe webhook can move to Pyloros while account reads and v1 hook administration still use the existing backend. Before switching the webhook route, check both `just hook-inventory entitlement_granted` and `just hook-inventory entitlement_revoked`. If a hook source edit invalidates its binding, a payment or refund that needs that hook returns HTTP 503 and leaves access as it was. Review the edited hook, bind its component, then redeliver the same Stripe event ID. Concurrent retries on Rust replicas sharing PostgreSQL apply the change once and enqueue one execution per selected hook.
+
 A subscription update can arrive before checkout maps the customer. Redelivery after checkout applies the new plan and its expiry. An `invoice.created` event is informational and returns `handled: false`. A refund for a separate one-time payment revokes only the grants tied to that payment reference.
 
 ## App Store purchases
