@@ -253,6 +253,34 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]
+    async fn existing_catalog_above_capacity_can_reclaim_a_slot() -> sqlx::Result<()> {
+        let pool = PgPool::connect(&env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = pool.begin().await?;
+        sqlx::raw_sql("CREATE TEMP TABLE client_permissions(id uuid, client_id text, key text, description text,
+            created_at timestamptz DEFAULT now(), PRIMARY KEY(client_id,key));
+            INSERT INTO client_permissions(client_id,key) SELECT 'app', n::text FROM generate_series(0,256) n;")
+            .execute(&mut *tx).await?;
+        for key in ["256", "255"] {
+            let response = insert(&mut tx, "app", "next", None).await?;
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            assert_eq!(
+                delete(&mut tx, "app", key).await?.status(),
+                StatusCode::NO_CONTENT
+            );
+        }
+        assert_eq!(
+            insert(&mut tx, "app", "256", None).await?.status(),
+            StatusCode::CREATED
+        );
+        assert_eq!(
+            insert(&mut tx, "app", "next", None).await?.status(),
+            StatusCode::CONFLICT
+        );
+        tx.rollback().await
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
     async fn catalog_deletion_cascades_within_one_client_and_can_roll_back() {
         use sqlx::Acquire;
         let pool = PgPool::connect(&env::var("DATABASE_URL").unwrap())
