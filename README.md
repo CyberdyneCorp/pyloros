@@ -87,6 +87,8 @@ For cookie-authenticated writes, the browser echoes the CSRF cookie in the `X-CS
 
 The design starts from the experience of application developers, users and operators. Priorities include interoperable sign-in and token handling, account and session management, administrative tools, auditability, and reliable integration events. Compatibility will be assessed through observable behavior and migration tests as the service develops.
 
+Pyloros returns HTTP 500 if PostgreSQL explicitly rejects a transaction at commit. This is an intentional compatibility exception for routes where a migrating client previously received success before rollback. For example, a rejected export audit withholds the download, and a rejected session change withholds its success cookies. A lost connection while awaiting commit acknowledgement leaves the database outcome uncertain.
+
 ## Extension hooks
 
 With hooks enabled, Pyloros starts a CONNECT proxy on `HOOKS_PROXY_HOST` and `HOOKS_PROXY_PORT` (default `127.0.0.1:8787`). Set `HOOKS_EGRESS_ALLOWLIST` to a comma-separated list or JSON array of allowed domains. The default is empty. The proxy checks each resolved address before connecting and permits ports 80 and 443. Readiness includes `hook_egress_proxy` while hooks are enabled. If the listener cannot bind, this field is false and database readiness is evaluated independently.

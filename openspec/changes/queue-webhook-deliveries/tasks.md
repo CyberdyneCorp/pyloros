@@ -1,3 +1,3 @@
 - [x] Implement and test both administrative queue actions.
 - [x] Verify the original clients, database state, conflict responses and rollback against the reference.
-- [ ] Resolve the HTTP response when a deferred audit constraint rejects the commit and verify strict parity.
+- [x] Verify HTTP 500 and rollback when PostgreSQL explicitly rejects commit.

@@ -2,6 +2,6 @@
 - [x] Implement bounded section reads, field projection, event redaction and processor reporting.
 - [x] Wire both endpoints with download headers, audit records and self-service throttling.
 - [x] Compare client workflows, authorization, redaction, truncation and transaction failures on both services.
-- [ ] Resolve the HTTP response when PostgreSQL defers audit rejection until commit.
+- [x] Verify HTTP 500 and rollback when PostgreSQL explicitly rejects commit.
 - [x] Verify that sections owned directly by the account read only the UUID binding when the subject has many linked identities.
 - [x] Compare linked-identifier section bindings, matching records and redaction on both download routes.

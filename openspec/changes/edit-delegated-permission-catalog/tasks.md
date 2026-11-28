@@ -1,5 +1,5 @@
 - [x] Implement permission creation and deletion with client audit attribution.
 - [x] Verify response bodies and headers, cross-client isolation, cascading deletions, CLI calls, browser requests, and audit-chain verification across both services.
 - [x] Exercise immediate audit failures, deferred commit failures and simultaneous writes at the catalog limit.
-- [ ] Resolve the release contract for a deferred commit rejection and two writers competing for the last catalog slot.
+- [ ] Resolve the release contract for two writers competing for the last catalog slot.
 - [x] Rehearse simultaneous operator and delegated creates on two Rust replicas with reference inventory reads and an independent client write.

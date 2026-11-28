@@ -4,4 +4,4 @@ Share catalog mutation logic with operator requests. Select the authorization pa
 
 ## Open decisions
 
-Pyloros currently returns HTTP 500 when the commit fails and rolls back both the catalog mutation and audit row. It also serializes capacity checks so concurrent additions keep each catalog within 256 entries. Migration signoff for creation and deletion depends on the commit-failure contract. Creation also depends on the concurrency contract at the catalog limit.
+Pyloros currently returns HTTP 500 when the commit fails and rolls back both the catalog mutation and audit row. It also serializes capacity checks so concurrent additions keep each catalog within 256 entries. Creation also depends on the concurrency contract at the catalog limit.

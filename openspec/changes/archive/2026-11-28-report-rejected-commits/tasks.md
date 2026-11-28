@@ -1,0 +1,2 @@
+- [x] Specify the response to an explicit database commit rejection.
+- [x] Document the migration exception for client developers.

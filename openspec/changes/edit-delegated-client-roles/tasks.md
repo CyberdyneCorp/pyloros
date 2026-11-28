@@ -2,6 +2,6 @@
 - [x] Compare role validation, isolated catalog edits, scoped membership cleanup, permission mappings, the existing CLI, browser requests, and immediate audit rollback.
 - [x] Compare competing catalog edits and deferred audit constraint failures.
 - [x] Prepare unsigned chain calls and verify group selection, call data, provider failures, and contract reverts.
-- [ ] Resolve migration signoff for simultaneous edits and the response to a failed commit.
+- [ ] Resolve migration signoff for simultaneous edits.
 - [ ] Implement and verify confirmed chain mutations and their audit and mapping changes.
 - [x] Rehearse simultaneous operator and delegated creates on two Rust replicas with reference inventory reads and an independent client write.

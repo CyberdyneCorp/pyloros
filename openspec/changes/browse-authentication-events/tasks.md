@@ -1,4 +1,4 @@
 - [x] Implement both directories with interoperable cursors, event projection and read auditing.
 - [x] Verify filters, validation, existing clients and transaction behavior on both services.
-- [ ] Resolve the response on a deferred read-audit rollback.
+- [ ] Verify HTTP 500 on an explicitly rejected read-audit commit.
 - [x] Characterize noncanonical, hand-built cursor encodings accepted by existing deployments.
