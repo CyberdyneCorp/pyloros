@@ -34,36 +34,36 @@ pub(in crate::profile) async fn create_group(
         );
     }
     let description = group["description"].as_str();
-    if let Some(chain) = chain {
-        return prepare_chain_group(tx, &chain, name, description)
-            .await
-            .unwrap_or_else(|_| internal());
-    }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
-    insert(tx, name, description, (actor, email.as_deref()), origin)
+    let actor = (actor, email.as_deref());
+    if let Some(chain) = chain {
+        return write_chain(tx, &chain, name, description, actor, origin).await;
+    }
+    insert(tx, name, description, actor, origin)
         .await
         .unwrap_or_else(|_| internal())
 }
 
-async fn prepare_chain_group(
-    tx: Transaction<'_, Postgres>,
+async fn write_chain(
+    mut tx: Transaction<'_, Postgres>,
     chain: &crate::chain_settings::Chain,
     name: &str,
     description: Option<&str>,
-) -> Result<Response, sqlx::Error> {
-    let result = chain
-        .with_signer_lock(tx, chain.prepare_group_creation(name, description))
-        .await?;
-    Ok(match result {
-        Ok(_) => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Blockchain transaction submission unavailable",
-        ),
-        Err(_) => internal(),
-    })
+    actor: (Uuid, Option<&str>),
+    origin: SessionOrigin<'_>,
+) -> Response {
+    if chain.lock_signer(&mut tx).await.is_err() {
+        return internal();
+    }
+    let Ok(stored) = chain.create_group(name, description).await else {
+        return internal();
+    };
+    finish(tx, stored.id, actor, origin, stored)
+        .await
+        .unwrap_or_else(|_| internal())
 }
 
 async fn insert(
@@ -80,6 +80,20 @@ async fn insert(
         .bind(description)
         .execute(&mut *tx)
         .await?;
+    let group = json!({
+        "id":id,"name":name,"description":description,"is_active":true,"chain_group_id":null,
+        "policy_ids":[],"member_count":0,"created_at":null
+    });
+    finish(tx, id, actor, origin, group).await
+}
+
+async fn finish(
+    mut tx: Transaction<'_, Postgres>,
+    id: Uuid,
+    actor: (Uuid, Option<&str>),
+    origin: SessionOrigin<'_>,
+    group: impl serde::Serialize,
+) -> Result<Response, sqlx::Error> {
     crate::admin_audit::append(
         &mut tx,
         "iam.group.create",
@@ -90,15 +104,7 @@ async fn insert(
     )
     .await?;
     tx.commit().await?;
-    // Creation returns the new group before the inventory loads its database timestamp.
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({
-            "id":id,"name":name,"description":description,"is_active":true,"chain_group_id":null,
-            "policy_ids":[],"member_count":0,"created_at":null
-        })),
-    )
-        .into_response())
+    Ok((StatusCode::CREATED, Json(group)).into_response())
 }
 
 #[cfg(test)]
@@ -153,7 +159,17 @@ mod tests {
         let mut owner = db.begin().await.unwrap();
         chain.lock_signer(&mut owner).await.unwrap();
         let tx = db.begin().await.unwrap();
-        let preparing = prepare_chain_group(tx, &chain, "reports", None);
+        let preparing = write_chain(
+            tx,
+            &chain,
+            "reports",
+            None,
+            (Uuid::new_v4(), None),
+            SessionOrigin {
+                ip: None,
+                user_agent: None,
+            },
+        );
         tokio::pin!(preparing);
         assert!(
             tokio::time::timeout(Duration::from_millis(100), &mut preparing)
@@ -164,7 +180,6 @@ mod tests {
         // The fixture has no group contract, so preparation ends before any network call.
         let response = tokio::time::timeout(Duration::from_secs(2), preparing)
             .await
-            .unwrap()
             .unwrap();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let mut next = db.begin().await.unwrap();

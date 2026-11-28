@@ -102,7 +102,7 @@ pub(crate) struct Group {
 
 #[derive(serde::Serialize)]
 pub(crate) struct OperatorGroup {
-    id: Uuid,
+    pub(crate) id: Uuid,
     name: String,
     description: Option<String>,
     is_active: bool,

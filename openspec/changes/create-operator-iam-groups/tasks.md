@@ -1,4 +1,5 @@
 - [x] Implement PostgreSQL group creation and atomic auditing.
 - [x] Compare the original clients, request validation, duplicate names and rollback.
 - [x] Verify unsigned chain group creation and provider failure behavior.
-- [ ] Submit chain group creation and compare confirmed outcomes.
+- [x] Submit chain group creation and compare confirmed outcomes.
+- [ ] Verify the deployed group contract’s creation event against its ABI or a sanitized receipt.

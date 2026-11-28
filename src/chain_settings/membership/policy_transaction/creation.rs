@@ -1,4 +1,4 @@
-//! Resolve the policy identifier emitted by a confirmed contract creation.
+//! Resolve the directory identifier emitted by a confirmed contract creation.
 use super::*;
 use alloy_primitives::{Address, B256};
 
@@ -44,30 +44,77 @@ impl Chain {
         let tx = self
             .mutation_envelope(&IamMutation::CreatePolicy(body))
             .await?;
+        let entry = self
+            .create_directory_entry(
+                tx,
+                listPoliciesCall {},
+                body["name"].as_str().ok_or(PrepareError::Invalid)?,
+                body["description"].as_str(),
+            )
+            .await?;
+        let mut response = OperatorPolicy::from(entry);
+        response.description = body["description"].as_str().map(str::to_owned);
+        response.statements = body["statements"]
+            .as_array()
+            .ok_or(PrepareError::Invalid)?
+            .clone();
+        Ok(response)
+    }
+
+    pub(crate) async fn create_group(
+        &self,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<OperatorGroup, PrepareError> {
+        let tx = self.group_creation_envelope(name, description).await?;
+        let entry = self
+            .create_directory_entry(tx, listGroupsCall {}, name, description)
+            .await?;
+        Ok(OperatorGroup {
+            id: chain_uuid("group", entry.id),
+            name: entry.name,
+            description: description.map(str::to_owned),
+            is_active: true,
+            member_count: 0,
+            policy_ids: Vec::new(),
+            chain_group_id: chain_number(entry.id),
+            created_at: None,
+        })
+    }
+
+    async fn create_directory_entry<C: SolCall<Return = Vec<CatalogEntry>> + Clone>(
+        &self,
+        tx: UnsignedIamTransaction,
+        directory: C,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<CatalogEntry, PrepareError> {
         let contract = tx.to;
         let address = contract.to_string();
         let prior = self
-            .call(&address, listPoliciesCall {})
+            .call(&address, directory.clone())
             .await
             .map_err(rpc_failure)?;
         let receipt = self.submit_envelope(tx).await?;
-        self.created_policy(contract, &prior, &receipt, body)
+        self.created_entry(contract, directory, &prior, &receipt, name, description)
             .await
             .inspect_err(|_| {
                 eprintln!(
-                    "Could not verify policy ID for confirmed transaction {} on {contract}",
+                    "Could not verify directory ID for confirmed transaction {} on {contract}",
                     receipt["transactionHash"]
                 );
             })
     }
 
-    async fn created_policy(
+    async fn created_entry<C: SolCall<Return = Vec<CatalogEntry>>>(
         &self,
         contract: Address,
+        directory: C,
         prior: &[CatalogEntry],
         receipt: &Value,
-        body: &Value,
-    ) -> Result<OperatorPolicy, PrepareError> {
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<CatalogEntry, PrepareError> {
         let (mut ids, block) = creation_ids(receipt, contract).ok_or(PrepareError::Invalid)?;
         ids.retain(|id| !prior.iter().any(|entry| entry.id == *id));
         if ids.is_empty() {
@@ -76,27 +123,21 @@ impl Chain {
         let entries = self
             .call_at(
                 &contract.to_string(),
-                listPoliciesCall {},
+                directory,
                 json!({"blockHash":block,"requireCanonical":true}),
             )
             .await
             .map_err(rpc_failure)?;
         let mut matching = entries.into_iter().filter(|entry| {
             ids.contains(&entry.id)
-                && Some(entry.name.as_str()) == body["name"].as_str()
-                && entry.description == body["description"].as_str().unwrap_or_default()
+                && entry.name == name
+                && entry.description == description.unwrap_or_default()
         });
         let entry = matching.next().ok_or(PrepareError::Invalid)?;
         if matching.next().is_some() {
             return Err(PrepareError::Invalid);
         }
-        let mut response = OperatorPolicy::from(entry);
-        response.description = body["description"].as_str().map(str::to_owned);
-        response.statements = body["statements"]
-            .as_array()
-            .ok_or(PrepareError::Invalid)?
-            .clone();
-        Ok(response)
+        Ok(entry)
     }
 }
 

@@ -585,11 +585,22 @@ impl Chain {
         name: &str,
         description: Option<&str>,
     ) -> Result<Vec<u8>, PrepareError> {
+        Ok(self
+            .group_creation_envelope(name, description)
+            .await?
+            .signing_payload())
+    }
+
+    async fn group_creation_envelope(
+        &self,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<UnsignedIamTransaction, PrepareError> {
         let call = createGroupCall {
             name: name.into(),
             description: description.unwrap_or_default().into(),
         };
-        self.prepare_contract(self.group.as_deref(), call.abi_encode())
+        self.prepare_envelope(self.group.as_deref(), call.abi_encode())
             .await
     }
 
