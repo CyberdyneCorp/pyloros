@@ -1,0 +1,1 @@
+Use the Rust executable and its existing SQLx connection configuration. Read recovery and transaction mode in one SQL statement under the same connection settings used for the rollout. Test the recipe during an actual local promotion and with a read-only session on the primary.

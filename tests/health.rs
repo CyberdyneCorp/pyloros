@@ -199,3 +199,26 @@ async fn readiness_waits_for_capacity_and_for_the_revision_query() {
     let ((status, body), ()) = tokio::join!(check, release);
     assert_eq!(status, 200, "{body}");
 }
+
+#[test]
+#[ignore = "requires a writable PostgreSQL primary"]
+fn writer_mode_observes_connection_options() {
+    let mut url = url::Url::parse(&std::env::var("DATABASE_URL").unwrap()).unwrap();
+    for (read_only, expected, code) in [
+        (false, "writable primary", 0),
+        (true, "read-only primary", 2),
+    ] {
+        if read_only {
+            url.query_pairs_mut()
+                .append_pair("options", "-c default_transaction_read_only=on");
+        }
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_pyloros"))
+            .arg("--check-db-writer-mode")
+            .env("DATABASE_URL", url.as_str())
+            .env("BIND_ADDR", "invalid")
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(code));
+        assert_eq!(String::from_utf8(result.stdout).unwrap().trim(), expected);
+    }
+}

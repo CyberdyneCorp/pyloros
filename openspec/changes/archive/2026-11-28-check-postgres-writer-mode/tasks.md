@@ -1,0 +1,2 @@
+- [x] Implement the operator command and document its scope.
+- [x] Verify primary, read-only transaction, standby, outage and promotion results.

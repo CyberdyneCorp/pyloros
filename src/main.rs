@@ -35,6 +35,12 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
     let command = args.next();
     match command.as_deref().and_then(|name| name.to_str()) {
+        Some("--check-db-writer-mode") => {
+            if args.next().is_some() {
+                return Err("writer mode takes no arguments".into());
+            }
+            return check_writer_mode(&pool).await;
+        }
         Some("--check-hook-bindings") => {
             let report = hook_inventory::read(&pool, &hook_events(args)?).await?;
             println!("{}", serde_json::to_string_pretty(&report)?);
@@ -74,6 +80,20 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
     })
     .await?;
     Ok(ExitCode::SUCCESS)
+}
+
+async fn check_writer_mode(pool: &sqlx::PgPool) -> Result<ExitCode, Box<dyn Error>> {
+    let mode: String = sqlx::query_scalar(
+        "SELECT CASE
+            WHEN pg_catalog.pg_is_in_recovery() THEN 'standby'
+            WHEN pg_catalog.current_setting('transaction_read_only')::boolean THEN 'read-only primary'
+            ELSE 'writable primary'
+         END",
+    )
+    .fetch_one(pool)
+    .await?;
+    println!("{mode}");
+    Ok(coverage_status(mode == "writable primary"))
 }
 
 fn hook_events(

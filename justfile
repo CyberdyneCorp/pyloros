@@ -23,6 +23,10 @@ db-down:
 db-shell:
     docker compose exec postgres psql -U pyloros -d pyloros
 
+# Inspect the PostgreSQL server role and effective transaction mode before cutover.
+db-writer-mode:
+    cargo run --quiet --locked -- --check-db-writer-mode
+
 # List deferrable PostgreSQL table constraints and triggers in application schemas.
 db-commit-checks:
     uv run --script scripts/inspect_commit_checks.py
