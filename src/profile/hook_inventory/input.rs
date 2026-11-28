@@ -12,15 +12,6 @@ const KEYS: &[&str] = &[
     "allow_network",
     "receive_pii",
 ];
-const EVENTS: &[&str] = &[
-    "entitlement_granted",
-    "entitlement_revoked",
-    "role_granted",
-    "role_revoked",
-    "user_deleted",
-    "user_logged_in",
-    "user_registered",
-];
 
 pub(super) fn parse(
     raw: &RawValue,
@@ -84,10 +75,10 @@ fn field(body: &Value, key: &str, raw: Option<&RawValue>) -> Result<Value, Value
         .map(Value::String),
         "event_type" => {
             let event = token_field(body.clone(), key, 0, usize::MAX)?;
-            if EVENTS.contains(&event.as_str()) {
+            if HOOK_EVENTS.contains(&event.as_str()) {
                 return Ok(json!(event));
             }
-            let reason = format!("event_type must be one of ['{}']", EVENTS.join("', '"));
+            let reason = format!("event_type must be one of ['{}']", HOOK_EVENTS.join("', '"));
             Err(
                 json!({"loc":["body",key],"type":"value_error","msg":format!("Value error, {reason}"),"ctx":{"error":reason}}),
             )

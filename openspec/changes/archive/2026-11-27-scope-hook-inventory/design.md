@@ -1,0 +1,1 @@
+Reuse the event names accepted by the authoring API. Filter inside the read-only PostgreSQL snapshot and apply the existing coverage calculation to those rows. An omitted event selects the full inventory.

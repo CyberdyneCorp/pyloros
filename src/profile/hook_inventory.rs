@@ -7,6 +7,17 @@ use axum::extract::{DefaultBodyLimit, Path, RawQuery};
 use sqlx::{Row, postgres::PgRow};
 use std::collections::HashMap;
 
+/// Supported hook event names in authoring validation order.
+pub const HOOK_EVENTS: &[&str] = &[
+    "entitlement_granted",
+    "entitlement_revoked",
+    "role_granted",
+    "role_revoked",
+    "user_deleted",
+    "user_logged_in",
+    "user_registered",
+];
+
 pub(super) fn routes() -> Router<Arc<Profile>> {
     Router::new()
         .route("/api/v1/admin/hooks", any(list).post(author::create))
@@ -34,15 +45,10 @@ fn time(row: &PgRow, key: &str) -> sqlx::Result<String> {
 }
 fn event(row: &PgRow) -> sqlx::Result<&str> {
     let kind: &str = row.try_get("event_type")?;
-    match kind {
-        "user_registered"
-        | "user_logged_in"
-        | "user_deleted"
-        | "entitlement_granted"
-        | "entitlement_revoked"
-        | "role_granted"
-        | "role_revoked" => Ok(kind),
-        _ => Err(sqlx::Error::Decode("unknown stored hook event".into())),
+    if HOOK_EVENTS.contains(&kind) {
+        Ok(kind)
+    } else {
+        Err(sqlx::Error::Decode("unknown stored hook event".into()))
     }
 }
 fn hook(row: &PgRow) -> sqlx::Result<Value> {

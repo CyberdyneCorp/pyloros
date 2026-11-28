@@ -47,12 +47,14 @@ mod provisioning;
 mod registration;
 pub(crate) use registration::enqueue_webhooks;
 mod hook_inventory;
+
 mod totp;
 mod update_input;
 mod userinfo;
 mod wallet_challenge;
 mod wallet_export;
 mod wasm_hooks;
+pub use hook_inventory::HOOK_EVENTS;
 pub use wasm_hooks::ComponentHookWorker;
 pub use wasm_hooks::ComponentHookWorker as EntitlementHookWorker;
 pub use wasm_hooks::ComponentHookWorker as StoreHookWorker;

@@ -1,0 +1,2 @@
+- [x] Implement event selection and document the operator command.
+- [x] Verify global, scoped, empty and invalid selections and source edit invalidation.
