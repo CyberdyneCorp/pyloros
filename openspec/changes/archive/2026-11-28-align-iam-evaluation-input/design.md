@@ -1,0 +1,1 @@
+Use the IAM document decoder already used for policy writes. The existing input validator continues to require string context values. Once the document passes validation, the selected provider supplies the decision and explanation as before.

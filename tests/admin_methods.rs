@@ -449,7 +449,7 @@ async fn token_and_passkey_method_dispatch_matches_the_public_routes() {
 }
 
 #[tokio::test]
-async fn operator_and_delegated_writes_apply_iam_document_rules_before_authentication() {
+async fn iam_routes_apply_document_rules_before_authentication() {
     let pool = PgPoolOptions::new()
         .connect_lazy("postgresql://localhost/pyloros")
         .unwrap();
@@ -458,6 +458,7 @@ async fn operator_and_delegated_writes_apply_iam_document_rules_before_authentic
     for (method, path) in [
         (Method::POST, "admin/users/invalid/roles"),
         (Method::POST, "clients/me/users/invalid/roles"),
+        (Method::POST, "admin/iam/evaluate"),
         (Method::POST, "admin/groups/invalid/policies"),
         (Method::POST, "admin/users/invalid/groups"),
         (Method::POST, "admin/users/invalid/policies"),

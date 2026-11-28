@@ -3,7 +3,7 @@ use super::*;
 use crate::{
     iam_evaluation::{Condition, matches_target},
     login_http::problem,
-    request_json::fields,
+    request_json::iam_document,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -34,7 +34,7 @@ pub(in crate::profile) async fn evaluate(
     headers: HeaderMap,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let doc = match fields::document(&headers, &bytes) {
+    let doc = match iam_document::document(&headers, &bytes) {
         Ok(doc) => doc,
         Err(error) => return *error,
     };
