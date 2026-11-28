@@ -1,4 +1,5 @@
 - [x] Implement snapshot import and its report.
 - [x] Compare initial import, repeated and overlapping imports, partial reads and rollback.
 - [x] Verify provider failures and the existing CLI and frontend.
+- [x] Rehearse import writer handoff in both directions with an in-flight commit or rollback, and verify retained rules, policy versions and import audits.
 - [ ] Close compatibility signoff for overlapping imports of the same policy.
