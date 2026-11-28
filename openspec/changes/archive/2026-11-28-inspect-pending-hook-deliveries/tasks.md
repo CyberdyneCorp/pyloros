@@ -1,0 +1,2 @@
+- [x] Add hook selection to the read-only command and document its use before removal.
+- [x] Verify filtering, argument errors and uncommitted queue changes on PostgreSQL.

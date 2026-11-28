@@ -112,9 +112,9 @@ verify-hook-inventory reviewed *event:
     just hook-inventory "$@" > "$current"
     cmp "$current" - < "$reviewed"
 
-# Check how many committed component deliveries remain for these events.
+# Count pending component deliveries by event names or --hook UUID.
 [positional-arguments]
-hook-queue *event:
+hook-queue *selection:
     cargo run --quiet --locked -- --check-hook-queue "$@"
 
 # Read the committed queue and history state for a recorded component delivery.

@@ -92,7 +92,7 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
             return Ok(ExitCode::SUCCESS);
         }
         Some("--check-hook-queue") => {
-            let pending = hook_inventory::pending(&pool, &hook_events(args)?).await?;
+            let pending = pending_hooks(&pool, args).await?;
             println!("{}", serde_json::json!({ "pending": pending }));
             return Ok(coverage_status(pending == 0));
         }
@@ -139,6 +139,23 @@ async fn check_writer_mode(pool: &sqlx::PgPool) -> Result<ExitCode, Box<dyn Erro
     .await?;
     println!("{mode}");
     Ok(coverage_status(mode == "writable primary"))
+}
+
+async fn pending_hooks(
+    pool: &sqlx::PgPool,
+    args: impl Iterator<Item = std::ffi::OsString>,
+) -> Result<i64, Box<dyn Error>> {
+    let mut args = args.peekable();
+    if args.peek().is_some_and(|arg| arg == "--hook") {
+        args.next();
+        let id = args.next().ok_or("expected a hook UUID after --hook")?;
+        if args.next().is_some() {
+            return Err("expected only one hook UUID after --hook".into());
+        }
+        let id = id.to_str().ok_or("invalid hook UUID")?.parse()?;
+        return Ok(hook_inventory::pending_for_hook(pool, id).await?);
+    }
+    Ok(hook_inventory::pending(pool, &hook_events(args)?).await?)
 }
 
 fn hook_events(

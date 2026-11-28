@@ -1,0 +1,1 @@
+Read the queue on the PostgreSQL primary by hook ID. Include delayed deliveries and rows whose deletion is still uncommitted. The result measures remaining deliveries and does not establish whether a definition or an execution exists. Keep event-based queries independent so their database permissions stay the same.

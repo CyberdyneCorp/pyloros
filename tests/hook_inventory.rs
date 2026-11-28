@@ -191,6 +191,7 @@ async fn check_queue_visibility(url: &Url, conn: &mut sqlx::PgConnection) -> sql
     queue(&billing, 2, Some(2));
     queue(&["user_registered"], 0, Some(0));
     queue(&["entitlement_granted", "unknown"], 1, None);
+    check_hook_queue_filter(url, conn).await?;
     use sqlx::Connection;
     let mut tx = conn.begin().await?;
     sqlx::query("DELETE FROM pyloros_hook_deliveries WHERE event_type = ANY($1)")
@@ -201,6 +202,52 @@ async fn check_queue_visibility(url: &Url, conn: &mut sqlx::PgConnection) -> sql
     tx.commit().await?;
     queue(&billing, 0, Some(0));
     queue(&[], 2, Some(1));
+    Ok(())
+}
+
+async fn check_hook_queue_filter(url: &Url, conn: &mut sqlx::PgConnection) -> sqlx::Result<()> {
+    use sqlx::Connection;
+    let first = Uuid::from_u128(1).to_string();
+    let sibling = Uuid::from_u128(2).to_string();
+    let count = |id: &str, expected: i64| {
+        let output = check(url, "--check-hook-queue", &["--hook", id]);
+        assert_eq!(
+            output.status.code(),
+            Some(if expected == 0 { 0 } else { 2 })
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+            json!({"pending":expected})
+        );
+    };
+    for args in [
+        vec!["--hook"],
+        vec!["--hook", "invalid"],
+        vec!["--hook", &first, "role_granted"],
+        vec!["role_granted", "--hook", &first],
+    ] {
+        let output = check(url, "--check-hook-queue", &args);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+    }
+    sqlx::raw_sql("ALTER TABLE pyloros_hook_deliveries ADD COLUMN hook_id uuid REFERENCES hooks(id) ON DELETE CASCADE;
+        UPDATE pyloros_hook_deliveries SET hook_id = (SELECT id FROM hooks WHERE is_active);
+        INSERT INTO pyloros_hook_deliveries SELECT 'entitlement_granted',now(),id FROM hooks WHERE NOT is_active")
+        .execute(&mut *conn).await?;
+    count(&first, 3);
+    count(&sibling, 1);
+    let mut tx = conn.begin().await?;
+    sqlx::query("DELETE FROM hooks WHERE NOT is_active")
+        .execute(&mut *tx)
+        .await?;
+    count(&sibling, 1);
+    tx.rollback().await?;
+    count(&sibling, 1);
+    sqlx::query("DELETE FROM hooks WHERE NOT is_active")
+        .execute(&mut *conn)
+        .await?;
+    count(&sibling, 0);
+    count(&first, 3);
     Ok(())
 }
 
