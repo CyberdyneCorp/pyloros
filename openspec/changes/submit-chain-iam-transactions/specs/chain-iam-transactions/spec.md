@@ -83,3 +83,8 @@ The operator membership endpoints SHALL submit the configured group mutation and
 #### Scenario: PostgreSQL rejects the audit commit after confirmation
 - **WHEN** the contract successfully executes the membership change and PostgreSQL rejects the audit commit
 - **THEN** return HTTP 500 and leave the confirmed chain effect available for reconciliation
+
+#### Scenario: The submission connection loses the node's response
+- **WHEN** a transport error leaves delivery of a signed group mutation uncertain
+- **THEN** poll for its locally computed hash within the ordinary receipt deadline, keeping the signer lock and sending the envelope only once
+- **AND** commit the success audit only when the receipt confirms success for the intended contract

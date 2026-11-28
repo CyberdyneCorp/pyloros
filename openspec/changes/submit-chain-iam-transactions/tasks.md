@@ -7,3 +7,4 @@
 - [ ] Wire policy mutations, audit their results and compare the original clients.
 - [x] Verify a known receipt against an expected IAM contract address.
 - [x] Submit ordinary group membership changes and audit confirmed receipts.
+- [x] Reconcile a lost submission response by reading the receipt for the locally computed hash.

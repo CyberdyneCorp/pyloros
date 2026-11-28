@@ -33,3 +33,5 @@ For policy mutations, the preflight currently ends before submission. The sender
 With `--contract ADDRESS`, compare the twenty address bytes in the receipt’s `to` field before accepting its status. The option also works while polling. Contract event interpretation and block finality require additional evidence.
 
 For ordinary group membership, successful on-chain completion is an intentional migration exception where the previous signing adapter fails before broadcast. Compute the transaction hash locally, send its signed envelope once, and verify the returned hash, receipt destination and execution status. Hold the signer lock through confirmation and the database audit commit. If PostgreSQL rejects that commit, return HTTP 500. The confirmed chain effect remains observable for reconciliation.
+
+A transport failure during submission can occur after the node has accepted the envelope. Resolve this case by polling for the locally computed hash with the same receipt and destination checks as an acknowledged submission. An explicit RPC rejection or a conflicting acknowledgement fails the request. A receipt timeout leaves the outcome unknown.

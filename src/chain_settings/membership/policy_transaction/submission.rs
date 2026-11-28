@@ -37,6 +37,14 @@ impl UnsignedIamTransaction {
     }
 }
 
+fn should_check_receipt(reply: Result<Value, ReadError>, expected: B256) -> bool {
+    match reply {
+        Ok(value) => value.as_str().and_then(|s| s.parse::<B256>().ok()) == Some(expected),
+        Err(ReadError::Transport(_)) => true,
+        Err(_) => false,
+    }
+}
+
 impl Chain {
     pub(crate) async fn submit_group_member(
         &self,
@@ -50,9 +58,8 @@ impl Chain {
                           "params":[format!("0x{}", HEXLOWER.encode(&signed))]});
         let reply = self
             .request(&SUBMISSION_CLIENT, &body.to_string(), RpcRead::Contract)
-            .await
-            .map_err(|_| PrepareError::Unavailable)?;
-        if reply.as_str().and_then(|s| s.parse::<B256>().ok()) != Some(expected) {
+            .await;
+        if !should_check_receipt(reply, expected) {
             return Err(PrepareError::Unavailable);
         }
         match self
@@ -63,7 +70,13 @@ impl Chain {
             Ok("reported_revert") => Err(PrepareError::Reverted(format!(
                 "transaction reverted (tx={expected})"
             ))),
-            _ => Err(PrepareError::Unavailable),
+            _ => {
+                eprintln!(
+                    "Unconfirmed IAM transaction {expected} for contract {}",
+                    tx.to
+                );
+                Err(PrepareError::Unavailable)
+            }
         }
     }
 }
@@ -71,6 +84,16 @@ impl Chain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lost_submission_response_requires_reconciliation_by_local_hash() {
+        let hash = B256::repeat_byte(1);
+        assert!(should_check_receipt(Err(ReadError::Transport(None)), hash));
+        assert!(should_check_receipt(Ok(json!(hash)), hash));
+        assert!(!should_check_receipt(Ok(json!(B256::ZERO)), hash));
+        assert!(!should_check_receipt(Ok(Value::Null), hash));
+        assert!(!should_check_receipt(Err(ReadError::Failure), hash));
+    }
 
     #[test]
     fn signed_membership_envelope_matches_mined_transaction() {
