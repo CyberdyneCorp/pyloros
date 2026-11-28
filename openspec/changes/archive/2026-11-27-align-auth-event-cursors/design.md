@@ -1,0 +1,1 @@
+Decode the identifier as a 32-character hexadecimal integer after cursor-specific wrapper removal. Reuse the existing hexadecimal normalization used for chain heights. Validate the Gregorian year after translating an ISO week date.

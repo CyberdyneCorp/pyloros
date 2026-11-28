@@ -57,7 +57,8 @@ fn date(text: &str) -> Option<(NaiveDate, &str)> {
             ),
             None => (Weekday::Mon, tail),
         };
-        return Some((NaiveDate::from_isoywd_opt(year, n, day)?, tail));
+        let date = NaiveDate::from_isoywd_opt(year, n, day)?;
+        return (date.year() <= 9999).then_some((date, tail));
     }
     let month = number(rest.get(..2)?)?;
     let day = rest.get(2..)?.strip_prefix(sep)?;
@@ -123,6 +124,7 @@ mod tests {
             "20260301T24:01",
             "20260301T12+24",
             "2026-W00",
+            "9999-W52-7",
         ] {
             assert_eq!(parse(invalid), None, "{invalid}");
         }

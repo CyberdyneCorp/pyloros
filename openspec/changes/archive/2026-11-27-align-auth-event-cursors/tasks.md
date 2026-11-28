@@ -1,0 +1,2 @@
+- [x] 1. Cover normalized identifiers and out-of-range week dates.
+- [x] 2. Compare page contents, status and committed audit counts on both listings.

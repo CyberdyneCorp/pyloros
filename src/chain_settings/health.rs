@@ -27,7 +27,7 @@ impl ChainSettings {
 
 fn block_result(result: &Value) -> Result<(), String> {
     if let Some(raw) = result.as_str()
-        && !hexadecimal_height(raw)
+        && crate::unicode_decimal::hexadecimal_magnitude(raw).is_none()
     {
         return Err(format!(
             "invalid literal for int() with base 16: {}",
@@ -35,27 +35,6 @@ fn block_result(result: &Value) -> Result<(), String> {
         ));
     }
     Ok(())
-}
-
-fn hexadecimal_height(raw: &str) -> bool {
-    let normalized: String = raw
-        .trim()
-        .chars()
-        .map(|c| {
-            crate::unicode_decimal::decimal(c).map_or(c, |digit| char::from(b'0' + digit as u8))
-        })
-        .collect();
-    let number = normalized.strip_prefix(['+', '-']).unwrap_or(&normalized);
-    let digits = match number
-        .strip_prefix("0x")
-        .or_else(|| number.strip_prefix("0X"))
-    {
-        Some(rest) => rest.strip_prefix('_').unwrap_or(rest),
-        None => number,
-    };
-    digits
-        .split('_')
-        .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 #[cfg(test)]
@@ -117,7 +96,7 @@ mod tests {
         for value in ["0x0", "0x_fa", "a_b", "٠xA", "+１２"] {
             assert_eq!(block_result(&json!(value)), Ok(()));
         }
-        assert!(!hexadecimal_height("0x__fa"));
+        assert!(crate::unicode_decimal::hexadecimal_magnitude("0x__fa").is_none());
         assert_eq!(
             block_result(&json!("0x")),
             Err("invalid literal for int() with base 16: '0x'".into())

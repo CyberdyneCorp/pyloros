@@ -15,3 +15,23 @@ pub(crate) fn decimal(c: char) -> Option<i64> {
     }
     Some(i64::from((point - start) % 10))
 }
+
+pub(crate) fn hexadecimal_magnitude(raw: &str) -> Option<String> {
+    let normalized: String = raw
+        .trim()
+        .chars()
+        .map(|c| decimal(c).map_or(c, |digit| char::from(b'0' + digit as u8)))
+        .collect();
+    let number = normalized.strip_prefix(['+', '-']).unwrap_or(&normalized);
+    let digits = match number
+        .strip_prefix("0x")
+        .or_else(|| number.strip_prefix("0X"))
+    {
+        Some(rest) => rest.strip_prefix('_').unwrap_or(rest),
+        None => number,
+    };
+    digits
+        .split('_')
+        .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| digits.replace('_', ""))
+}

@@ -51,10 +51,11 @@ impl Cursor {
         let at = time::parse(stamp)?.and_utc();
         let hex = fields.next()?.replace("urn:", "").replace("uuid:", "");
         let hex = hex.trim_matches(['{', '}']).replace('-', "");
-        if hex.len() != 32 {
+        if hex.chars().count() != 32 {
             return None;
         }
-        let id = Uuid::parse_str(&hex).ok()?;
+        let digits = crate::unicode_decimal::hexadecimal_magnitude(&hex)?;
+        let id = Uuid::from_u128(u128::from_str_radix(&digits, 16).ok()?);
         fields.next().is_none().then_some(Self { at, id })
     }
 }
@@ -74,6 +75,27 @@ mod tests {
         };
         let decoded = Cursor::decode(&cursor.encode()).unwrap();
         assert_eq!((decoded.at, decoded.id), (at, cursor.id));
+    }
+
+    #[test]
+    fn cursor_identifier_uses_hexadecimal_integer_syntax() {
+        for suffix in ["０a", "+a", "0_a", "0x_a", "＿a", "__a"] {
+            let hex = format!("{}{}", "0".repeat(32 - suffix.chars().count()), suffix);
+            let wrapped = URL_SAFE_NO_PAD.encode(format!("v1|2026-02-09|{hex}"));
+            let value = Cursor::decode(&wrapped).map(|c| c.id.as_u128());
+            assert_eq!(
+                value,
+                match suffix {
+                    "０a" | "0_a" => Some(10),
+                    _ => None,
+                }
+            );
+        }
+        for prefix in ["+", "0x_", " "] {
+            let hex = format!("{prefix}{}a", "0".repeat(31 - prefix.len()));
+            let wrapped = URL_SAFE_NO_PAD.encode(format!("v1|2026-02-09|{hex}"));
+            assert_eq!(Cursor::decode(&wrapped).unwrap().id.as_u128(), 10);
+        }
     }
 
     #[test]
