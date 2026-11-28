@@ -83,6 +83,27 @@ class ServedAssets(unittest.TestCase):
                     server.shutdown()
                     thread.join()
 
+    def test_refuses_matching_bytes_from_an_incomplete_http_response(self):
+        class IncompleteResponse(QuietHandler):
+            def send_header(self, keyword, value):
+                if keyword.lower() == "content-length":
+                    value = str(int(value) + 1)
+                super().send_header(keyword, value)
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.js").write_text("export default 1")
+            handler = partial(IncompleteResponse, directory=tmp)
+            with ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+                thread = Thread(target=server.serve_forever)
+                thread.start()
+                try:
+                    with self.assertRaisesRegex(ValueError, "app.js.*Content-Length"):
+                        check(root, f"http://127.0.0.1:{server.server_port}")
+                finally:
+                    server.shutdown()
+                    thread.join()
+
     def test_compares_reviewed_files_below_a_mount_path(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

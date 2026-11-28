@@ -31,6 +31,21 @@ def check_content_type(asset, suffix, headers):
         raise ValueError(f"{asset} has an invalid Content-Type for {suffix}: {values!r}")
 
 
+def compare_body(response, path, asset):
+    digest = hashlib.sha256()
+    with path.open("rb") as reviewed:
+        for chunk in iter(lambda: reviewed.read(65536), b""):
+            if response.read(len(chunk)) != chunk:
+                raise ValueError(f"Served content differs for {asset}")
+            digest.update(chunk)
+    if response.read(1):
+        raise ValueError(f"Served content exceeds the reviewed length for {asset}")
+    # Sized HTTPResponse reads can reach EOF with declared bytes still outstanding.
+    if response.length:
+        raise ValueError(f"{asset} ended before its declared Content-Length")
+    return digest.digest()
+
+
 def compare_asset(client, target, path, asset, *, stale_tag=None):
     headers = {"Accept-Encoding": "identity"}
     if stale_tag is not None:
@@ -45,15 +60,7 @@ def compare_asset(client, target, path, asset, *, stale_tag=None):
             if any(coding.strip().lower() != "identity" for coding in value.split(",") if coding.strip()):
                 raise ValueError(f"{asset} has incompatible Content-Encoding for an identity request: {encodings!r}")
         check_content_type(asset, path.suffix, response.headers)
-        digest = hashlib.sha256()
-        with path.open("rb") as reviewed:
-            for chunk in iter(lambda: reviewed.read(65536), b""):
-                if response.read(len(chunk)) != chunk:
-                    raise ValueError(f"Served content differs for {asset}")
-                digest.update(chunk)
-        if response.read(1):
-            raise ValueError(f"Served content exceeds the reviewed length for {asset}")
-        return response.headers.get("ETag"), digest.digest()
+        return response.headers.get("ETag"), compare_body(response, path, asset)
 
 
 def validate_tags(tags):
