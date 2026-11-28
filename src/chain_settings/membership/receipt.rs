@@ -2,7 +2,7 @@
 use super::{Chain, Value, json};
 use alloy_primitives::B256;
 use serde::Serialize;
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 #[derive(Serialize)]
 pub struct ReceiptObservation {
@@ -28,29 +28,87 @@ fn outcome(expected: B256, receipt: &Value) -> &'static str {
     }
 }
 
-pub async fn inspect_receipt(hash: &str) -> Result<ReceiptObservation, Box<dyn Error>> {
-    let requested_hash = hash.parse::<B256>()?;
-    let chain = Chain {
+impl Chain {
+    async fn observe_receipt(&self, hash: B256, poll: bool) -> Result<&'static str, &'static str> {
+        loop {
+            let receipt = self
+                .rpc("eth_getTransactionReceipt", json!([hash]))
+                .await
+                .map_err(
+                    |_| "Could not read transaction receipt from the configured RPC endpoint",
+                )?;
+            if !poll || !receipt.is_null() {
+                return Ok(outcome(hash, &receipt));
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
+    async fn wait_for_receipt(
+        &self,
+        hash: B256,
+        limit: Duration,
+    ) -> Result<&'static str, &'static str> {
+        tokio::time::timeout(limit, self.observe_receipt(hash, true))
+            .await
+            .unwrap_or(Ok("receipt_timeout"))
+    }
+}
+
+fn inspection_chain() -> Result<Chain, Box<dyn Error>> {
+    Ok(Chain {
         endpoint: std::env::var("BLOCKCHAIN_RPC_ENDPOINT")?,
         identity: None,
         policy: None,
         group: None,
         signer: None,
         timeout: super::super::rpc_timeout()?,
-    };
-    let receipt = chain
-        .rpc("eth_getTransactionReceipt", json!([requested_hash]))
-        .await
-        .map_err(|_| "Could not read transaction receipt from the configured RPC endpoint")?;
+    })
+}
+
+pub async fn inspect_receipt(hash: &str) -> Result<ReceiptObservation, Box<dyn Error>> {
+    let requested_hash = hash.parse::<B256>()?;
+    let outcome = inspection_chain()?
+        .observe_receipt(requested_hash, false)
+        .await?;
     Ok(ReceiptObservation {
         requested_hash,
-        outcome: outcome(requested_hash, &receipt),
+        outcome,
+    })
+}
+
+pub async fn wait_for_receipt(hash: &str) -> Result<ReceiptObservation, Box<dyn Error>> {
+    let requested_hash = hash.parse::<B256>()?;
+    let outcome = inspection_chain()?
+        .wait_for_receipt(requested_hash, Duration::from_secs(60))
+        .await?;
+    Ok(ReceiptObservation {
+        requested_hash,
+        outcome,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn wait_deadline_includes_an_inflight_read() {
+        use axum::{Router, routing::post};
+        let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let chain = Chain::for_health_test(format!("http://{}", socket.local_addr().unwrap()));
+        let app = Router::new().route(
+            "/",
+            post(|| async { std::future::pending::<String>().await }),
+        );
+        let server = tokio::spawn(async move { axum::serve(socket, app).await.unwrap() });
+        let outcome = chain
+            .wait_for_receipt(B256::ZERO, Duration::from_millis(100))
+            .await
+            .unwrap();
+        server.abort();
+        assert_eq!(outcome, "receipt_timeout");
+    }
 
     #[test]
     fn classify_only_the_requested_hash_and_standard_status() {

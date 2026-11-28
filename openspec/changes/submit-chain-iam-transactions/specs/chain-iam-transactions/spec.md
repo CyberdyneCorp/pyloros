@@ -18,3 +18,22 @@ The service SHALL submit operator policy changes to the configured IAM provider 
 
 - **WHEN** concurrent operations use the same signer and chain
 - **THEN** coordinate submission so the service does not inadvertently replace its own pending transaction
+
+### Requirement: Observe a pending IAM transaction
+
+The operator receipt check SHALL support waiting for a known transaction hash on the configured provider for up to 60 seconds.
+
+#### Scenario: Receipt becomes available
+
+- **WHEN** the provider initially returns an absent receipt and later returns a receipt
+- **THEN** read the same transaction hash again and report the receipt outcome. Stop polling on a mismatched hash, an unrecognized status, or a revert.
+
+#### Scenario: Receipt deadline expires
+
+- **WHEN** the overall deadline expires before an observation completes
+- **THEN** report `receipt_timeout` with exit code 2 and leave the transaction unresolved. Include in-flight reads and polling delays in this deadline.
+
+#### Scenario: Provider rejects the lookup
+
+- **WHEN** the provider returns a JSON-RPC error
+- **THEN** terminate the check with exit code 1.

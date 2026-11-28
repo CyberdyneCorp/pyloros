@@ -19,3 +19,5 @@ Run `just inspect-iam-receipt HASH` with `BLOCKCHAIN_RPC_ENDPOINT` pointing at t
 ## Unsigned payload
 
 Preparation produces the type-2 transaction prefix followed by the RLP list of chain ID, pending nonce, priority fee, maximum fee, gas limit, destination, zero value, call data and an empty access list. Preserve full-width quantities from the provider. The sender address selects the pending nonce and gas estimate and is excluded from the signing payload.
+
+With `--wait`, poll while the receipt is absent. Apply a single 60-second deadline across provider calls, transport retries and polling delays. Return immediately when the provider supplies a receipt or rejects the read. A timeout leaves the transaction outcome unresolved.

@@ -45,7 +45,7 @@ build-hook-example:
 
 # Inspect one known transaction on the configured chain RPC endpoint.
 [positional-arguments]
-inspect-iam-receipt hash:
+inspect-iam-receipt hash *flags:
     cargo run --quiet --locked -- --inspect-iam-receipt "$@"
 
 # List hook bindings and check coverage for active definitions.

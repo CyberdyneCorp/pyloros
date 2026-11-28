@@ -91,12 +91,14 @@ async fn inspect_receipt(
     mut receipt: impl Iterator<Item = std::ffi::OsString>,
 ) -> Result<ExitCode, Box<dyn Error>> {
     let hash = receipt.next().ok_or("expected one transaction hash")?;
-    if receipt.next().is_some() {
-        return Err("expected one transaction hash".into());
-    }
-    let report =
-        pyloros::chain_settings::inspect_receipt(hash.to_str().ok_or("invalid transaction hash")?)
-            .await?;
+    let hash = hash.to_str().ok_or("invalid transaction hash")?;
+    let report = match (receipt.next().as_deref(), receipt.next()) {
+        (None, None) => pyloros::chain_settings::inspect_receipt(hash).await?,
+        (Some(flag), None) if flag == "--wait" => {
+            pyloros::chain_settings::wait_for_receipt(hash).await?
+        }
+        _ => return Err("expected a transaction hash and optional --wait".into()),
+    };
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(if report.outcome == "reported_success" {
         ExitCode::SUCCESS
