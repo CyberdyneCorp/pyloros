@@ -1,0 +1,1 @@
+Classify the stored prefix within PostgreSQL. Use a single aggregate statement so every count sees the same snapshot. Return fixed categories including absent and unrecognized values. Prefix recognition does not verify the encoding or the password. The query needs SELECT access only to the account password column.

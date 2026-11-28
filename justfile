@@ -27,6 +27,10 @@ db-shell:
 db-commit-checks:
     uv run --script scripts/inspect_commit_checks.py
 
+# Count account password prefixes on the target PostgreSQL database.
+db-password-schemes:
+    uv run --script scripts/account_password_schemes.py
+
 # Check declared storage widths for verified Google Play purchase tokens.
 db-play-token-width:
     uv run --script scripts/check_play_token_width.py
