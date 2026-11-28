@@ -157,3 +157,16 @@ When all queued teams use the same single direct membership rule, Pyloros checks
 With 1 ms of injected delay per database response chunk, 32 sequential wide denials had a median of 90.8 ms before grouping and 18.7 ms after. Both builds gave the same decisions for direct grants, short inherited grants and the wide denial. This measurement describes the tested graph and network conditions.
 
 A separate two-replica trial gave each of two service clients a folder linked to the same 65 team IDs. One client kept a fixed membership. The other granted and withdrew membership on the first, 33rd and 65th teams, sometimes leaving two granting paths open. After each acknowledged write, both replicas checked both users in both clients. All 960 decisions matched the expected access. The other client's concurrent readers completed 73,134 checks, and the database recorded 60 grant audits and 60 withdrawal audits. The p99 time from write acknowledgement until all eight decisions returned was 20.16 ms in this loopback trial.
+
+## Concurrent MFA verification
+
+Sixteen accounts completed password-bound MFA simultaneously on a local Apple M3 Pro with PostgreSQL 17.12 and RS256 signing. Each wave submitted eight authenticator codes and eight recovery codes through warmed HTTP connections. Password verification and challenge issuance happened before timing. The timer covered the HTTP request to complete MFA, including session creation. Hooks and webhooks were disabled.
+
+| Receiving Rust processes | Completions across two trials | Median latency per trial (ms) | p95 latency per trial (ms) |
+|---:|---:|---:|---:|
+| 1 | 128 | 11.97–12.63 | 25.33–27.11 |
+| 2 | 128 | 12.05–12.96 | 24.41–26.73 |
+
+All 256 sessions authenticated on the backend that issued the challenge. PostgreSQL recorded one session, one successful MFA audit and the expected factor consumption per account. Each trial used a fresh database and four waves. With two receiving processes, each handled eight requests per wave and alternated factors between waves. These short bursts measure completion latency at a fixed concurrency. Sustained capacity and production latency targets remain open.
+
+Rust executable SHA-256: `af2b79ed968f986ad1849b60092178e4964787bdf95f29a27d67ace4d721ee56`.
