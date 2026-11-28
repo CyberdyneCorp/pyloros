@@ -1,0 +1,1 @@
+Build the options document and headers before commit. Convert them to a successful HTTP response only after commit succeeds. Use the same commit error handling as credential rename, preserving the existing availability handling for transport failures.

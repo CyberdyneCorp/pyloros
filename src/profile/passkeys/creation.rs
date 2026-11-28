@@ -273,8 +273,7 @@ async fn options_response(
         };
         headers.insert(header::SET_COOKIE, value);
     }
-    tx.commit().await?;
-    Ok((headers, Json(document)).into_response())
+    commit_response(tx, (headers, Json(document))).await
 }
 
 #[cfg(test)]
@@ -332,6 +331,38 @@ mod tests {
             json!({"challenge":URL_SAFE_NO_PAD.encode(challenge),
             "rpId":"keys.example","timeout":60000,"userVerification":"required"})
         );
+
+        // The first ceremony occupies the unique value. The second insert fails at commit.
+        sqlx::query(
+            "ALTER TABLE passkey_ceremonies ADD UNIQUE (rp_id) DEFERRABLE INITIALLY DEFERRED",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        for native in [false, true] {
+            let binding = Transport {
+                origin: "https://keys.example".into(),
+                secret: "rejected-binding".into(),
+                native,
+            };
+            let failed = login_options(&pool, &settings, "keys.example", binding)
+                .await
+                .unwrap();
+            assert_eq!(failed.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            assert!(!failed.headers().contains_key(header::SET_COOKIE));
+            let body = axum::body::to_bytes(failed.into_body(), 4096)
+                .await
+                .unwrap();
+            let error: Value = serde_json::from_slice(&body).unwrap();
+            for field in ["binding_secret", "ceremony_id", "publicKey"] {
+                assert!(error.get(field).is_none());
+            }
+        }
+        let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM passkey_ceremonies")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stored, 1);
     }
 
     #[test]

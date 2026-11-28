@@ -59,11 +59,7 @@ pub(super) async fn apply(
         }
         Err(error) => return Err(error),
     };
-    match tx.commit().await {
-        Ok(()) => Ok(Json(record).into_response()),
-        Err(sqlx::Error::Database(_)) => Ok(internal()),
-        Err(error) => Err(error),
-    }
+    commit_response(tx, Json(record)).await
 }
 
 pub(super) async fn save(

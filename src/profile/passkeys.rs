@@ -21,6 +21,17 @@ use crate::{
 };
 use serde::Serialize;
 
+async fn commit_response(
+    tx: Transaction<'_, Postgres>,
+    success: impl IntoResponse,
+) -> Result<Response, sqlx::Error> {
+    match tx.commit().await {
+        Ok(()) => Ok(success.into_response()),
+        Err(sqlx::Error::Database(_)) => Ok(internal()),
+        Err(error) => Err(error),
+    }
+}
+
 pub async fn limit_passkey_body(req: Request, next: axum::middleware::Next) -> Response {
     if !req.uri().path().starts_with("/api/v1/auth/passkeys") {
         return next.run(req).await;

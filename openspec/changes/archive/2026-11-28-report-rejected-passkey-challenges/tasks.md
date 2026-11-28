@@ -1,0 +1,2 @@
+- [x] Share commit handling across options issuance and credential rename.
+- [x] Verify database rejection, binding suppression and successful retry.
