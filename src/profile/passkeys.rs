@@ -501,22 +501,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn oversized_passkey_requests_stop_before_dispatch() {
+    async fn passkey_size_limit_preserves_admitted_bytes_across_chunks() {
+        use axum::body::{Body, Bytes, to_bytes};
+        use std::convert::Infallible;
         use tower::ServiceExt;
+
         let route = "/api/v1/auth/passkeys/register/options";
         let app = Router::new()
-            .route(route, any(|| async { StatusCode::NO_CONTENT }))
+            .route(route, any(|bytes: Bytes| async move { bytes }))
             .layer(axum::middleware::from_fn(limit_passkey_body));
-        for (size, expected) in [
-            (65536, StatusCode::NO_CONTENT),
-            (65537, StatusCode::PAYLOAD_TOO_LARGE),
-        ] {
-            let req = Request::builder()
-                .method("POST")
-                .uri(route)
-                .body(axum::body::Body::from(vec![0; size]))
-                .unwrap();
-            assert_eq!(app.clone().oneshot(req).await.unwrap().status(), expected);
+        let prefix = Bytes::from((0_u8..=255).cycle().take(65_535).collect::<Vec<_>>());
+        for tail in [b"x".as_slice(), b"xy"] {
+            let expected = [prefix.as_ref(), tail].concat();
+            for streamed in [false, true] {
+                let body = if streamed {
+                    let pieces = [prefix.clone(), Bytes::copy_from_slice(tail)];
+                    Body::from_stream(futures_util::stream::iter(pieces.map(Ok::<_, Infallible>)))
+                } else {
+                    Body::from(expected.clone())
+                };
+                let req = Request::builder()
+                    .method("POST")
+                    .uri(route)
+                    .body(body)
+                    .unwrap();
+                let response = app.clone().oneshot(req).await.unwrap();
+                let status = response.status();
+                let actual = to_bytes(response.into_body(), 65_536).await.unwrap();
+                if expected.len() == 65_536 {
+                    assert_eq!(status, StatusCode::OK);
+                    assert_eq!(actual.as_ref(), expected);
+                } else {
+                    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+                    assert_eq!(
+                        actual.as_ref(),
+                        br#"{"detail":"Passkey request too large"}"#
+                    );
+                }
+            }
         }
     }
 
