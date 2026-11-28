@@ -18,3 +18,12 @@ The service SHALL register an unverified account with a normalized email address
 #### Scenario: Registration integrations
 - **WHEN** a registration has matching webhook subscriptions and hooks
 - **THEN** commit pending webhook deliveries with the account and dispatch hooks after commit.
+
+#### Scenario: Registration while hook migration is incomplete
+- **WHEN** the Rust service receives a new registration with an active registration hook lacking a component binding
+- **THEN** return HTTP 503 before sending verification email and roll back the new account and pending hook deliveries.
+
+#### Scenario: Verify a registration after switching backends
+- **WHEN** a registration succeeds with multiple matching hooks and its email verification code is presented to the other backend
+- **THEN** verify the same account, allow sign-in there, and execute each registration hook once for the account.
+- **AND** a duplicate registration returns a conflict without sending another verification email or dispatching more registration hooks.
