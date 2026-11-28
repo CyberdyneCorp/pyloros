@@ -3,4 +3,5 @@
 - [x] Add a Linux transport test for signed HTTPS delivery, hostname mismatch and retry with process-local CA trust.
 - [x] Verify that a short fixed-length HTTP response records the received and expected byte counts, and that a peer worker can complete the retry.
 - [x] Compare both worker handoff directions when an HTTP body ends after a flushed raw or zlib-wrapped deflate excerpt.
+- [x] Verify finished and flushed gzip responses across worker handoffs and reject a corrupted checksum within a short excerpt.
 - [ ] Verify production TLS receiver behavior, remaining transport failure details and special-use IPv6 policy before migration signoff.

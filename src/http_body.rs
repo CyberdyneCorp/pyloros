@@ -56,12 +56,24 @@ impl ReadLimit {
 }
 
 pub(crate) async fn read(mut response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
-    let deflate = response
+    let coding = response
         .headers()
         .get(CONTENT_ENCODING)
-        .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"deflate"));
-    if deflate {
-        return read_deflate(response, limit).await;
+        .map(|value| value.as_bytes())
+        .unwrap_or_default();
+    if coding.eq_ignore_ascii_case(b"gzip") {
+        return read_compressed(response, limit, Decompress::new_gzip(15), None).await;
+    }
+    if coding.eq_ignore_ascii_case(b"deflate") {
+        // Raw deflate can start with a valid zlib header. Keep both viable
+        // interpretations without buffering the wire body.
+        return read_compressed(
+            response,
+            limit,
+            Decompress::new(true),
+            Some(Decompress::new(false)),
+        )
+        .await;
     }
     let expected = response.content_length();
     let mut bytes = Vec::new();
@@ -77,35 +89,38 @@ pub(crate) async fn read(mut response: Response, limit: ReadLimit) -> io::Result
     Ok(bytes)
 }
 
-async fn read_deflate(mut response: Response, limit: ReadLimit) -> io::Result<Vec<u8>> {
-    // A raw stream can begin with a valid zlib header. Keep each viable
-    // interpretation until the format is known, without buffering the wire body.
-    let mut wrapped = Some(Inflate::new(true, limit));
-    let mut raw = Some(Inflate::new(false, limit));
+async fn read_compressed(
+    mut response: Response,
+    limit: ReadLimit,
+    framed: Decompress,
+    raw: Option<Decompress>,
+) -> io::Result<Vec<u8>> {
+    let mut framed = Some(Inflate::new(framed, limit));
+    let mut raw = raw.map(|decoder| Inflate::new(decoder, limit));
     while let Some(piece) = response.chunk().await.map_err(io::Error::other)? {
-        wrapped = wrapped.and_then(|decoder| decoder.feed(&piece));
+        framed = framed.and_then(|decoder| decoder.feed(&piece));
         raw = raw.and_then(|decoder| decoder.feed(&piece));
         if let ReadLimit::Prefix(size) = limit
-            && wrapped
+            && framed
                 .as_ref()
                 .or(raw.as_ref())
                 .is_some_and(|decoder| decoder.bytes.len() == size)
         {
             break;
         }
-        if wrapped.is_none() && raw.is_none() {
+        if framed.is_none() && raw.is_none() {
             break;
         }
     }
     // Prefer a finished raw stream over an unfinished zlib interpretation.
-    let decoder = match (&wrapped, &raw) {
-        (Some(w), Some(r)) if r.complete && !w.complete => raw,
-        _ => wrapped.or(raw),
+    let decoder = match (&framed, &raw) {
+        (Some(framed), Some(raw_decoder)) if raw_decoder.complete && !framed.complete => raw,
+        _ => framed.or(raw),
     };
     decoder.and_then(Inflate::finish).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            "Invalid or oversized deflate document",
+            "Invalid or oversized compressed document",
         )
     })
 }
@@ -118,10 +133,10 @@ struct Inflate {
 }
 
 impl Inflate {
-    fn new(wrapped: bool, limit: ReadLimit) -> Self {
+    fn new(decoder: Decompress, limit: ReadLimit) -> Self {
         Self {
             limit,
-            decoder: Decompress::new(wrapped),
+            decoder,
             bytes: Vec::new(),
             complete: false,
         }
@@ -214,10 +229,32 @@ mod tests {
     fn fragmented(data: &[u8], wrapped: bool) -> Option<Vec<u8>> {
         data.chunks(1)
             .try_fold(
-                Inflate::new(wrapped, ReadLimit::Complete(1024)),
+                Inflate::new(Decompress::new(wrapped), ReadLimit::Complete(1024)),
                 Inflate::feed,
             )?
             .finish()
+    }
+
+    #[test]
+    fn gzip_excerpt_accepts_a_missing_trailer_and_rejects_a_bad_checksum() {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(b"received").unwrap();
+        let mut bytes = encoder.finish().unwrap();
+        let trailer = bytes.len() - 8;
+        let excerpt = |wire: &[u8]| {
+            wire.chunks(1)
+                .try_fold(
+                    Inflate::new(Decompress::new_gzip(15), ReadLimit::Prefix(1024)),
+                    Inflate::feed,
+                )?
+                .finish()
+        };
+        assert_eq!(
+            excerpt(&bytes[..trailer]).as_deref(),
+            Some(b"received".as_slice())
+        );
+        bytes[trailer] ^= 1;
+        assert!(excerpt(&bytes).is_none());
     }
 
     #[test]
@@ -231,7 +268,10 @@ mod tests {
         for (bytes, zlib) in [(wrapped.as_slice(), true), (raw.as_slice(), false)] {
             let prefix = bytes
                 .chunks(1)
-                .try_fold(Inflate::new(zlib, ReadLimit::Prefix(1024)), Inflate::feed)
+                .try_fold(
+                    Inflate::new(Decompress::new(zlib), ReadLimit::Prefix(1024)),
+                    Inflate::feed,
+                )
                 .unwrap();
             assert_eq!(prefix.finish().as_deref(), Some(b"ok".as_slice()));
             assert!(fragmented(bytes, zlib).is_none());

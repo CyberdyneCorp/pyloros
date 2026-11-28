@@ -88,6 +88,7 @@ async fn post(
     .ok_or_else(|| format!("destination refused: {host} resolves to a non-public address"))?;
     let client = reqwest::Client::builder()
         .no_proxy()
+        .no_gzip()
         .no_deflate()
         .redirect(reqwest::redirect::Policy::none())
         .resolve(host, address)
@@ -243,10 +244,13 @@ mod tests {
                     let gzip = STANDARD
                         .decode("H4sIAAAAAAAC/zu3+9woHIWjcBSOwlFIMgQAQxwPwUAGAAA=")
                         .unwrap();
-                    let (coding, encoded) = if uri.query() == Some("raw") {
-                        ("deflate", gzip[10..gzip.len() - 8].to_vec())
-                    } else {
-                        ("gzip", gzip)
+                    let (coding, encoded) = match uri.query() {
+                        Some("raw") => ("deflate", gzip[10..gzip.len() - 8].to_vec()),
+                        Some("flushed") => (
+                            "gzip",
+                            STANDARD.decode("H4sIAAAAAAAAEyrOyC8qAQAAAP//").unwrap(),
+                        ),
+                        _ => ("gzip", gzip),
                     };
                     (
                         StatusCode::TEMPORARY_REDIRECT,
@@ -287,6 +291,12 @@ mod tests {
             .unwrap();
         assert_eq!(result.code, Some(307));
         assert_eq!(result.excerpt.unwrap(), "λ".repeat(512));
+        d.url = format!("http://{address}/notify?flushed");
+        let result = post(&d, "msg_test", 123, "v1,test".into(), &settings)
+            .await
+            .unwrap();
+        assert_eq!(result.code, Some(307));
+        assert_eq!(result.excerpt.as_deref(), Some("short"));
         settings.insecure = false;
         assert!(
             post(&d, "msg_test", 123, "v1,test".into(), &settings)
