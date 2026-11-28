@@ -305,3 +305,15 @@ Eight concurrent callers each updated a different role in one client catalog. Ea
 | 2 | 2,048 | 1.637 | 1,251 | 5.91 | 12.87 |
 
 Each run recorded 1,024 operator and 1,024 service-client audits. All four migration replicas returned the final mapping for every role and verified the full audit chain. PostgreSQL sampling observed sessions waiting on the audit-chain head in both runs. These short, closed-loop trials measure completion rate with eight callers on independent roles. Sustained arrivals, competing edits to one role and production network latency require separate measurements.
+
+### Fixed arrival rates for role mapping writes
+
+Two fresh PostgreSQL runs scheduled eight seconds each at 160, 320 and 160 writes/s. The driver assigned writes round-robin to eight roles and kept each role's writes in order. Every write had a scheduled arrival independent of earlier completions. Latency includes time waiting for the previous response on that role. Each phase drained and all four migration replicas checked the final mappings and audit chain before the next phase.
+
+| Offered writes/s | Completed within eight seconds in each run | End-to-end p99, run 1 | End-to-end p99, run 2 |
+|---:|---:|---:|---:|
+| 160 | 1,280 / 1,280 | 3.74 ms | 4.23 ms |
+| 320 | 2,560 / 2,560 | 2.69 ms | 4.62 ms |
+| 160 after peak | 1,280 / 1,280 | 4.87 ms | 6.29 ms |
+
+All 10,240 writes produced one audit entry each, split equally between administrator and service-client calls. These local bursts establish the observed latency at 320 writes/s for independent roles. The saturation rate and performance with production background work remain open.
