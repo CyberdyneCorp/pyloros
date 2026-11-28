@@ -46,12 +46,11 @@ fn should_check_receipt(reply: Result<Value, ReadError>, expected: B256) -> bool
 }
 
 impl Chain {
-    pub(crate) async fn submit_group_member(
+    pub(crate) async fn submit_mutation(
         &self,
         mutation: &IamMutation<'_>,
     ) -> Result<(), PrepareError> {
-        let call = mutation.calldata(self).await?;
-        let tx = self.prepare_envelope(self.group.as_deref(), call).await?;
+        let tx = self.mutation_envelope(mutation).await?;
         let signed = tx.signed(self.signing_key.as_ref().ok_or(PrepareError::Invalid)?)?;
         let expected = keccak256(&signed);
         let body = json!({"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction",

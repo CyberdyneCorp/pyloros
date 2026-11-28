@@ -19,3 +19,9 @@ An authenticated operator SHALL be able to remove an unused IAM policy from the 
 - **WHEN** an authorized operator requests deletion of a policy whose stored rules decode successfully but include historical non-string entries
 - **THEN** remove the policy and record the deletion if it is unused
 - **AND** return HTTP 409 and preserve the policy if it is still attached
+
+#### Scenario: Chain group attachment checks
+- **WHEN** the group directory reports that a group holds the policy
+- **THEN** return HTTP 409 before broadcasting
+- **WHEN** the group directory or its policy links cannot be read
+- **THEN** return a provider error and leave the policy and audit unchanged

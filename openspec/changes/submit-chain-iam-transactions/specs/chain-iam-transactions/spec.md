@@ -24,6 +24,12 @@ The service SHALL submit operator policy changes to the configured IAM provider 
 - **WHEN** two operators request chain policy mutations through Rust replicas sharing PostgreSQL and a signer
 - **THEN** the second preparation waits for the first to release its signer lock before looking up the pending nonce. A rolled-back preparation also releases the lock.
 
+#### Scenario: Delete a policy on its configured contract
+- **WHEN** an operator deletes a known policy and its configured policy contract confirms the transaction
+- **THEN** commit the policy deletion audit and return an empty HTTP 204 response
+- **WHEN** the policy is absent from the provider inventory
+- **THEN** return HTTP 404 without submitting a transaction or recording a deletion audit
+
 ### Requirement: Observe a pending IAM transaction
 
 The operator receipt check SHALL support waiting for a known transaction hash on the configured provider for up to 60 seconds.

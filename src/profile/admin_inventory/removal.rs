@@ -8,7 +8,7 @@ pub(in crate::profile) async fn remove(
     headers: HeaderMap,
     axum::extract::Path(path): axum::extract::Path<String>,
 ) -> Response {
-    let (tx, actor, email) = match administrator::operator(&state, &headers).await {
+    let (mut tx, actor, email) = match administrator::operator(&state, &headers).await {
         Ok(operator) => operator,
         Err(error) => return *error,
     };
@@ -19,21 +19,33 @@ pub(in crate::profile) async fn remove(
         Ok(id) => id,
         Err(issue) => return passkeys::validation(vec![issue]),
     };
-    if let Some(chain) = chain {
-        return writes::prepare_chain_write(
-            tx,
-            &chain,
-            crate::chain_settings::IamMutation::DeletePolicy(id),
-        )
-        .await;
-    }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
-    delete(tx, id, (actor, email.as_deref()), origin)
+    let actor = (actor, email.as_deref());
+    if let Some(chain) = chain {
+        let mutation = crate::chain_settings::IamMutation::DeletePolicy(id);
+        if chain.lock_signer(&mut tx).await.is_err() {
+            return internal();
+        }
+        if let Err(error) = chain.submit_mutation(&mutation).await {
+            return writes::preparation_error(&mutation, error);
+        }
+        return commit_deletion(tx, actor, "iam.policy.delete", ("iam_policy", id), origin)
+            .await
+            .unwrap_or_else(|_| internal());
+    }
+    delete(tx, id, actor, origin)
         .await
         .unwrap_or_else(|_| internal())
+}
+
+pub(super) fn attached(id: Uuid) -> Response {
+    crate::login_http::problem(
+        StatusCode::CONFLICT,
+        &format!("policy {id} is still attached"),
+    )
 }
 
 async fn delete(
@@ -63,10 +75,7 @@ async fn delete(
     .fetch_one(&mut *tx)
     .await?;
     if attached {
-        return Ok(crate::login_http::problem(
-            StatusCode::CONFLICT,
-            &format!("policy {id} is still attached"),
-        ));
+        return Ok(self::attached(id));
     }
     sqlx::query("DELETE FROM iam_policies WHERE id=$1")
         .bind(id)

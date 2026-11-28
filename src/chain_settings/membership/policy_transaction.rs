@@ -2,6 +2,8 @@
 use super::*;
 use serde::Deserialize;
 mod arguments;
+#[cfg(test)]
+mod deletion_tests;
 mod quantities;
 mod revert;
 mod submission;
@@ -74,6 +76,7 @@ pub(crate) enum IamMutation<'a> {
 
 pub(crate) enum PrepareError {
     MissingPolicy(Uuid),
+    AttachedPolicy(Uuid),
     MissingIdentity(Uuid),
     MissingGroup(Uuid),
     ProtectedGroup,
@@ -247,7 +250,7 @@ impl IamMutation<'_> {
                 Ok(deleteGroupCall { id: group.id }.abi_encode())
             }
             Self::DeletePolicy(id) => Ok(deletePolicyCall {
-                id: chain.required_policy(*id).await?.id,
+                id: chain.deletable_policy(*id).await?,
             }
             .abi_encode()),
         }
@@ -333,6 +336,38 @@ impl Chain {
             .ok_or(PrepareError::MissingPolicy(id))
     }
 
+    async fn deletable_policy(&self, id: Uuid) -> Result<TokenId, PrepareError> {
+        let policy = self.policy.as_deref().ok_or(PrepareError::Unavailable)?;
+        let group = self.group.as_deref().ok_or(PrepareError::Unavailable)?;
+        let lookup = async {
+            let entries = self
+                .call(policy, listPoliciesCall {})
+                .await
+                .map_err(rpc_failure)?;
+            let target = entries
+                .into_iter()
+                .find(|p| chain_uuid("policy", p.id) == id)
+                .ok_or(PrepareError::MissingPolicy(id))?;
+            let groups = self
+                .call(group, listGroupsCall {})
+                .await
+                .map_err(rpc_failure)?;
+            for entry in groups {
+                let links = self
+                    .call(group, getGroupPoliciesCall { groupId: entry.id })
+                    .await
+                    .map_err(rpc_failure)?;
+                if links.contains(&target.id) {
+                    return Err(PrepareError::AttachedPolicy(id));
+                }
+            }
+            Ok(target.id)
+        };
+        tokio::time::timeout(Duration::from_secs(60), lookup)
+            .await
+            .map_err(|_| PrepareError::Catalog(SnapshotError::Deadline))?
+    }
+
     async fn quantity_rpc(&self, method: &str, params: Value) -> Result<Value, ReadError> {
         self.rpc_bounded(
             method,
@@ -401,6 +436,13 @@ impl Chain {
         &self,
         mutation: &IamMutation<'_>,
     ) -> Result<Vec<u8>, PrepareError> {
+        Ok(self.mutation_envelope(mutation).await?.signing_payload())
+    }
+
+    async fn mutation_envelope(
+        &self,
+        mutation: &IamMutation<'_>,
+    ) -> Result<UnsignedIamTransaction, PrepareError> {
         let call = mutation.calldata(self).await?;
         let address = match mutation {
             IamMutation::GroupMember { .. }
@@ -408,7 +450,7 @@ impl Chain {
             | IamMutation::GroupPolicy { .. } => self.group.as_deref(),
             _ => self.policy.as_deref(),
         };
-        self.prepare_contract(address, call).await
+        self.prepare_envelope(address, call).await
     }
 
     pub(crate) async fn prepare_token_status(

@@ -93,6 +93,7 @@ pub(super) fn preparation_error(mutation: &IamMutation<'_>, error: PrepareError)
         PrepareError::MissingIdentity(id)=>crate::login_http::problem(StatusCode::NOT_FOUND,&id.to_string()),
         PrepareError::MissingGroup(id) => delete_group::missing(id),
         PrepareError::MissingPolicy(id) => missing(id),
+        PrepareError::AttachedPolicy(id) => removal::attached(id),
         PrepareError::ProtectedGroup => delete_group::protected(),
         PrepareError::Catalog(error) => admin_client_roles::chain_error(error),
         PrepareError::Invalid | PrepareError::Argument(_) => internal(),

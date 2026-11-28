@@ -1,6 +1,6 @@
 - [x] Implement and verify PostgreSQL deletion and its attachment checks.
-- [ ] Implement deletion for chain IAM and verify provider failure behavior.
+- [x] Implement deletion for chain IAM and verify provider failure behavior.
 - [x] Compare PostgreSQL deletion through the CLI and unchanged console, including audit rollback and simultaneous changes.
 - [ ] Resolve compatibility for overlapping attachments and duplicate deletions during coexistence.
-- [ ] Verify chain deletion with the original clients.
+- [x] Verify chain deletion with the original clients.
 - [x] Compare historical policy deletion, attachment conflicts, rollback and retry through both PostgreSQL writers.

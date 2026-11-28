@@ -32,7 +32,7 @@ pub(super) async fn write_chain(
         identity,
         add,
     };
-    if let Err(error) = chain.submit_group_member(&mutation).await {
+    if let Err(error) = chain.submit_mutation(&mutation).await {
         return writes::preparation_error(&mutation, error);
     }
     finish(tx, user, group, add, actor, origin)
