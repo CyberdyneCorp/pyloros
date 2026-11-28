@@ -730,6 +730,16 @@ subject user, resolved client and role key. Scoped assignments also include
 the organization ID. Removing an organization membership queues one revocation
 per withdrawn scoped role. Audit, membership and delivery changes commit together.
 
+### Verify chain-backed organization removal
+
+If the chain provider's identity inventory omits a user's token, the organization removal endpoint can return HTTP 204, clear the PostgreSQL membership and record an empty `revoked_roles` list while the token still belongs to the organization's role group on chain. The operator IAM and role views can also be empty in this case.
+
+To check the contract directly, set `BLOCKCHAIN_RPC_ENDPOINT` and run the following read against the group contract at a confirmed block hash. A result of `"member": true` means the token still belongs to that group.
+
+```sh
+just inspect-iam-membership "$GROUP_CONTRACT" "$GROUP_ID" "$IDENTITY_TOKEN_ID" "$BLOCK_HASH"
+```
+
 ## Inspect an IAM transaction receipt
 
 With PostgreSQL-backed IAM, adding someone who already belongs to a group returns success and records the operator action. If an uncommitted removal overlaps the add, the add sees the existing membership and the removal can still take effect. If two additions both see an absent membership, the first commit succeeds and the conflicting insert returns HTTP 500. Only the committed addition has an audit entry.
