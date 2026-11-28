@@ -2,6 +2,6 @@
 - [x] Compare repeated, concurrent and failed operations and their effects on inherited access.
 - [x] Verify membership changes through the existing CLI and user administration controls.
 - [x] Verify unsigned chain preparation, identity resolution, provider failures and switching back to PostgreSQL.
-- [ ] Verify confirmed chain writes and decide how to report failed provider operations during migration.
-- [ ] Resolve the outcome of overlapping membership changes during mixed-writer operation.
+- [x] Verify confirmed chain writes and decide how to report failed provider operations during migration.
+- [x] Resolve the outcome of overlapping membership changes during mixed-writer operation.
 - [x] Verify the user administration panel with all detail reads served by Pyloros.
