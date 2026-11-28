@@ -49,14 +49,14 @@ pub(in crate::profile) async fn create_group(
 }
 
 async fn prepare_chain_group(
-    mut tx: Transaction<'_, Postgres>,
+    tx: Transaction<'_, Postgres>,
     chain: &crate::chain_settings::Chain,
     name: &str,
     description: Option<&str>,
 ) -> Result<Response, sqlx::Error> {
-    chain.lock_signer(&mut tx).await?;
-    let result = chain.prepare_group_creation(name, description).await;
-    tx.commit().await?;
+    let result = chain
+        .with_signer_lock(tx, chain.prepare_group_creation(name, description))
+        .await?;
     Ok(match result {
         Ok(_) => problem(
             StatusCode::SERVICE_UNAVAILABLE,

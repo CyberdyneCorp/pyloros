@@ -377,6 +377,17 @@ impl Chain {
         Ok(())
     }
 
+    pub(crate) async fn with_signer_lock<T>(
+        &self,
+        mut tx: Transaction<'_, Postgres>,
+        preparation: impl Future<Output = T>,
+    ) -> Result<T, sqlx::Error> {
+        self.lock_signer(&mut tx).await?;
+        let result = preparation.await;
+        tx.commit().await?;
+        Ok(result)
+    }
+
     pub(crate) async fn prepare_mutation(
         &self,
         mutation: &IamMutation<'_>,

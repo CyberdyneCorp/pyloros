@@ -64,7 +64,7 @@ impl Assignment {
                 Some(group) => group.id,
                 None if edit.granting() => {
                     return Ok(Some(
-                        prepare_scoped_group(chain, &name, &global.description).await,
+                        prepare_scoped_group(pool, chain, &name, &global.description).await?,
                     ));
                 }
                 None => return Ok(None),
@@ -93,9 +93,10 @@ impl Assignment {
         let Some(identity) = linked else {
             return Ok(edit.no_identity());
         };
+        let preparation = chain.prepare_role_membership(group, identity, edit.granting());
         let response = match chain
-            .prepare_role_membership(group, identity, edit.granting())
-            .await
+            .with_signer_lock(pool.begin().await?, preparation)
+            .await?
         {
             Err(error) => preparation_error(error),
             Ok(_) => problem(
@@ -110,12 +111,54 @@ impl Assignment {
     }
 }
 
-async fn prepare_scoped_group(chain: &Chain, name: &str, description: &str) -> Response {
-    match chain.prepare_group_creation(name, Some(description)).await {
-        Ok(_) => problem(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Blockchain role assignment unavailable",
-        ),
-        Err(_) => internal(),
+async fn prepare_scoped_group(
+    pool: &PgPool,
+    chain: &Chain,
+    name: &str,
+    description: &str,
+) -> Result<Response, sqlx::Error> {
+    let preparation = chain.prepare_group_creation(name, Some(description));
+    Ok(
+        match chain
+            .with_signer_lock(pool.begin().await?, preparation)
+            .await?
+        {
+            Ok(_) => problem(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Blockchain role assignment unavailable",
+            ),
+            Err(_) => internal(),
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn scoped_group_preparation_waits_for_other_role_writers() {
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let chain = Chain::for_health_test("http://localhost".into());
+        let mut writer = pool.begin().await.unwrap();
+        chain.lock_signer(&mut writer).await.unwrap();
+        let scoped = prepare_scoped_group(&pool, &chain, "rp:client:reader@org", "reader");
+        tokio::pin!(scoped);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut scoped)
+                .await
+                .is_err()
+        );
+        writer.commit().await.unwrap();
+        // The test chain has no group contract, so preparation now fails locally.
+        let response = tokio::time::timeout(Duration::from_secs(2), scoped)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

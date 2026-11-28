@@ -1,0 +1,3 @@
+- [x] Share signer coordination with group preparation.
+- [x] Cover the scoped grant path with a database regression.
+- [x] Verify queued operator and delegated preparations on separate replicas.

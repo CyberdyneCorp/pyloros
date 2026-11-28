@@ -1,0 +1,1 @@
+Resolve the catalog, target and organization prerequisites before acquiring the signer lock. Run the provider preparation under a PostgreSQL transaction using the same advisory lock as operator IAM writes. Release the lock when preparation finishes, including on provider errors. A scoped revocation with no matching group still needs no transaction preparation.
