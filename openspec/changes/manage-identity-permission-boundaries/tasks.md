@@ -4,3 +4,4 @@
 - [x] Verify chain catalog lookup, missing targets, provider outages and switching back to PostgreSQL.
 - [ ] Resolve the rollout behavior of overlapping writes across providers of the REST API.
 - [ ] Verify confirmed chain changes for a provider capable of enumerating identities.
+- [x] Rehearse a boundary writer switch with a policy deletion already admitted, covering commit, rollback and permission checks on both backends.
