@@ -215,33 +215,6 @@ pub(crate) async fn read_fields<T>(
     validate_scalar_document(&raw, keys, validate)
 }
 
-pub(crate) fn validate_document<T>(
-    raw: &RawValue,
-    keys: &[&str],
-    validate: impl FnOnce(Value) -> Result<T, Vec<Value>>,
-) -> Result<T, Box<Response>> {
-    let fields = object_fields(raw)?;
-    validate(project(raw, &fields, keys)).map_err(|issues| {
-        #[derive(Serialize)]
-        struct Errors<'a> {
-            detail: Vec<FieldIssue<'a>>,
-        }
-        let detail = issues
-            .into_iter()
-            .map(|issue| {
-                let input = issue["loc"]
-                    .get(1)
-                    .and_then(Value::as_str)
-                    .and_then(|key| fields.get(key))
-                    .copied()
-                    .unwrap_or(raw);
-                field_issue(issue, input)
-            })
-            .collect();
-        Box::new((StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { detail })).into_response())
-    })
-}
-
 /// Validate only scalar model fields, preserving the distinction between null
 /// and numeric literals outside the range of serde_json::Number.
 pub(crate) fn validate_scalar_document<T>(

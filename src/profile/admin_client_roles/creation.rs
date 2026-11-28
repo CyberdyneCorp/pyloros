@@ -1,8 +1,10 @@
 //! Create a global role in the active IAM provider.
 use super::*;
 use crate::{
-    browser_prompt::quoted_string, grant_response::SessionOrigin, login_http::problem,
-    request_json::fields,
+    browser_prompt::quoted_string,
+    grant_response::SessionOrigin,
+    login_http::problem,
+    request_json::{fields, iam_document},
 };
 
 struct NewRole {
@@ -33,7 +35,7 @@ pub(in crate::profile) async fn create(
     Path(path): Path<InventoryPath>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let body = match fields::document(&headers, &bytes) {
+    let body = match iam_document::document(&headers, &bytes) {
         Ok(body) => body,
         Err(error) => return *error,
     };
@@ -46,7 +48,7 @@ pub(in crate::profile) async fn create(
         return internal();
     };
     let Some(body) = body else { return internal() };
-    let role = match fields::validate_document(&body, &["role_key", "description"], input) {
+    let role = match fields::validate_scalar_document(&body, &["role_key", "description"], input) {
         Ok(role) => role,
         Err(error) => return *error,
     };

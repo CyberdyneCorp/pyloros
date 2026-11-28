@@ -517,7 +517,8 @@ fn build_routes(
         )
         .route(
             "/api/v1/clients/me/permissions",
-            any(admin_permissions::delegated_list).post(admin_permissions::create),
+            any(admin_permissions::delegated_list)
+                .post(admin_permissions::create.layer(axum::extract::DefaultBodyLimit::disable())),
         )
         .route(
             "/api/v1/clients/me/permissions/{key}",
@@ -525,7 +526,8 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/clients/{client_id}/permissions",
-            any(admin_permissions::list).post(admin_permissions::create),
+            any(admin_permissions::list)
+                .post(admin_permissions::create.layer(axum::extract::DefaultBodyLimit::disable())),
         )
         .route(
             "/api/v1/admin/clients/{client_id}/permissions/{key}",
@@ -541,7 +543,8 @@ fn build_routes(
         )
         .route(
             "/api/v1/clients/me/roles",
-            any(admin_client_roles::read).post(admin_client_roles::create),
+            any(admin_client_roles::read)
+                .post(admin_client_roles::create.layer(axum::extract::DefaultBodyLimit::disable())),
         )
         .route(
             "/api/v1/clients/me/roles/{role_key}",
@@ -554,7 +557,8 @@ fn build_routes(
         )
         .route(
             "/api/v1/admin/clients/{client_id}/roles",
-            any(admin_client_roles::read).post(admin_client_roles::create),
+            any(admin_client_roles::read)
+                .post(admin_client_roles::create.layer(axum::extract::DefaultBodyLimit::disable())),
         )
         .route(
             "/api/v1/admin/clients/{client_id}/roles/{role_key}",

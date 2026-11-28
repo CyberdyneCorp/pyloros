@@ -1,0 +1,2 @@
+- [x] Verify both caller types and both catalogs with the pinned service.
+- [x] Fix decoding and scalar projection, add regressions and verify cross-backend catalog reads.

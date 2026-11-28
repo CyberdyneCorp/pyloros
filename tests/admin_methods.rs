@@ -264,18 +264,27 @@ async fn account_creation_authenticates_before_validating_large_numeric_fields()
 }
 
 #[tokio::test]
-async fn padded_role_mappings_reach_authorization_on_both_routes() {
+async fn padded_catalog_writes_reach_authorization() {
     let pool = PgPoolOptions::new()
         .connect_lazy("postgresql://localhost/pyloros")
         .unwrap();
     let routes = pyloros::profile::routes(pool, false).unwrap();
-    for path in [
-        "/api/v1/admin/clients/example/roles/reader/permissions",
-        "/api/v1/clients/me/roles/reader/permissions",
+    for (method, path) in [
+        (Method::POST, "/api/v1/admin/clients/example/roles"),
+        (Method::POST, "/api/v1/clients/me/roles"),
+        (Method::POST, "/api/v1/admin/clients/example/permissions"),
+        (Method::POST, "/api/v1/clients/me/permissions"),
+        (
+            Method::PUT,
+            "/api/v1/admin/clients/example/roles/reader/permissions",
+        ),
+        (Method::PUT, "/api/v1/clients/me/roles/reader/permissions"),
     ] {
         let mut json = br#"{"permissions":[]}"#.to_vec();
         json.resize(2 * 1024 * 1024 + 1, b' ');
-        let request = Request::put(path)
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
             .header(header::CONTENT_TYPE, "application/json")
             .extension(ConnectInfo("127.0.0.1:8080".parse::<SocketAddr>().unwrap()))
             .body(Body::from(json))

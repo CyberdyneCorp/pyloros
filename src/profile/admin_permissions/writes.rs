@@ -1,8 +1,10 @@
 //! Mutate a client catalog and append its actor audit in one transaction.
 use super::*;
 use crate::{
-    browser_prompt::quoted_string, grant_response::SessionOrigin, login_http::problem,
-    request_json::fields,
+    browser_prompt::quoted_string,
+    grant_response::SessionOrigin,
+    login_http::problem,
+    request_json::{fields, iam_document},
 };
 use serde_json::value::RawValue;
 
@@ -29,7 +31,7 @@ pub(in crate::profile) async fn create(
     Path(path): Path<CatalogPath>,
     bytes: axum::body::Bytes,
 ) -> Response {
-    let raw = match fields::document(&headers, &bytes) {
+    let raw = match iam_document::document(&headers, &bytes) {
         Ok(raw) => raw,
         Err(r) => return *r,
     };
@@ -126,7 +128,7 @@ impl Edit<'_> {
             Self::Create(None) => Err(Box::new(internal())),
             Self::Create(Some(raw)) => {
                 let (key, description) =
-                    fields::validate_document(raw, &["key", "description"], input)?;
+                    fields::validate_scalar_document(raw, &["key", "description"], input)?;
                 if !valid_key(&key) {
                     return Err(Box::new(problem(
                         StatusCode::BAD_REQUEST,
@@ -240,6 +242,14 @@ async fn delete(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numeric_overflow_cannot_be_saved_as_an_absent_description() {
+        let raw =
+            serde_json::from_str::<&RawValue>(r#"{"key":"read","description":1e999}"#).unwrap();
+        let response = Edit::Create(Some(raw)).definition().unwrap_err();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]

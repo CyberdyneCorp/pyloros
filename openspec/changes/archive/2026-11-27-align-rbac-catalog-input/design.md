@@ -1,0 +1,1 @@
+Apply the same PUT route body-limit override to catalog creation POST handlers. Decode IAM JSON before authentication and validate the selected scalar fields after authorization. Retain submitted values for validation responses. Only successful validation can reach the catalog write.
