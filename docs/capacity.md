@@ -294,3 +294,14 @@ Two trials on the same M3 Pro host scheduled eight MFA verification requests per
 | 2 | 480 / 480 | 15.48 | 17.81 | 18.70 | 2.42 |
 
 HTTP latency covers request preparation through receipt of the response. Dispatch lag measures how late the driver started relative to the scheduled arrival. All 960 sessions authenticated against the challenge issuer, and PostgreSQL recorded one session, one success audit and the expected factor consumption per account. Both trials finished within their arrival window. Peak concurrent Rust requests was one at this rate, so the saturation point remains open. Password verification, challenge issuance and post-run reconciliation were outside the timed window.
+
+## Audited role-permission replacements
+
+Eight concurrent callers each updated a different role in one client catalog. Each caller alternated between two single-permission mappings and waited for its HTTP response before sending the next write. Half the requests used the operator route and half used the delegated service route. Two Rust replicas shared a fresh PostgreSQL 17.12 database on the benchmark host, with hooks and webhooks disabled.
+
+| Local trial | Successful writes | Elapsed (s) | Writes/s | Median (ms) | p99 (ms) |
+|---|---:|---:|---:|---:|---:|
+| 1 | 2,048 | 1.781 | 1,150 | 6.46 | 13.29 |
+| 2 | 2,048 | 1.637 | 1,251 | 5.91 | 12.87 |
+
+Each run recorded 1,024 operator and 1,024 service-client audits. All four migration replicas returned the final mapping for every role and verified the full audit chain. PostgreSQL sampling observed sessions waiting on the audit-chain head in both runs. These short, closed-loop trials measure completion rate with eight callers on independent roles. Sustained arrivals, competing edits to one role and production network latency require separate measurements.
