@@ -120,7 +120,7 @@ The browser refresh endpoint SHALL accept a refresh cookie or JSON token, prefer
 - **THEN** revoke the session and its remaining refresh credentials before returning the error.
 
 ### Requirement: End a browser session
-The single-session logout endpoint SHALL clear browser session cookies and return 204 for a valid request body, including when the credentials are already expired or missing. It SHALL denylist a valid presented access token until expiry and revoke the session family identified by a valid refresh token.
+The single-session logout endpoint SHALL clear browser session cookies and return 204 after successful processing of a valid request body, including when the credentials are already expired or missing. It SHALL denylist a valid presented access token until expiry and revoke the session family identified by a valid refresh token.
 
 #### Scenario: An existing login ends
 - **WHEN** the browser presents its access and refresh cookies
@@ -133,6 +133,10 @@ The single-session logout endpoint SHALL clear browser session cookies and retur
 #### Scenario: Access token alone
 - **WHEN** a valid access token is presented without a refresh token
 - **THEN** denylist its identifier while leaving the session family available.
+
+#### Scenario: PostgreSQL rejects logout at commit
+- **WHEN** PostgreSQL explicitly rejects the transaction that revokes a live browser session
+- **THEN** return HTTP 500, preserve the session and refresh credentials, and leave the browser cookies in place so the caller can retry logout
 
 ### Requirement: Sign out across all sessions
 An authenticated first-party caller SHALL be able to revoke every open session of its account. The operation SHALL advance the account’s access-token cutoff, audit the number of newly revoked sessions and clear the current browser cookies.

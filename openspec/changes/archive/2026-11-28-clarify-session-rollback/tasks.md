@@ -1,0 +1,2 @@
+- [x] Verify the failed logout and a subsequent successful revocation with the unchanged browser console.
+- [x] Specify logout cookie behavior on explicit commit rejection.

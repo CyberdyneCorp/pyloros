@@ -1,0 +1,1 @@
+The handler commits revocation before sending cookie expiry headers. A database rejection leaves the original session available on either replica. A retry that commits revokes the session and its refresh credentials.
