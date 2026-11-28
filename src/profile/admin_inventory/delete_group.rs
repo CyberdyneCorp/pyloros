@@ -16,7 +16,7 @@ pub(in crate::profile) async fn delete_group(
             .insert(header::ALLOW, header::HeaderValue::from_static("DELETE"));
         return result;
     }
-    let (tx, actor, email) = match administrator::operator(&state, &headers).await {
+    let (mut tx, actor, email) = match administrator::operator(&state, &headers).await {
         Ok(operator) => operator,
         Err(error) => return *error,
     };
@@ -27,14 +27,24 @@ pub(in crate::profile) async fn delete_group(
         Ok(id) => id,
         Err(issue) => return passkeys::validation(vec![issue]),
     };
-    if let Some(chain) = chain {
-        return writes::prepare_chain_write(tx, &chain, IamMutation::DeleteGroup(id)).await;
-    }
     let origin = SessionOrigin {
         ip: crate::token_http::client_ip(&headers, peer.ip(), state.proxies),
         user_agent: crate::token_http::header(&headers, "user-agent"),
     };
-    delete(tx, id, (actor, email.as_deref()), origin)
+    let actor = (actor, email.as_deref());
+    if let Some(chain) = chain {
+        let mutation = IamMutation::DeleteGroup(id);
+        if chain.lock_signer(&mut tx).await.is_err() {
+            return internal();
+        }
+        if let Err(error) = chain.submit_mutation(&mutation).await {
+            return writes::preparation_error(&mutation, error);
+        }
+        return removal::commit_deletion(tx, actor, "iam.group.delete", ("iam_group", id), origin)
+            .await
+            .unwrap_or_else(|_| internal());
+    }
+    delete(tx, id, actor, origin)
         .await
         .unwrap_or_else(|_| internal())
 }

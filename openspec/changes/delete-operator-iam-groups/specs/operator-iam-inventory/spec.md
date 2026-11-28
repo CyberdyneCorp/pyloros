@@ -30,3 +30,9 @@ An authorized operator SHALL be able to delete an ordinary group from the select
 
 - **WHEN** the waiting writer removes the only policy granting an action, or deletes the group providing it
 - **THEN** subsequent evaluations deny the action and the policy itself remains available
+
+#### Scenario: Confirm deletion on the group contract
+
+- **WHEN** an operator deletes an ordinary chain-backed group
+- **THEN** Pyloros verifies successful execution on the configured group contract before recording the deletion audit and returning HTTP 204
+- **AND** if PostgreSQL rejects the audit commit after confirmation, Pyloros returns HTTP 500 and the group remains deleted on chain
