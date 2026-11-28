@@ -41,6 +41,8 @@ For direct membership, use relation `member` and a subject of type `user` with t
 
 A completed check returns HTTP 200 and `{"allowed":true}` or `{"allowed":false}`. Each check reads a fresh snapshot on the PostgreSQL primary. It follows up to 16 relationship hops and spends up to 1,024 units across permission rules and traversed edges. A check that cannot establish an answer within these limits, or cannot read its graph, returns HTTP 503. Applications should grant access only on an explicit allow. Apply any required role or organization checks alongside this decision.
 
+For a database failover rehearsal, give two service clients access to identically named objects in their own graphs. Revoke one membership and confirm that both API replicas deny direct and inherited access for that client while allowing the other. After promotion, repeat the checks with the same service tokens before sending any relationship writes. Replaying the revoke should leave one deletion audit. A local PostgreSQL 17 rehearsal with synchronous `remote_apply` replication passed these checks. During the writer outage both replicas returned HTTP 503 for the previously allowed client. Repeat the rehearsal with the replication and routing settings used in deployment.
+
 ## Frontend
 
 Run the existing frontend build at one origin and switch its API upstream through deployment routing. Record the frontend source revision and build digest once. During cutover and rollback, fetch the browser assets through the deployment URL and compare their bytes to that build. For assets with an ETag, send the previous ETag in `If-None-Match` and verify that the server returns 304. This checks that browsers can reuse the files they cached before the switch.
