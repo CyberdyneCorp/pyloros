@@ -1,0 +1,3 @@
+trial,processes,phase,offered_rps,offered,succeeded,within_arrival_window,response_p99_ms,max_queued,drain_ms,successful_rps_including_drain,dispatch_delay_p99_ms,generator_lag_p99_ms,login_p99_ms,refresh_p99_ms,introspect_p99_ms,api_cpu_seconds_total
+1,2,1,160,9600,9600,9596,177.44,1,60.57,159.84,1.5,1.42,202.85,6.6,4.07,220.74
+2,1,1,160,9600,9600,6078,34555.48,3507,35317.44,100.72,34394.53,1.6,35000.91,34400.78,34396.37,199.01

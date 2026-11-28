@@ -28,3 +28,14 @@ Each range covers the two repetitions of that configuration. A request completin
 | 64 (recovery) | 2 | 1023 | 83.2–85.5 | 1 | 17.1–18.4 |
 
 The packaged binary had SHA-256 `17fa9667b7b8872be03b551f29e39f71014dc72a3cc534bc24a435a4d2059104`. Its backend source matches revision `fb70d84`. The 160 requests/s phase offered traffic for 6.4 seconds. Production sizing still needs sustained traffic with the deployed endpoint mix, ingress, background jobs, database topology and latency budget.
+
+## One minute at 160 requests/s
+
+Revision `7e07b24` ran the same mix for 60 seconds per configuration using 16 clients and a fresh PostgreSQL database each time. Two API processes ran first, then one. Each completed all 9,600 requests, including 2,400 logins, 2,400 refreshes and 4,800 introspections. Each database contained the expected 2,416 sessions and 4,832 refresh-token rows after warmup and measurement.
+
+| API processes | Completed within 60 s | End-to-end p99 (ms) | Peak queued | Drain (s) | Throughput including drain (requests/s) |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 6,078 | 34,555 | 3,507 | 35.317 | 100.72 |
+| 2 | 9,596 | 177 | 1 | 0.061 | 159.84 |
+
+Each row represents one local trial. The load generator and PostgreSQL shared the API host. The results cover this endpoint mix and password-hashing configuration. Production sizing still requires the deployed traffic mix and latency budget. [Per-operation measurements](capacity-minute.csv)
