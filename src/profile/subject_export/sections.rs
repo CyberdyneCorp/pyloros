@@ -16,6 +16,11 @@ struct Entry {
 static INVENTORY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("sections.json")).expect("compiled export inventory")
 });
+enum Selection {
+    Account(&'static str),
+    Linked(&'static str),
+}
+
 type Record = BTreeMap<String, Box<RawValue>>;
 
 #[derive(serde::Serialize)]
@@ -86,24 +91,27 @@ impl Entry {
             note,
         }))
     }
-    fn predicate(&self, ids: &Identifiers) -> Option<&'static str> {
+    fn predicate(&self, ids: &Identifiers) -> Option<Selection> {
+        use Selection::{Account, Linked};
         match self.table {
             "webhook_events" | "oauth_token_issuance_log" => None,
             "phone_otps" if ids.phones.is_empty() => None,
-            "phone_otps" => Some("phone_number=ANY(p.phones)"),
-            "pyloros_user_relationships" => {
-                Some("user_id=p.uid ORDER BY client_id,object_type,object_id,relation")
-            }
-            "users" => Some("id=p.uid"),
-            "admin_action_logs" => Some("actor_user_id=p.uid"),
-            "auth_challenges" => Some("user_id=p.uid OR lower(wallet_address)=ANY(p.wallets)"),
-            "iam_identities" => Some(
+            "phone_otps" => Some(Linked("phone_number=ANY(p.phones)")),
+            "pyloros_user_relationships" => Some(Account(
+                "user_id=$1 ORDER BY client_id,object_type,object_id,relation",
+            )),
+            "users" => Some(Account("id=$1")),
+            "admin_action_logs" => Some(Account("actor_user_id=$1")),
+            "auth_challenges" => Some(Linked(
+                "user_id=p.uid OR lower(wallet_address)=ANY(p.wallets)",
+            )),
+            "iam_identities" => Some(Linked(
                 "user_id=p.uid OR lower(email)=ANY(p.emails) OR lower(owner_address)=ANY(p.wallets)",
-            ),
-            "auth_events" => Some(
+            )),
+            "auth_events" => Some(Linked(
                 "(subject_user_id=p.uid OR actor_user_id=p.uid OR lower(subject_email)=ANY(p.emails) OR subject_identifier=ANY(p.subjects) OR subject_identifier LIKE ANY(p.dids)) AND occurred_at>=p.since ORDER BY occurred_at DESC",
-            ),
-            _ => Some("user_id=p.uid"),
+            )),
+            _ => Some(Account("user_id=$1")),
         }
     }
     async fn read(
@@ -112,7 +120,7 @@ impl Entry {
         user: Uuid,
         ids: &Identifiers,
         since: DateTime<Utc>,
-        predicate: &str,
+        selection: Selection,
     ) -> sqlx::Result<Vec<Record>> {
         // Identifiers come exclusively from the compiled, positive field inventory.
         let projection = self
@@ -127,24 +135,33 @@ impl Entry {
             })
             .collect::<Vec<_>>()
             .join(",");
-        let sql=format!("SELECT row_to_json(r)::text FROM (SELECT {projection} FROM {} CROSS JOIN
-            (SELECT $1::uuid AS uid,$2::text[] AS emails,$3::text[] AS phones,$4::text[] AS wallets,$5::text[] AS subjects,$6::text[] AS dids,$7::timestamptz AS since) p
-            WHERE {predicate} LIMIT 1001) r",self.table);
-        let raw: Vec<String> = sqlx::query_scalar(&sql)
-            .bind(user)
-            .bind(ids.emails.iter().collect::<Vec<_>>())
-            .bind(ids.phones.iter().collect::<Vec<_>>())
-            .bind(ids.wallets.iter().collect::<Vec<_>>())
-            .bind(ids.social.iter().map(|(_, s)| s).collect::<Vec<_>>())
-            .bind(
-                ids.wallets
-                    .iter()
-                    .map(|w| format!("did:pkh:eip155:%:{w}"))
-                    .collect::<Vec<_>>(),
-            )
-            .bind(since)
-            .fetch_all(&mut **tx)
-            .await?;
+        let (source, predicate) = match selection {
+            Selection::Account(predicate) => ("", predicate),
+            Selection::Linked(predicate) => (" CROSS JOIN (SELECT $1::uuid AS uid,$2::text[] AS emails,
+                $3::text[] AS phones,$4::text[] AS wallets,$5::text[] AS subjects,$6::text[] AS dids,
+                $7::timestamptz AS since) p", predicate),
+        };
+        let sql = format!(
+            "SELECT row_to_json(r)::text FROM (SELECT {projection} FROM {}{source}
+            WHERE {predicate} LIMIT 1001) r",
+            self.table
+        );
+        let mut query = sqlx::query_scalar(&sql).bind(user);
+        if matches!(selection, Selection::Linked(_)) {
+            query = query
+                .bind(ids.emails.iter().collect::<Vec<_>>())
+                .bind(ids.phones.iter().collect::<Vec<_>>())
+                .bind(ids.wallets.iter().collect::<Vec<_>>())
+                .bind(ids.social.iter().map(|(_, s)| s).collect::<Vec<_>>())
+                .bind(
+                    ids.wallets
+                        .iter()
+                        .map(|w| format!("did:pkh:eip155:%:{w}"))
+                        .collect::<Vec<_>>(),
+                )
+                .bind(since);
+        }
+        let raw: Vec<String> = query.fetch_all(&mut **tx).await?;
         let key = user.to_string();
         raw.into_iter()
             .map(|raw| self.record(raw, &key, ids))

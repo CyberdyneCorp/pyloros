@@ -18,3 +18,7 @@ The service SHALL provide a first-party account export and an administrator expo
 #### Scenario: Limit repeated downloads
 - **WHEN** a subject consumes the self-service allowance of three exports per hour
 - **THEN** return the rate-limit response on further attempts until quota is available
+
+#### Scenario: Read sections owned directly by the account
+- **WHEN** the subject has many linked identities and a section selects rows solely by the account UUID
+- **THEN** bind only that UUID for the section query and preserve the same exported fields, row limit and audit counts

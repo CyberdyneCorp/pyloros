@@ -3,3 +3,4 @@
 - [x] Wire both endpoints with download headers, audit records and self-service throttling.
 - [x] Compare client workflows, authorization, redaction, truncation and transaction failures on both services.
 - [ ] Resolve the HTTP response when PostgreSQL defers audit rejection until commit.
+- [x] Verify that sections owned directly by the account read only the UUID binding when the subject has many linked identities.
