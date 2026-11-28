@@ -4,3 +4,4 @@
 - [x] Compare client workflows, authorization, redaction, truncation and transaction failures on both services.
 - [ ] Resolve the HTTP response when PostgreSQL defers audit rejection until commit.
 - [x] Verify that sections owned directly by the account read only the UUID binding when the subject has many linked identities.
+- [x] Compare linked-identifier section bindings, matching records and redaction on both download routes.

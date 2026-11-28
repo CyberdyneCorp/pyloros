@@ -16,11 +16,6 @@ struct Entry {
 static INVENTORY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("sections.json")).expect("compiled export inventory")
 });
-enum Selection {
-    Account(&'static str),
-    Linked(&'static str),
-}
-
 type Record = BTreeMap<String, Box<RawValue>>;
 
 #[derive(serde::Serialize)]
@@ -67,10 +62,7 @@ impl Entry {
             }
         }
         let mut note = settings.export_note(self.table).map(str::to_owned);
-        let mut rows = Vec::new();
-        if let Some(predicate) = self.predicate(ids) {
-            rows = self.read(tx, user, ids, since, predicate).await?;
-        }
+        let mut rows = self.read(tx, user, ids, since).await?;
         if self.optional && rows.is_empty() {
             return Ok(None);
         }
@@ -91,36 +83,12 @@ impl Entry {
             note,
         }))
     }
-    fn predicate(&self, ids: &Identifiers) -> Option<Selection> {
-        use Selection::{Account, Linked};
-        match self.table {
-            "webhook_events" | "oauth_token_issuance_log" => None,
-            "phone_otps" if ids.phones.is_empty() => None,
-            "phone_otps" => Some(Linked("phone_number=ANY(p.phones)")),
-            "pyloros_user_relationships" => Some(Account(
-                "user_id=$1 ORDER BY client_id,object_type,object_id,relation",
-            )),
-            "users" => Some(Account("id=$1")),
-            "admin_action_logs" => Some(Account("actor_user_id=$1")),
-            "auth_challenges" => Some(Linked(
-                "user_id=p.uid OR lower(wallet_address)=ANY(p.wallets)",
-            )),
-            "iam_identities" => Some(Linked(
-                "user_id=p.uid OR lower(email)=ANY(p.emails) OR lower(owner_address)=ANY(p.wallets)",
-            )),
-            "auth_events" => Some(Linked(
-                "(subject_user_id=p.uid OR actor_user_id=p.uid OR lower(subject_email)=ANY(p.emails) OR subject_identifier=ANY(p.subjects) OR subject_identifier LIKE ANY(p.dids)) AND occurred_at>=p.since ORDER BY occurred_at DESC",
-            )),
-            _ => Some(Account("user_id=$1")),
-        }
-    }
     async fn read(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         user: Uuid,
         ids: &Identifiers,
         since: DateTime<Utc>,
-        selection: Selection,
     ) -> sqlx::Result<Vec<Record>> {
         // Identifiers come exclusively from the compiled, positive field inventory.
         let projection = self
@@ -135,32 +103,65 @@ impl Entry {
             })
             .collect::<Vec<_>>()
             .join(",");
-        let (source, predicate) = match selection {
-            Selection::Account(predicate) => ("", predicate),
-            Selection::Linked(predicate) => (" CROSS JOIN (SELECT $1::uuid AS uid,$2::text[] AS emails,
-                $3::text[] AS phones,$4::text[] AS wallets,$5::text[] AS subjects,$6::text[] AS dids,
-                $7::timestamptz AS since) p", predicate),
+        let select = |predicate: &str| {
+            format!(
+                "SELECT row_to_json(r)::text FROM (SELECT {projection} FROM {} WHERE {predicate} LIMIT 1001) r",
+                self.table
+            )
         };
-        let sql = format!(
-            "SELECT row_to_json(r)::text FROM (SELECT {projection} FROM {}{source}
-            WHERE {predicate} LIMIT 1001) r",
-            self.table
-        );
-        let mut query = sqlx::query_scalar(&sql).bind(user);
-        if matches!(selection, Selection::Linked(_)) {
-            query = query
-                .bind(ids.emails.iter().collect::<Vec<_>>())
-                .bind(ids.phones.iter().collect::<Vec<_>>())
-                .bind(ids.wallets.iter().collect::<Vec<_>>())
-                .bind(ids.social.iter().map(|(_, s)| s).collect::<Vec<_>>())
-                .bind(
-                    ids.wallets
-                        .iter()
-                        .map(|w| format!("did:pkh:eip155:%:{w}"))
-                        .collect::<Vec<_>>(),
-                )
-                .bind(since);
-        }
+        let sql;
+        let query = match self.table {
+            "webhook_events" | "oauth_token_issuance_log" => return Ok(Vec::new()),
+            "phone_otps" if ids.phones.is_empty() => return Ok(Vec::new()),
+            "phone_otps" => {
+                sql = select("phone_number=ANY($1)");
+                sqlx::query_scalar(&sql).bind(ids.phones.iter().collect::<Vec<_>>())
+            }
+            "auth_challenges" => {
+                sql = select("user_id=$1 OR lower(wallet_address)=ANY($2)");
+                sqlx::query_scalar(&sql)
+                    .bind(user)
+                    .bind(ids.wallets.iter().collect::<Vec<_>>())
+            }
+            "iam_identities" => {
+                sql = select("user_id=$1 OR lower(email)=ANY($2) OR lower(owner_address)=ANY($3)");
+                sqlx::query_scalar(&sql)
+                    .bind(user)
+                    .bind(ids.emails.iter().collect::<Vec<_>>())
+                    .bind(ids.wallets.iter().collect::<Vec<_>>())
+            }
+            "auth_events" => {
+                sql = select("(subject_user_id=$1 OR actor_user_id=$1 OR lower(subject_email)=ANY($2)
+                    OR subject_identifier=ANY($3) OR subject_identifier LIKE ANY($4)) AND occurred_at>=$5 ORDER BY occurred_at DESC");
+                sqlx::query_scalar(&sql)
+                    .bind(user)
+                    .bind(ids.emails.iter().collect::<Vec<_>>())
+                    .bind(
+                        ids.social
+                            .iter()
+                            .map(|(_, subject)| subject)
+                            .collect::<Vec<_>>(),
+                    )
+                    .bind(
+                        ids.wallets
+                            .iter()
+                            .map(|wallet| format!("did:pkh:eip155:%:{wallet}"))
+                            .collect::<Vec<_>>(),
+                    )
+                    .bind(since)
+            }
+            table => {
+                sql = select(match table {
+                    "users" => "id=$1",
+                    "admin_action_logs" => "actor_user_id=$1",
+                    "pyloros_user_relationships" => {
+                        "user_id=$1 ORDER BY client_id,object_type,object_id,relation"
+                    }
+                    _ => "user_id=$1",
+                });
+                sqlx::query_scalar(&sql).bind(user)
+            }
+        };
         let raw: Vec<String> = query.fetch_all(&mut **tx).await?;
         let key = user.to_string();
         raw.into_iter()

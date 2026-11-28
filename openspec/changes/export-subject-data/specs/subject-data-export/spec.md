@@ -22,3 +22,7 @@ The service SHALL provide a first-party account export and an administrator expo
 #### Scenario: Read sections owned directly by the account
 - **WHEN** the subject has many linked identities and a section selects rows solely by the account UUID
 - **THEN** bind only that UUID for the section query and preserve the same exported fields, row limit and audit counts
+
+#### Scenario: Read sections reached through linked identifiers
+- **WHEN** a section matches phone numbers, wallets, email addresses or provider subjects
+- **THEN** bind only the identifiers used by that section's matching rules and preserve its subject and time filters
