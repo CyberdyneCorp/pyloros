@@ -347,6 +347,10 @@ Before switching hook producers, run `just hook-inventory` or `pyloros --check-h
 
 The [silent example](examples/event-name-hook/examples/silent_hook.rs) completes an event without side effects or output. Run `just build-silent-hook` to produce `target/hook-examples/wasm32-unknown-unknown/release/examples/silent_hook.wasm`. Use it for a reviewed source hook whose only behavior is to complete successfully. The v1 manual test and execution history report null for silent output and retain up to 10,000 characters when a hook writes output.
 
+During coexistence, an operator can create, validate, edit and delete v1 definitions through Pyloros while the existing service runs unported scripts. Route manual tests for those scripts and the operations that trigger them to the existing executor. Pyloros can read their execution history from shared PostgreSQL. The registration lifecycle has been exercised with this routing and one executor per request.
+
+For a v1 manual test with a selected component, inspect the response’s `success` field. The component accepts a JSON context of up to 65,536 UTF-8 bytes, including whitespace inside the object. A larger context returns HTTP 200 with `success: false` and records a failed test in the operator audit. Whitespace outside the context object does not count toward the limit. Keep manual tests that require larger contexts on the existing executor during migration.
+
 ### Stage a hook artifact
 
 Apply [the artifact table migration](migrations/001_hook_artifacts.sql) once through
