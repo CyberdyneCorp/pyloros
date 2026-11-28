@@ -28,3 +28,8 @@ The service SHALL allow an authenticated administrator to provision a managed wa
 
 - **WHEN** two authorized requests both read the account before either wallet write commits
 - **THEN** each successful request returns its generated address and appends an audit event, and the final committed write determines the stored keys
+
+#### Scenario: Existing address during a replica configuration mismatch
+
+- **WHEN** an operator provisions an account that already has a wallet through a replica configured with a different encryption key from the writer
+- **THEN** return the original address with `created=false` and preserve the stored key material, account revision and provisioning audit history.

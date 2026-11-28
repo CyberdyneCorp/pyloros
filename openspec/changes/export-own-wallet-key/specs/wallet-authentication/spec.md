@@ -22,3 +22,8 @@ Pyloros SHALL authenticate GET /api/v1/users/me/private-key using the account ho
 #### Scenario: Deployment has no configured decryption key
 - **WHEN** export is enabled, the account has wallet material and MASTER_KEY is absent
 - **THEN** Pyloros returns HTTP 503
+
+#### Scenario: Replica uses a different explicit encryption key
+
+- **WHEN** an authenticated account exports a managed wallet through a replica configured with a different encryption key from the writer
+- **THEN** return HTTP 500 and preserve the stored wallet. The same session can still export through a correctly keyed replica and recover the private key corresponding to the original address.
