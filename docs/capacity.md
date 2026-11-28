@@ -161,6 +161,26 @@ All 174,638 timed reads and 1,920 checks after acknowledged writes matched the e
 
 Rust executable SHA-256: `897f4be10d897aed466458389ba1a24a9c9e58ccf20af7066f067726c51f3704`.
 
+### Fixed-rate arrivals for inherited permission checks
+
+Two fresh PostgreSQL 17.12 trials used the 32- and 33-team folders described above. The driver sent reads to both Rust replicas over loopback on the same Apple M3 Pro. It alternated between both clients, both folder widths and both expected decisions. After a one-second warmup, the driver offered requests at fixed intervals for six seconds per rate, queued work when all 16 workers were busy, and drained each phase before starting the next. The graph was held constant during these trials.
+
+Latency includes time waiting in the driver from the scheduled arrival until the response. The peak queue counts requests waiting for a worker. Each pair of values lists the first and second trial.
+
+| Offered checks/s | Checks scheduled per trial | Completed within 6 s | Peak driver queue | End-to-end p95 (ms) | End-to-end p99 (ms) |
+|---:|---:|---:|---:|---:|---:|
+| 600 | 3,600 | 3,599 / 3,600 | 77 / 1 | 82.87 / 2.41 | 136.47 / 2.49 |
+| 1,200 | 7,200 | 6,257 / 6,573 | 927 / 613 | 866.96 / 557.04 | 887.21 / 590.3 |
+| 1,800 | 10,800 | 6,274 / 6,456 | 4,509 / 4,328 | 3,946.04 / 3,781.47 | 4,123.32 / 3,983.76 |
+| 2,400 | 14,400 | 6,378 / 6,147 | 8,005 / 8,237 | 7,292.91 / 7,572.33 | 7,592.5 / 7,860.75 |
+| 600 after drain | 3,600 | 3,599 / 3,599 | 1 / 1 | 2.63 / 2.65 | 2.79 / 2.83 |
+
+Both trials accumulated a backlog at 1,200 checks/s. At 2,400 checks/s, the queues took another 7.67 and 7.94 seconds to drain. The first 600 checks/s phase varied between trials.
+
+All 79,200 measured decisions matched the expected permissions. After the highest-rate phase drained, the final 600 checks/s phase had a p99 of 2.79 ms and 2.83 ms. The queue and latency reflect the combined limits of the driver, two API processes and PostgreSQL sharing this host. Production sizing requires the deployment’s traffic mix, hardware and latency target.
+
+Rust executable SHA-256: `897f4be10d897aed466458389ba1a24a9c9e58ccf20af7066f067726c51f3704`.
+
 ### Starting a ReBAC permission snapshot
 
 Each permission check opens a read-only repeatable-read transaction. Opening it with both modes in the initial SQL statement removes one round trip to PostgreSQL. Statement traces confirmed the change on direct, inherited and wide-graph checks.
