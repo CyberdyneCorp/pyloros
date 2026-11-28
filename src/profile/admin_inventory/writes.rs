@@ -166,7 +166,7 @@ async fn replace_metadata(
         return Ok(false);
     }
     // Historical statements must be readable before a replacement can proceed.
-    statements::policies(tx, Some(id)).await?;
+    statements::validate_for_replacement(tx, id).await?;
     sqlx::query("UPDATE iam_policies SET name=COALESCE($2,name), description=COALESCE($3,description),version=version+1,updated_at=now() WHERE id=$1")
         .bind(id).bind(policy["name"].as_str()).bind(policy["description"].as_str()).execute(&mut **tx).await?;
     sqlx::query("DELETE FROM iam_policy_statements WHERE policy_id=$1")
@@ -179,6 +179,44 @@ async fn replace_metadata(
 #[cfg(test)]
 mod transport_tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn replacing_a_historical_policy_accepts_stored_non_string_values() -> sqlx::Result<()> {
+        let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await?;
+        let mut tx = pool.begin().await?;
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE iam_policies (id uuid, name text, description text, version int default 1,
+                 is_active bool default true, chain_policy_id int, created_at timestamptz default now(),
+                 updated_at timestamptz) ON COMMIT DROP;
+             CREATE TEMP TABLE iam_policy_statements (id uuid, policy_id uuid, sid text, effect text,
+                 actions jsonb, resources jsonb default '[]', conditions jsonb, sort_order int) ON COMMIT DROP;",
+        )
+        .execute(&mut *tx)
+        .await?;
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO iam_policies(id,name) VALUES($1,'historical')")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            r#"INSERT INTO iam_policy_statements(id,policy_id,effect,actions,conditions)
+               VALUES(gen_random_uuid(),$1,'allow','[123,{"old":true}]',
+                      '[{"operator":"StringEquals","key":7,"value":null}]')"#,
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+        assert!(replace_metadata(&mut tx, id, &json!({"description":"repaired"})).await?);
+        let state: (i32,i64) = sqlx::query_as(
+            "SELECT version,(SELECT count(*) FROM iam_policy_statements) FROM iam_policies WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        assert_eq!(state, (2, 0));
+        tx.rollback().await
+    }
 
     #[test]
     fn missing_chain_targets_follow_the_selected_group_policy_operation() {

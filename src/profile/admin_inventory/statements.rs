@@ -129,9 +129,25 @@ pub(super) struct ExportPolicy {
     statements: Box<RawValue>,
 }
 
-fn transfer_statements(raw: &str, for_database: bool) -> Result<Box<RawValue>, sqlx::Error> {
+fn stored_statements(raw: &str) -> sqlx::Result<Vec<Statement<Box<RawValue>, ExportCondition>>> {
     crate::stored_json::check_integers(raw)?;
-    let statements = project::<Box<RawValue>, ExportCondition>(raw)?;
+    project(raw)
+}
+
+pub(super) async fn validate_for_replacement(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+) -> sqlx::Result<()> {
+    let (_, _, raw) = records(tx, Some(&[id]))
+        .await?
+        .pop()
+        .ok_or(sqlx::Error::RowNotFound)?;
+    stored_statements(&raw)?;
+    Ok(())
+}
+
+fn transfer_statements(raw: &str, for_database: bool) -> Result<Box<RawValue>, sqlx::Error> {
+    let statements = stored_statements(raw)?;
     let json = serde_json::to_string(&statements).map_err(|_| invalid())?;
     RawValue::from_string(crate::stored_json::project_fractions(json, for_database)?)
         .map_err(|_| invalid())
