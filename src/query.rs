@@ -4,6 +4,17 @@ pub(crate) fn integer(raw: &str) -> Result<String, (&'static str, &'static str)>
         "int_parsing",
         "Input should be a valid integer, unable to parse string as an integer",
     );
+    // The reference classifies a canonical prefix before normalizing the rest of the text.
+    const MAX_SIGNED_WIDTH: usize = 4300;
+    if let Some(prefix) = raw.as_bytes().get(..=MAX_SIGNED_WIDTH) {
+        let digits = prefix.strip_prefix(b"-").unwrap_or(prefix);
+        if matches!(digits[0], b'1'..=b'9') && digits.iter().all(u8::is_ascii_digit) {
+            return Err((
+                "int_parsing_size",
+                "Unable to parse input string as an integer, exceeded maximum size",
+            ));
+        }
+    }
     let n = raw.trim();
     let whole = match n.split_once('.') {
         Some((whole, fraction)) if !fraction.is_empty() && fraction.bytes().all(|b| b == b'0') => {
@@ -22,11 +33,8 @@ pub(crate) fn integer(raw: &str) -> Result<String, (&'static str, &'static str)>
     }
     let normalized = digits.replace('_', "");
     let significant = normalized.trim_start_matches('0');
-    if significant.len() > 4300 {
-        return Err((
-            "int_parsing_size",
-            "Unable to parse input string as an integer, exceeded maximum size",
-        ));
+    if significant.len() + usize::from(whole.starts_with('-')) > MAX_SIGNED_WIDTH {
+        return Err(INVALID);
     }
     Ok(whole.replace('_', ""))
 }
@@ -169,6 +177,32 @@ pub(crate) fn range(name: &str, raw: &str, min: i128, max: Option<i128>) -> Resu
     let mut e = error(kind, &msg);
     e["ctx"] = ctx;
     Err(e)
+}
+
+#[cfg(test)]
+mod integer_tests {
+    use super::integer;
+
+    #[test]
+    fn wide_signed_text_preserves_the_issue_type_before_bounds_checks() {
+        let digits = "8".repeat(4300);
+        assert!(integer(&digits).is_ok());
+        assert!(integer(&format!("-{}", &digits[..4299])).is_ok());
+        for source in [
+            format!("-{digits}"),
+            format!("{digits}1x"),
+            format!("{digits}1.0"),
+        ] {
+            assert_eq!(integer(&source).unwrap_err().0, "int_parsing_size");
+        }
+        for source in [
+            format!("+{digits}1"),
+            format!("-0{digits}"),
+            format!("{digits}_1"),
+        ] {
+            assert_eq!(integer(&source).unwrap_err().0, "int_parsing");
+        }
+    }
 }
 
 #[cfg(test)]

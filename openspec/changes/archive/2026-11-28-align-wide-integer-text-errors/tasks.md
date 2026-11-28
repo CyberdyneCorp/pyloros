@@ -1,0 +1,2 @@
+- [x] Correct the shared decoder and add regression cases.
+- [x] Compare audit pagination and JSON integer-field diagnostics on both backends.

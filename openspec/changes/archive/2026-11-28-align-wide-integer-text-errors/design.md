@@ -1,0 +1,1 @@
+Check the canonical decimal prefix for the size diagnostic before parsing whitespace, separators or a decimal suffix. Count a leading minus in the width. Inputs requiring normalization use the ordinary parsing error if the normalized signed decimal is still too wide. Preserve the original submitted text in the caller’s issue.
