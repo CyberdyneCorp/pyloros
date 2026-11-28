@@ -33,6 +33,8 @@ Models accept up to 65,536 permission references in total, counting each direct 
 {"object":{"type":"collection","id":"drafts"},"relation":"parent","subject":{"type":"collection","id":"library"}}
 ```
 
+To remove inherited read access while keeping the collection hierarchy, remove the `via: parent` rule from `read` and retain the direct `member` rule. After the model update returns 204, a new check on either replica uses the new rule. A library member keeps direct access to the library and loses access to a child whose only grant came from that parent. Restoring the rule restores inherited access through the existing relationships.
+
 For direct membership, use relation `member` and a subject of type `user` with the account UUID as its ID. Each successful write returns HTTP 204. Retries preserve the assignment state and produce one audit record per actual change. To evaluate access, grant the calling service the separate `rebac:check` scope and send its token to `POST /api/v1/clients/me/rebac/check` with a JSON body such as:
 
 ```json

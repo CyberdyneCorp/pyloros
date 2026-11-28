@@ -25,7 +25,7 @@ paths:
                   permissions:
                     read: [{relation: member}, {via: parent, permission: read}]
       responses:
-        '204': {description: Model installed or already current.}
+        '204': {description: Model committed or already current. Subsequent permission checks on all API replicas sharing the primary use this model.}
         '409': {description: Existing assignments would become invalid., content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
         '400': {$ref: '#/components/responses/Malformed'}
         '401': {$ref: '#/components/responses/Unauthorized'}
