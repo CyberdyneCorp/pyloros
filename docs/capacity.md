@@ -65,3 +65,14 @@ At revision `a4af506`, one Pyloros process and one migration reference process s
 All 3,072 measured requests succeeded. Across both trials, 519 refreshes rotated a credential issued by the other backend, and 1,040 introspections confirmed the account of a token issued by the other backend. Both directions succeeded at every rate. Each database ended with 400 sessions and 800 refresh-token rows, including warmup.
 
 At 64 requests/s the mixed pair completed fewer than half the requests within the eight-second arrival window in both trials. This local result measures short periods of alternating traffic with hooks disabled. A production canary still needs measurements with its own traffic split, ingress, background work and latency budget.
+
+### One minute at 24 requests per second
+
+Two further trials used the same mixed pair and 16 clients. Each trial started with a fresh PostgreSQL database and scheduled 360 logins, 360 refreshes and 720 introspections over one minute. Latency includes time spent waiting for a client.
+
+| Trial | Requests completed within the minute | End-to-end p99 | Time to finish remaining requests | Cross-backend refreshes | Cross-backend introspections |
+|---|---:|---:|---:|---:|---:|
+| 1 | 1,440 of 1,440 | 767 ms | 0 ms | 254 | 463 |
+| 2 | 1,434 of 1,440 | 718 ms | 132 ms | 238 | 470 |
+
+All 2,880 requests succeeded. Each trial exercised credential handoffs in both directions and ended with the expected 376 sessions and 752 refresh-token rows, including warmup. This measures one local minute with hook delivery disabled. Production canary sizing still requires the deployment's traffic mix and latency budget.
