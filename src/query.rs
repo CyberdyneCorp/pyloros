@@ -23,20 +23,46 @@ pub(crate) fn integer(raw: &str) -> Result<String, (&'static str, &'static str)>
         Some(_) => return Err(INVALID),
         None => n,
     };
-    let digits = whole.strip_prefix(['-', '+']).unwrap_or(whole);
-    if digits.is_empty()
-        || !digits
-            .split('_')
-            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+    let (negative, digits) = unpad_integer(whole).ok_or(INVALID)?;
+    if !digits
+        .split('_')
+        .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
     {
         return Err(INVALID);
     }
-    let normalized = digits.replace('_', "");
-    let significant = normalized.trim_start_matches('0');
-    if significant.len() + usize::from(whole.starts_with('-')) > MAX_SIGNED_WIDTH {
+    let mut normalized = digits.replace('_', "");
+    if negative {
+        normalized.insert(0, '-');
+    }
+    if normalized.len() > MAX_SIGNED_WIDTH {
         return Err(INVALID);
     }
-    Ok(whole.replace('_', ""))
+    Ok(normalized)
+}
+
+// A zero-padded field can carry its minus sign after the padding. Separators
+// in the significant digits still follow the ordinary single-underscore rule.
+fn unpad_integer(whole: &str) -> Option<(bool, &str)> {
+    let negative = whole.starts_with('-');
+    let digits = whole.strip_prefix(['-', '+']).unwrap_or(whole);
+    if !digits.starts_with('0') {
+        return Some((negative, digits));
+    }
+    if !digits.as_bytes().last()?.is_ascii_digit() {
+        return None;
+    }
+    let significant = digits.trim_start_matches(['0', '_']);
+    if significant.is_empty() {
+        return Some((negative, "0"));
+    }
+    if let Some(rest) = significant.strip_prefix('-') {
+        let magnitude = rest.strip_prefix('_').unwrap_or(rest);
+        if negative || (magnitude.starts_with('0') && magnitude.len() > 1) {
+            return None;
+        }
+        return Some((true, magnitude));
+    }
+    Some((negative, significant))
 }
 
 pub(crate) fn active_only(value: Option<&str>) -> Result<bool, serde_json::Value> {
@@ -182,6 +208,28 @@ pub(crate) fn range(name: &str, raw: &str, min: i128, max: Option<i128>) -> Resu
 #[cfg(test)]
 mod integer_tests {
     use super::integer;
+
+    #[test]
+    fn zero_padding_is_normalized_before_integer_bounds() {
+        for (text, expected) in [
+            ("0__2", 2),
+            ("-00___2", -2),
+            ("+0_0__2.0", 2),
+            ("0_-1", -1),
+            ("0-_2", -2),
+            ("0__0", 0),
+            ("0-1_2", -12),
+        ] {
+            assert_eq!(
+                integer(text).map(|s| s.parse::<i32>().unwrap()),
+                Ok(expected),
+                "{text}"
+            );
+        }
+        for text in ["1__2", "0_.0", "-0-1", "0-01", "0--2", "0-__2", "0+2"] {
+            assert!(integer(text).is_err(), "{text}");
+        }
+    }
 
     #[test]
     fn wide_signed_text_preserves_the_issue_type_before_bounds_checks() {
