@@ -62,3 +62,14 @@ An operator SHALL be able to count registered client ID pairs where the longer I
 #### Scenario: Inactive registration
 - **WHEN** either member of an overlapping pair is inactive
 - **THEN** include the pair in the total and exclude it from the active-pair count
+
+### Requirement: Load stored policies for PostgreSQL role and permission reads
+Role and permission inventories SHALL validate a user's direct and boundary policies using the stored IAM representation before projecting assignments for the caller.
+
+#### Scenario: Linked rule contains historical values
+- **WHEN** a linked policy can be loaded and contains a numeric action entry or structured condition key
+- **THEN** role and permission reads return the user's applicable assignments
+
+#### Scenario: Linked rule cannot be loaded
+- **WHEN** a linked policy has an invalid action collection or an integer exceeding the stored document limit
+- **THEN** the role and permission reads return HTTP 500

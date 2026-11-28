@@ -134,6 +134,16 @@ fn stored_statements(raw: &str) -> sqlx::Result<Vec<Statement<Box<RawValue>, Exp
     project(raw)
 }
 
+pub(super) async fn validate_linked_policies(
+    tx: &mut Transaction<'_, Postgres>,
+    ids: &[Uuid],
+) -> sqlx::Result<()> {
+    for (_, _, raw) in records(tx, Some(ids)).await? {
+        stored_statements(&raw)?;
+    }
+    Ok(())
+}
+
 pub(super) async fn validate_stored_policy(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,

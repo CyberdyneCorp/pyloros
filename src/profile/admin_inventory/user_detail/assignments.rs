@@ -45,28 +45,37 @@ pub(in crate::profile) struct StoredView {
     boundary_policy: Option<Value>,
 }
 
-impl StoredView {
-    pub(in crate::profile) fn group_names(self) -> Vec<String> {
-        self.groups
-            .into_iter()
-            .map(|group| {
-                group["name"]
-                    .as_str()
-                    .expect("group name selected from PostgreSQL")
-                    .to_owned()
-            })
-            .collect()
-    }
-}
-
-pub(in crate::profile) async fn postgres(
+pub(in crate::profile) async fn group_names(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
-) -> Result<StoredView, sqlx::Error> {
+) -> sqlx::Result<Vec<String>> {
+    let (view, links) = assignments(tx, user).await?;
+    if !links.is_empty() {
+        let mut ids: Vec<_> = links.into_iter().map(|(id, _)| id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        statements::validate_linked_policies(tx, &ids).await?;
+    }
+    Ok(view
+        .groups
+        .into_iter()
+        .map(|group| {
+            group["name"]
+                .as_str()
+                .expect("group name selected from PostgreSQL")
+                .to_owned()
+        })
+        .collect())
+}
+
+async fn assignments(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+) -> sqlx::Result<(StoredView, Vec<(Uuid, bool)>)> {
     let Some((id, identity)) =
         user_identity::details(tx, user_identity::Lookup::User(user)).await?
     else {
-        return Ok(StoredView::default());
+        return Ok((StoredView::default(), Vec::new()));
     };
     let mut doc = StoredView {
         identity: Some(identity),
@@ -99,6 +108,14 @@ pub(in crate::profile) async fn postgres(
     .bind(id)
     .fetch_all(&mut **tx)
     .await?;
+    Ok((doc, links))
+}
+
+pub(super) async fn postgres(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+) -> sqlx::Result<StoredView> {
+    let (mut doc, links) = assignments(tx, user).await?;
     if links.is_empty() {
         return Ok(doc);
     }
@@ -143,14 +160,32 @@ mod tests {
             CREATE TEMP TABLE iam_permission_boundaries(identity_id uuid,policy_id uuid);")
             .execute(&mut *tx).await?;
         let user = Uuid::new_v4();
-        assert!(postgres(&mut tx, user).await?.group_names().is_empty());
+        assert!(group_names(&mut tx, user).await?.is_empty());
         sqlx::query("INSERT INTO iam_identities(id,user_id,status,transfer_mode) VALUES($1,$2,'active','soulbound')")
             .bind(Uuid::new_v4()).bind(user).execute(&mut *tx).await?;
-        assert!(postgres(&mut tx, user).await?.group_names().is_empty());
+        assert!(group_names(&mut tx, user).await?.is_empty());
+        sqlx::raw_sql("CREATE TEMP TABLE iam_policies(id uuid primary key,name text,description text,
+                version int,is_active bool,chain_policy_id int,created_at timestamptz default now());
+            CREATE TEMP TABLE iam_policy_statements(id uuid,policy_id uuid,sid text,effect text,
+                actions jsonb,resources jsonb,conditions jsonb,sort_order int);
+            INSERT INTO iam_policies(id) VALUES(gen_random_uuid());
+            INSERT INTO iam_policy_statements(policy_id,effect,actions,resources,conditions)
+                SELECT id,'allow','[17]','[]','[]' FROM iam_policies;
+            INSERT INTO iam_permission_boundaries SELECT i.id,p.id FROM iam_identities i CROSS JOIN iam_policies p;")
+            .execute(&mut *tx).await?;
+        assert!(group_names(&mut tx, user).await?.is_empty());
+        assert!(postgres(&mut tx, user).await.is_err());
+        sqlx::query("UPDATE iam_policy_statements SET actions='17'")
+            .execute(&mut *tx)
+            .await?;
+        assert!(group_names(&mut tx, user).await.is_err());
+        sqlx::query("DELETE FROM iam_permission_boundaries")
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("ALTER TABLE iam_role_sessions RENAME TO unavailable_sessions")
             .execute(&mut *tx)
             .await?;
-        assert!(postgres(&mut tx, user).await.is_err());
+        assert!(group_names(&mut tx, user).await.is_err());
         Ok(())
     }
 }

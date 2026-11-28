@@ -161,9 +161,7 @@ async fn inventory(
             Err(error) => return Ok(chain_error(error)),
         }
     } else {
-        let names = admin_inventory::stored_assignments(&mut tx, user)
-            .await?
-            .group_names();
+        let names = admin_inventory::group_names(&mut tx, user).await?;
         (names, Some(tx))
     };
     let client = match view {
