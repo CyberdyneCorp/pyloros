@@ -156,6 +156,54 @@ mod tests {
         assert!(!verifier.accepts("", payload, 1000));
     }
 
+    #[test]
+    fn subscription_metadata_and_period_end_have_independent_precedence() {
+        for (top, first, item_metadata, product, plan, expiry) in [
+            (
+                json!(0),
+                json!(123),
+                json!({"cyberdyne_product":"item"}),
+                "item",
+                None,
+                Some(0),
+            ),
+            (
+                json!("456"),
+                json!(123),
+                json!({}),
+                "subscription",
+                Some("base"),
+                Some(123),
+            ),
+            (
+                json!(0.5),
+                Value::Null,
+                json!({}),
+                "subscription",
+                Some("base"),
+                None,
+            ),
+        ] {
+            let event: Event = serde_json::from_value(json!({
+                "id":"evt_subscription", "type":"customer.subscription.updated",
+                "data":{"object":{
+                    "metadata":{"cyberdyne_product":"subscription","cyberdyne_plan":"base"},
+                    "current_period_end":top,
+                    "items":{"data":[
+                        {"price":{"metadata":item_metadata},"current_period_end":first},
+                        {"current_period_end":999}
+                    ]}
+                }}
+            }))
+            .unwrap();
+            assert_eq!(event.product(), Some((product, plan)));
+            assert_eq!(
+                event.expires().unwrap().map(|date| date.timestamp()),
+                expiry
+            );
+        }
+    }
+
     async fn billing_fixture() -> PgPool {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
