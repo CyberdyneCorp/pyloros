@@ -207,6 +207,21 @@ A separate read-only trial used the same 32- and 33-team fixture and two replica
 
 PostgreSQL statement statistics recorded zero shared-block reads and zero temporary blocks written for these queries. The representative 33-edge destination lookup and 32-team membership miss both used primary-key index-only scans with forced custom and generic plans. The folder model checks two inherited relations, which accounts for the two destination queries per request. These server execution times exclude round trips, pool acquisition and the rest of request processing. Distinguishing those costs requires separate timing.
 
+### Sensitivity to database response delay
+
+Two PostgreSQL 17.12 trials compared a permission inherited from teams with one inherited from teams and parent folders. The sampled folders had no parent edges, so both permissions yielded the same decisions on this fixture. The driver sent one request at a time, alternating replicas and tenants and randomizing the order of the two permissions. All 1,024 measured decisions matched.
+
+A relay forwarded PostgreSQL responses immediately or slept for 1 ms per response chunk before forwarding. The relay stayed in place in both configurations. These sleeps include local scheduling overhead and a chunk can contain multiple protocol messages.
+
+| Rules checked | Added delay per chunk | Median HTTP latency, trial 1 / trial 2 (ms) |
+|---|---:|---:|
+| Team and parent | 0 ms | 1.83 / 2.26 |
+| Team | 0 ms | 1.72 / 2.11 |
+| Team and parent | 1 ms | 19.75 / 19.67 |
+| Team | 1 ms | 18.09 / 18.02 |
+
+These single-request measurements show the cost of checking a second relation over a delayed connection. Production sizing still requires the deployed database path, graph and concurrent workload.
+
 ### Starting a ReBAC permission snapshot
 
 Each permission check opens a read-only repeatable-read transaction. Opening it with both modes in the initial SQL statement removes one round trip to PostgreSQL. Statement traces confirmed the change on direct, inherited and wide-graph checks.
