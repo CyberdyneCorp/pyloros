@@ -1,0 +1,2 @@
+- [x] Preserve the refusal audit across explicit commit rejection.
+- [x] Verify the pending challenge, HTTP outcome, audit history and retry.

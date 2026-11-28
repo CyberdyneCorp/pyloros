@@ -1,0 +1,1 @@
+Keep the result of the challenge commit while writing the refusal independently. Return the commit error to the caller after the audit attempt. Approval and invalid-link handling retain their existing transaction boundaries.

@@ -188,7 +188,11 @@ async fn decide(
         tx.commit().await?;
         return Ok(StatusCode::NO_CONTENT.into_response());
     }
-    tx.commit().await?;
+    let commit = match tx.commit().await {
+        Err(error @ sqlx::Error::Database(_)) if changed => Err(error),
+        Err(error) => return Err(error),
+        Ok(()) => Ok(()),
+    };
     let reason = if changed { "denied" } else { "invalid_token" };
     if write_activity(
         pool,
@@ -205,6 +209,7 @@ async fn decide(
     {
         eprintln!("could not record email-link refusal");
     }
+    commit?;
     Ok(if changed {
         StatusCode::NO_CONTENT.into_response()
     } else {
@@ -226,6 +231,48 @@ mod tests {
             let result = read_string(&headers, body, "token", 16, 128).await;
             assert_eq!(result.is_ok(), (16..=128).contains(&length));
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL; run just test-db"]
+    async fn rejected_denial_keeps_challenge_pending_and_audits_refusal() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE allowed_status (status text PRIMARY KEY);
+             INSERT INTO allowed_status VALUES ('pending');
+             CREATE TEMP TABLE magic_link_challenges (
+               id uuid, user_id uuid, token_hash text, expires_at timestamptz, decided_at timestamptz,
+               status text REFERENCES allowed_status DEFERRABLE INITIALLY DEFERRED
+             );
+             INSERT INTO magic_link_challenges VALUES
+               (gen_random_uuid(),gen_random_uuid(),'key',now()+interval '1 hour',NULL,'pending');
+             CREATE TEMP TABLE auth_events (subject_user_id uuid, activity text, outcome text, reason_code text);",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let origin = SessionOrigin {
+            ip: None,
+            user_agent: None,
+        };
+        let error = decide(&pool, "key", Action::Deny, origin, None)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(
+            error.as_database_error().unwrap().code().as_deref(),
+            Some("23503")
+        );
+        let recorded: bool = sqlx::query_scalar(
+            "SELECT count(*)=1 FROM auth_events a JOIN magic_link_challenges c ON c.user_id=a.subject_user_id
+             WHERE c.status='pending' AND c.decided_at IS NULL AND a.activity='magic_link_decision'
+               AND a.outcome='failure' AND a.reason_code='denied'",
+        ).fetch_one(&pool).await.unwrap();
+        assert!(recorded);
     }
 
     #[tokio::test]
