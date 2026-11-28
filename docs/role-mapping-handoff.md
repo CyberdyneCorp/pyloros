@@ -91,3 +91,17 @@ Also reconcile the grant or revocation audit for the target, client, role and ca
 With two active subscribers on a disposable PostgreSQL database, an injected delivery insertion failure rolled back the role change, audit and webhook records together. Both APIs returned HTTP 500 on an immediate failure. When PostgreSQL rejected the insert at commit, Pyloros returned HTTP 500 and the reference API returned HTTP 201 for a grant or HTTP 204 for a revocation. This held for both operators and delegated clients.
 
 After confirming rollback, retry the intended change once on the incoming writer and read the assignment again. In the rehearsal each retry committed the intended membership state, one audit entry, one event and two deliveries.
+
+## Reconciling a chain-backed assignment
+
+For chain-backed roles, check membership on the configured group contract before acting on a disputed grant or revocation. Resolve the client role's group ID and the user's linked identity token ID. For an organization-scoped assignment, use the organization-specific group. Read `getMembers(groupId)` and check for that identity token ID. Record the chain, contract and block used for the read so the result can be checked again.
+
+In a loopback migration rehearsal, the provider rejected gas estimation before submission. The existing-group cases covered operator and delegated grants and revocations, both globally and within an organization. The observed API and PostgreSQL results were:
+
+| Attempt | Reference API | Pyloros |
+| --- | --- | --- |
+| Grant into an existing group | HTTP 201, one grant audit and one queued webhook delivery | HTTP 502 for a contract rejection or 503 for a provider refusal, with no grant audit or delivery |
+| Revoke from an existing group | HTTP 204, one revocation audit and one queued webhook delivery | HTTP 502 or 503, with no revocation audit or delivery |
+| Grant requiring creation of an organization group | HTTP 500, with no grant audit or delivery | HTTP 500, with no grant audit or delivery |
+
+Each trial had one matching webhook subscriber. A success audit and a queued notification can therefore accompany a failed reference write. If the membership read still shows the previous state, reconcile any downstream action taken on that notification before retrying. For a write that reached submission, use its transaction hash and the receipt inspection procedure as well.
