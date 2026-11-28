@@ -1,0 +1,2 @@
+- [x] Implement the optional content inventory and document its grants.
+- [x] Verify persisted rule comparisons, position-only permissions and counts after overlapping HTTP imports.

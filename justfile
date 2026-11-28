@@ -45,8 +45,9 @@ db-client-id-overlaps *args:
     uv run --script scripts/client_id_overlaps.py "$@"
 
 # Count repeated statement positions in chain-linked IAM policies.
-db-iam-statement-positions:
-    uv run --script scripts/iam_statement_positions.py
+[positional-arguments]
+db-iam-statement-positions *args:
+    uv run --script scripts/iam_statement_positions.py "$@"
 
 # Count account password prefixes on the target PostgreSQL database.
 [positional-arguments]

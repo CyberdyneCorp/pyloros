@@ -169,3 +169,14 @@ An operator SHALL be able to read aggregate counts of affected chain-linked poli
 #### Scenario: Three rows occupy one position
 - **WHEN** an imported policy contains three statements at position zero
 - **THEN** that position contributes one affected policy, one repeated position and two excess rows regardless of statement content
+
+### Requirement: Count repeated stored IAM rule content
+The read-only inventory SHALL optionally count chain-linked policies with repeated rule content, repeated groups of rules within those policies and excess rows. Equality SHALL compare SID, effect, actions, resources and conditions using their stored PostgreSQL values independently of row ID and position.
+
+#### Scenario: Import renumbers duplicate rules
+- **WHEN** two rules in the same chain-linked policy have identical stored content and different positions
+- **THEN** the content inventory reports one affected policy, one repeated rule and one excess row
+
+#### Scenario: Different identifiers or content
+- **WHEN** two rules differ in SID, effect, actions, resources or conditions, or belong to different policies
+- **THEN** they do not form a repeated group together

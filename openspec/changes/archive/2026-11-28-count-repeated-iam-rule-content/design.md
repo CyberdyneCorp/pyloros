@@ -1,0 +1,1 @@
+Group within each chain-linked policy by SID, effect, actions, resources and conditions using PostgreSQL text and JSONB equality. Ignore the row UUID and sort order. Keep the existing position query separate to preserve its narrow column privileges. The result describes repetition and cannot establish its cause or whether removal is appropriate.
