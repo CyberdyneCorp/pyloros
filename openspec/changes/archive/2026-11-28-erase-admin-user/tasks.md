@@ -1,4 +1,4 @@
 - [x] Resolve account identifiers and erase or pseudonymise the related records.
 - [x] Implement transaction, audit, configured report text and webhook delivery.
 - [x] Compare the inventory, failure rollback, reports, concurrency and existing clients.
-- [ ] Verify active deletion hook dispatch.
+- [x] Verify active deletion hook dispatch.

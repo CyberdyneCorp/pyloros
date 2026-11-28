@@ -23,3 +23,14 @@ The service SHALL allow an authorized operator to erase an existing account and 
 
 - **WHEN** the deployment enables hooks and an active account-deletion hook requires a dispatcher that is unavailable
 - **THEN** return HTTP 503 before changing the account or recording a successful deletion.
+
+#### Scenario: Retry erasure during hook migration
+
+- **WHEN** the Rust service can dispatch only some active deletion hooks
+- **THEN** return HTTP 503, keep the subject's session usable, and record no deletion audit or hook execution.
+
+#### Scenario: Erasure across backends
+
+- **WHEN** either backend successfully erases an account created by the other
+- **THEN** return the same erasure report for equivalent records and record one deletion audit. Execute each selected deletion hook once.
+- **AND** a repeat deletion and a profile read using the erased account's prior session both return HTTP 404 on the peer.
