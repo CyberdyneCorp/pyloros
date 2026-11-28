@@ -20,22 +20,31 @@ if (response.status !== 200 || !/^text\\/html(?:;|$)/i.test(type)
 def check(image):
     image_id = local_image_id(image)
     cid = docker("create", "--network", "none", image_id)
+    deadline = monotonic() + 30
+    expired = "Console did not serve an HTML login page within 30 seconds"
+
+    def remaining():
+        seconds = deadline - monotonic()
+        if seconds <= 0:
+            raise ValueError(expired)
+        return seconds
+
     try:
-        docker("start", cid)
-        deadline = monotonic() + 30
-        while monotonic() < deadline:
-            if docker("inspect", "--format", "{{.State.Running}}", cid) != "true":
+        docker("start", cid, timeout=remaining())
+        while True:
+            if docker("inspect", "--format", "{{.State.Running}}", cid, timeout=remaining()) != "true":
                 raise ValueError("Console stopped before serving the login page")
             result = subprocess.run(
                 ["docker", "exec", cid, "node", "--input-type=module", "-e", PROBE],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=remaining(),
             )
             if result.returncode == 0:
                 return {"image_id": image_id, "path": "/login", "status": 200}
-            sleep(0.5)
-        raise ValueError("Console did not serve an HTML login page within 30 seconds")
+            sleep(min(0.5, remaining()))
+    except subprocess.TimeoutExpired as error:
+        raise ValueError(expired) from error
     finally:
-        docker("rm", "--force", "-v", cid)
+        docker("rm", "--force", "-v", cid, timeout=10)
 
 
 if __name__ == "__main__":
