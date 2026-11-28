@@ -264,6 +264,10 @@ Services authenticate at `POST /api/v1/auth/oauth2/token` with `grant_type=clien
 
 A resource server can authenticate with a service bearer and post a token to `/api/v1/auth/introspect`. Introspection checks the submitted token’s current revocation state and resolves user membership, entitlements, roles and permissions from PostgreSQL. A service can also read its live registration at `GET /api/v1/clients/me`.
 
+To check a service-client handoff, route registration and secret rotation to one backend and token issuance to the other. With shared PostgreSQL and signing settings, request a token with the new secret and another with the previous secret during its grace window. Use an issued token to call `GET /api/v1/clients/me` on the registration backend. Repeat with the two backends swapped.
+
+For introspection, send the resource server's service bearer in the `Authorization` header and the token being checked in the form field `token`. A request with only the form field receives HTTP 401. An authenticated request with an invalid token receives HTTP 200 and `{"active":false}`. Both handoff directions passed these checks with OIDC disabled.
+
 OAuth clients can submit a token to `POST /api/v1/auth/oauth2/revoke` using HTTP Basic or form credentials. Revoking a client-owned access or service token records its identifier. Revoking a client-owned refresh token ends its session and refresh family. Both backends enforce the shared PostgreSQL records when access-token revocation enforcement is enabled.
 
 Browser sessions rotate at `POST /api/v1/auth/refresh` using a refresh cookie or JSON token. Rotation preserves the login’s authentication time and methods and reloads account claims. Set `REFRESH_REUSE_GRACE_SECONDS` (default 10, range 0–60) to tolerate another tab presenting a recently rotated token. Reuse outside that interval revokes the session and its remaining refresh tokens.
