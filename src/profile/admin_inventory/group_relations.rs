@@ -224,7 +224,7 @@ async fn change(
     if let Some(chain) = chain {
         return match parent {
             Relation::UserPolicy(_) => {
-                user_policies::prepare_chain(&chain, tx, owner, target, add).await
+                user_policies::write_chain(&chain, tx, owner, target, add, actor, origin).await
             }
             Relation::Membership(_) => {
                 group_members::write_chain(&chain, tx, owner, target, add, actor, origin).await

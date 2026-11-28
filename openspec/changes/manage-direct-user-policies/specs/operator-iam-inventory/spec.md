@@ -18,3 +18,16 @@ An authorized operator SHALL be able to attach and detach a policy directly on a
 
 - **WHEN** recording the operator action fails
 - **THEN** the direct assignment and its effective access retain their previous state
+
+#### Scenario: Confirm a direct policy change on chain
+
+- **WHEN** an operator attaches or detaches a policy for a user with a chain identity
+- **THEN** confirm the submitted transaction on the configured policy contract before committing the operator audit and returning success
+- **AND** if PostgreSQL rejects the audit commit, return HTTP 500 and retain the confirmed on-chain change
+
+#### Scenario: PostgreSQL writers overlap on one direct grant
+
+- **WHEN** an attachment sees a committed link while another writer is removing it
+- **THEN** audit the attachment without reinserting the link
+- **WHEN** two first attachments both see an absent link
+- **THEN** the first commit succeeds and the conflicting insert fails without a second success audit
