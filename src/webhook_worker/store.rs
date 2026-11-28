@@ -216,4 +216,69 @@ mod postgres_tests {
             (first.id, first.event, first.body, 1)
         );
     }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn stopping_an_inactive_retry_preserves_the_recorded_attempt() {
+        let pool = fixture().await;
+        let start = Utc::now();
+        let lease = chrono::Duration::seconds(40);
+        let first = claim(&pool, start, start + lease, 1)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let result = Attempt {
+            code: Some(503),
+            error: Some("HTTP 503".into()),
+            duration_ms: 2,
+            excerpt: Some("retry later".into()),
+        };
+        record(&pool, &first, start, result).await.unwrap();
+        let active = "UPDATE webhook_subscriptions SET is_active=$1 WHERE id=$2";
+        sqlx::query(active)
+            .bind(false)
+            .bind(first.subscription)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let later = start + lease;
+        assert!(
+            claim(&pool, later, later + lease, 1)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        sqlx::query(active)
+            .bind(true)
+            .bind(first.subscription)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            claim(&pool, later, later + lease, 1)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let row: (String, i32, i32, String, i64) = sqlx::query_as(
+            "SELECT status, attempt_count, last_status_code, last_error,
+             (SELECT count(*) FROM webhook_delivery_attempts WHERE delivery_id=$1)
+             FROM webhook_deliveries WHERE id=$1",
+        )
+        .bind(first.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            row,
+            (
+                "failed".into(),
+                1,
+                503,
+                "subscription inactive; delivery stopped".into(),
+                1
+            )
+        );
+    }
 }

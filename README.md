@@ -147,6 +147,8 @@ By default, each service replica runs a PostgreSQL outbox worker when webhooks a
 
 After a receiver returns HTTP 429 on the first attempt, the worker schedules a retry in 4.5 to 5.5 seconds, including when the receiver sends a `Retry-After` header. A replacement worker uses the due time already stored in PostgreSQL. Delivery history retains the 429 response after a later attempt succeeds.
 
+If a subscription is disabled when its pending retry becomes due, the worker marks the delivery failed and keeps the previous HTTP attempt in its history. To resend the event, reactivate the subscription and request redelivery for the failed delivery ID. This starts a fresh retry budget and preserves earlier attempts.
+
 A receiver can process a webhook just before the worker loses its connection or stops. If the worker cannot record the acknowledgement, another worker can send the same event after its lease expires. Both requests carry the same `webhook-id` and body. Verify each signature, then record the message ID together with the business change in one transaction. If the ID was already processed, return a successful response. Delivery history counts attempts that the worker recorded, so a receiver can see more requests than the history shows. History retains the first 1,024 decoded response bytes. The worker supports up to eight nested gzip or deflate encodings, including encodings listed in separate header fields.
 
 Delivery history retains the first 1,024 decoded response bytes as a UTF-8 excerpt. Receivers can use gzip, zlib-wrapped deflate or raw deflate. A receiver can include the HTTP identity coding alongside deflate, in one header field or in separate fields. A 2xx response with any of these encodings acknowledges the delivery.
