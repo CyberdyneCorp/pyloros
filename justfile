@@ -31,6 +31,10 @@ db-writer-mode:
 db-commit-checks:
     uv run --script scripts/inspect_commit_checks.py
 
+# Count unrevoked passkeys by stored authenticator model and credential algorithm.
+db-passkey-models:
+    uv run --script scripts/passkey_models.py
+
 # Count account password prefixes on the target PostgreSQL database.
 db-password-schemes:
     uv run --script scripts/account_password_schemes.py
