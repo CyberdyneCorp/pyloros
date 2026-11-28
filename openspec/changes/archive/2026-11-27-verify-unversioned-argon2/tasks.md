@@ -1,0 +1,3 @@
+- [x] Resolve omitted Argon2 versions during verification.
+- [x] Verify historical encodings and refusal of mismatched digests.
+- [x] Exercise password changes and OAuth service credentials across both backends.

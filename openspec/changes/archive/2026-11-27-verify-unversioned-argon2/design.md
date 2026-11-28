@@ -1,0 +1,1 @@
+Parse the stored hash once. Supply version 16 when the parsed version is absent, then delegate verification to the Argon2 library. Keep all existing checks for the algorithm, parameters, salt and digest.

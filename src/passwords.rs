@@ -22,8 +22,12 @@ pub(crate) async fn password_worker<T: Send + 'static>(
 }
 
 pub(crate) fn matches_argon2(secret: &[u8], encoded: &str) -> bool {
-    PasswordHash::new(encoded)
-        .is_ok_and(|hash| Argon2::default().verify_password(secret, &hash).is_ok())
+    let Ok(mut hash) = PasswordHash::new(encoded) else {
+        return false;
+    };
+    // Historical encoders omitted the version field for Argon2 v1.0.
+    hash.version.get_or_insert(Version::V0x10.into());
+    Argon2::default().verify_password(secret, &hash).is_ok()
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -120,6 +124,20 @@ fn matches_bcrypt(password: &str, encoded: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn historical_argon2_hashes_without_a_version_use_v16() {
+        for stored in [
+            "$argon2d$m=2048,t=2,p=1$cHlsb3Jvcy10ZXN0LXNhbHQ$/nJ0Ja4NIY7sYLLdZJg/DAT/NZoBAKRGIxyY+Bryiys",
+            "$argon2i$m=2048,t=2,p=1$cHlsb3Jvcy10ZXN0LXNhbHQ$8gg/R7prLDmGPbtVbhGMoVSylz0+HRFdyDUf3fh4E3Y",
+            "$argon2id$m=2048,t=2,p=1$cHlsb3Jvcy10ZXN0LXNhbHQ$aT/k2Yyd5O27u79PVZvQ2ON2eCO2QfpmyXMIHSfiY0M",
+        ] {
+            assert!(matches_argon2(b"historical fixture", stored));
+            assert!(!matches_argon2(b"other fixture", stored));
+            let mismatched_version = stored.replace("$m=", "$v=19$m=");
+            assert!(!matches_argon2(b"historical fixture", &mismatched_version));
+        }
+    }
 
     #[tokio::test]
     async fn existing_hashes_and_missing_credentials() {
