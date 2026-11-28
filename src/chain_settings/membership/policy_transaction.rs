@@ -7,6 +7,8 @@ mod creation;
 mod deletion_tests;
 mod quantities;
 mod revert;
+#[cfg(test)]
+mod role_tests;
 mod submission;
 pub(super) use quantities::QuantityResult;
 
@@ -445,17 +447,6 @@ impl Chain {
         Ok(())
     }
 
-    pub(crate) async fn with_signer_lock<T>(
-        &self,
-        mut tx: Transaction<'_, Postgres>,
-        preparation: impl Future<Output = T>,
-    ) -> Result<T, sqlx::Error> {
-        self.lock_signer(&mut tx).await?;
-        let result = preparation.await;
-        tx.commit().await?;
-        Ok(result)
-    }
-
     pub(crate) async fn prepare_mutation(
         &self,
         mutation: &IamMutation<'_>,
@@ -540,12 +531,12 @@ impl Chain {
         Ok(())
     }
 
-    pub(crate) async fn prepare_role_membership(
+    pub(crate) async fn change_role_membership(
         &self,
         group_id: TokenId,
         identity: i32,
         add: bool,
-    ) -> Result<Vec<u8>, PrepareError> {
+    ) -> Result<(), PrepareError> {
         self.require_role_group(group_id).await?;
         let identity_id = TokenId::from(
             u32::try_from(identity)
@@ -564,7 +555,8 @@ impl Chain {
             }
             .abi_encode()
         };
-        self.prepare_contract(self.group.as_deref(), call).await
+        let envelope = self.prepare_envelope(self.group.as_deref(), call).await?;
+        self.submit_envelope(envelope).await.map(|_| ())
     }
 
     pub(crate) async fn prepare_role_group_removal(

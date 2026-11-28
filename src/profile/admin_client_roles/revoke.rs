@@ -77,14 +77,14 @@ impl Assignment {
         let global = format!("rp:{}:{}", self.client, self.key);
         let scoped = self.org.map(|org| format!("{global}@{org}"));
         if let Some(chain) = chain {
-            tx.commit().await?;
-            if let Some(response) = self
-                .prepare_membership(&state.pool, &chain, MembershipEdit::Revoke)
+            match self
+                .change_membership(&mut tx, &chain, MembershipEdit::Revoke, state)
                 .await?
             {
-                return Ok(response);
+                Err(response) => return Ok(*response),
+                Ok(true) => self.enqueue_revocation(&mut tx, state).await?,
+                Ok(false) => (),
             }
-            tx = state.pool.begin().await?;
         } else {
             let Some(global_id) = group_id(&mut tx, &global).await? else {
                 return Ok(missing_role(&self.client, &self.key));
@@ -144,12 +144,21 @@ impl Assignment {
             .bind(identity)
             .execute(&mut **tx)
             .await?;
+        self.enqueue_revocation(tx, state).await?;
+        Ok(None)
+    }
+
+    async fn enqueue_revocation(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        state: &Profile,
+    ) -> sqlx::Result<()> {
         if state.registration.webhooks {
             let mut data = self.metadata();
             data["user_id"] = json!(self.user);
             registration::enqueue_event(tx, "role.revoked", data, Utc::now()).await?;
         }
-        Ok(None)
+        Ok(())
     }
 }
 

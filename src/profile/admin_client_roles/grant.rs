@@ -113,14 +113,13 @@ impl Assignment {
             return Ok(error);
         }
         if let Some(chain) = chain {
-            tx.commit().await?;
             let edit = MembershipEdit::Grant {
                 delegated: matches!(actor, crate::admin_audit::Actor::Client(_)),
             };
-            return Ok(self
-                .prepare_membership(&state.pool, &chain, edit)
-                .await?
-                .unwrap_or_else(internal));
+            if let Err(error) = self.change_membership(&mut tx, &chain, edit, state).await? {
+                return Ok(*error);
+            }
+            return self.finish(tx, state, false, actor, origin).await;
         }
         let name = format!("rp:{}:{}", self.client, self.key);
         if global_key(&self.client, &name).is_none() {

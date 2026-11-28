@@ -14,3 +14,10 @@ An active service client with a valid bearer granting `roles:manage` SHALL be ab
 #### Scenario: Revoke an assignment
 - **WHEN** the service revokes the user's global or organization-scoped role
 - **THEN** remove the selected assignment and return HTTP 204
+
+#### Scenario: Confirm a chain-backed role assignment change
+
+- **WHEN** an authorized operator or delegated client grants or revokes a role backed by a group contract
+- **THEN** wait for a successful receipt for the selected group and identity before committing the assignment audit and subscribed deliveries
+- **AND** a scoped grant creates its group when needed, while revoking a missing scoped group records the request without emitting a role event
+- **AND** return HTTP 500 if PostgreSQL rejects the commit after the contract confirms the change

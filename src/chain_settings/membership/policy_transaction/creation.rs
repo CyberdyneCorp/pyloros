@@ -170,10 +170,7 @@ impl Chain {
         name: &str,
         description: Option<&str>,
     ) -> Result<OperatorGroup, PrepareError> {
-        let tx = self.group_creation_envelope(name, description).await?;
-        let entry = self
-            .create_directory_entry(tx, listGroupsCall {}, name, description)
-            .await?;
+        let entry = self.create_group_entry(name, description).await?;
         Ok(OperatorGroup {
             id: chain_uuid("group", entry.id),
             name: entry.name,
@@ -184,6 +181,16 @@ impl Chain {
             chain_group_id: chain_number(entry.id),
             created_at: None,
         })
+    }
+
+    pub(crate) async fn create_group_entry(
+        &self,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<CatalogEntry, PrepareError> {
+        let tx = self.group_creation_envelope(name, description).await?;
+        self.create_directory_entry(tx, listGroupsCall {}, name, description)
+            .await
     }
 
     async fn create_directory_entry<C: SolCall<Return = Vec<CatalogEntry>> + Clone>(

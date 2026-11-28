@@ -1,4 +1,4 @@
-//! Resolve the selected role group and prepare its membership transaction.
+//! Resolve the role group and confirm its membership change under the signer lock.
 use super::*;
 use crate::{chain_settings::Chain, login_http::problem};
 
@@ -30,106 +30,97 @@ impl MembershipEdit {
 
 impl Assignment {
     // A missing organization group makes a scoped revoke a successful no-op.
-    pub(super) async fn prepare_membership(
+    pub(super) async fn change_membership(
         &self,
-        pool: &PgPool,
+        tx: &mut Transaction<'_, Postgres>,
         chain: &Chain,
         edit: MembershipEdit,
-    ) -> Result<Option<Response>, sqlx::Error> {
+        state: &Profile,
+    ) -> Result<Result<bool, Box<Response>>, sqlx::Error> {
+        let group = match self.assignment_group(tx, chain, edit).await? {
+            Ok(Some(group)) => group,
+            Ok(None) => return Ok(Ok(false)),
+            Err(response) => return Ok(Err(response)),
+        };
+        let token = sqlx::query_scalar::<_, Option<i32>>(
+            "SELECT chain_token_id FROM iam_identities WHERE user_id=$1",
+        )
+        .bind(self.user)
+        .fetch_optional(&mut **tx)
+        .await?
+        .flatten();
+        let Some(token) = token else {
+            return Ok(Err(Box::new(edit.no_identity())));
+        };
+        if state.registration.hooks {
+            let (event, refusal) = match edit {
+                MembershipEdit::Grant { .. } => {
+                    ("role_granted", "Role grant hook dispatcher unavailable")
+                }
+                MembershipEdit::Revoke => (
+                    "role_revoked",
+                    "Role revocation hook dispatcher unavailable",
+                ),
+            };
+            if !self.queue_hook(tx, event).await? {
+                return Ok(Err(Box::new(problem(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    refusal,
+                ))));
+            }
+        }
+        Ok(chain
+            .change_role_membership(group, token, edit.granting())
+            .await
+            .map(|()| true)
+            .map_err(|e| Box::new(preparation_error(e))))
+    }
+
+    async fn assignment_group(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        chain: &Chain,
+        edit: MembershipEdit,
+    ) -> Result<Result<Option<alloy_primitives::U256>, Box<Response>>, sqlx::Error> {
+        chain.lock_signer(tx).await?;
         let inventory = match chain.snapshot().await {
             Ok(groups) => groups,
-            Err(error) => return Ok(Some(chain_error(error))),
+            Err(error) => return Ok(Err(Box::new(chain_error(error)))),
         };
         let Some(global) = inventory
             .groups
             .into_iter()
             .find(|g| global_key(&self.client, &g.name).as_deref() == Some(&self.key))
         else {
-            return Ok(Some(missing_role(&self.client, &self.key)));
+            return Ok(Err(Box::new(missing_role(&self.client, &self.key))));
         };
-        let group = if let Some(org) = self.org {
-            if edit.granting() {
-                let mut tx = pool.begin().await?;
-                if !self.is_member(&mut tx, org).await? {
-                    return Ok(Some(grant::not_member()));
-                }
-                tx.commit().await?;
-            }
-            let inventory = match chain.snapshot().await {
-                Ok(groups) => groups,
-                Err(error) => return Ok(Some(chain_error(error))),
-            };
-            let name = format!("{}@{org}", global.name);
-            match inventory.groups.into_iter().find(|g| g.name == name) {
-                Some(group) => group.id,
-                None if edit.granting() => {
-                    return Ok(Some(
-                        prepare_scoped_group(pool, chain, &name, &global.description).await?,
-                    ));
-                }
-                None => return Ok(None),
-            }
-        } else {
-            global.id
+        let Some(org) = self.org else {
+            return Ok(Ok(Some(global.id)));
         };
-        self.prepare_linked_membership(pool, chain, group, edit)
+        if edit.granting() && !self.is_member(tx, org).await? {
+            return Ok(Err(Box::new(grant::not_member())));
+        }
+        let name = format!("{}@{org}", global.name);
+        let inventory = match chain.snapshot().await {
+            Ok(groups) => groups,
+            Err(error) => return Ok(Err(Box::new(chain_error(error)))),
+        };
+        if let Some(group) = inventory
+            .groups
+            .into_iter()
+            .find(|group| group.name == name)
+        {
+            return Ok(Ok(Some(group.id)));
+        }
+        if !edit.granting() {
+            return Ok(Ok(None));
+        }
+        Ok(chain
+            .create_group_entry(&name, Some(&global.description))
             .await
-            .map(Some)
+            .map(|entry| Some(entry.id))
+            .map_err(|_| Box::new(internal())))
     }
-
-    async fn prepare_linked_membership(
-        &self,
-        pool: &PgPool,
-        chain: &Chain,
-        group: alloy_primitives::U256,
-        edit: MembershipEdit,
-    ) -> Result<Response, sqlx::Error> {
-        let linked: Option<i32> =
-            sqlx::query_scalar("SELECT chain_token_id FROM iam_identities WHERE user_id=$1")
-                .bind(self.user)
-                .fetch_optional(pool)
-                .await?
-                .flatten();
-        let Some(identity) = linked else {
-            return Ok(edit.no_identity());
-        };
-        let preparation = chain.prepare_role_membership(group, identity, edit.granting());
-        let response = match chain
-            .with_signer_lock(pool.begin().await?, preparation)
-            .await?
-        {
-            Err(error) => preparation_error(error),
-            Ok(_) => problem(
-                StatusCode::SERVICE_UNAVAILABLE,
-                match edit {
-                    MembershipEdit::Grant { .. } => "Blockchain role assignment unavailable",
-                    MembershipEdit::Revoke => "Blockchain role revocation unavailable",
-                },
-            ),
-        };
-        Ok(response)
-    }
-}
-
-async fn prepare_scoped_group(
-    pool: &PgPool,
-    chain: &Chain,
-    name: &str,
-    description: &str,
-) -> Result<Response, sqlx::Error> {
-    let preparation = chain.prepare_group_creation(name, Some(description));
-    Ok(
-        match chain
-            .with_signer_lock(pool.begin().await?, preparation)
-            .await?
-        {
-            Ok(_) => problem(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Blockchain role assignment unavailable",
-            ),
-            Err(_) => internal(),
-        },
-    )
 }
 
 #[cfg(test)]
@@ -146,7 +137,18 @@ mod tests {
         let chain = Chain::for_health_test("http://localhost".into());
         let mut writer = pool.begin().await.unwrap();
         chain.lock_signer(&mut writer).await.unwrap();
-        let scoped = prepare_scoped_group(&pool, &chain, "rp:client:reader@org", "reader");
+        let mut waiting = pool.begin().await.unwrap();
+        let assignment = Assignment {
+            user: Uuid::new_v4(),
+            org: Some(Uuid::new_v4()),
+            client: "client".into(),
+            key: "reader".into(),
+        };
+        let scoped = assignment.assignment_group(
+            &mut waiting,
+            &chain,
+            MembershipEdit::Grant { delegated: false },
+        );
         tokio::pin!(scoped);
         assert!(
             tokio::time::timeout(Duration::from_millis(100), &mut scoped)
@@ -154,11 +156,10 @@ mod tests {
                 .is_err()
         );
         writer.commit().await.unwrap();
-        // The test chain has no group contract, so preparation now fails locally.
+        // After the lock is released, catalog discovery reports the missing contracts.
         let response = tokio::time::timeout(Duration::from_secs(2), scoped)
             .await
-            .unwrap()
             .unwrap();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(matches!(response.unwrap(), Err(error) if !error.status().is_success()));
     }
 }

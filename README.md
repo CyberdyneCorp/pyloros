@@ -730,6 +730,12 @@ subject user, resolved client and role key. Scoped assignments also include
 the organization ID. Removing an organization membership queues one revocation
 per withdrawn scoped role. Audit, membership and delivery changes commit together.
 
+### Confirm chain-backed role assignments
+
+Operator and delegated role grants return HTTP 201 after the group contract confirms membership and PostgreSQL commits the audit. Revocations return HTTP 204. A first grant in an organization can require two transactions, one to create the scoped group and one to add its member. Revoking a role whose scoped group was never created returns HTTP 204 and records the request without a role event.
+
+A database commit failure after confirmation returns HTTP 500. Check the group's membership at the confirmed block before retrying. The pinned reference signer can also return a successful HTTP response and record a role event when it sends no transaction. When the chain inventory omits the identity, the unchanged admin console can still offer Grant after a confirmed assignment. Use the contract membership read below to verify the result.
+
 ### Verify chain-backed organization removal
 
 If the chain provider's identity inventory omits a user's token, the organization removal endpoint can return HTTP 204, clear the PostgreSQL membership and record an empty `revoked_roles` list while the token still belongs to the organization's role group on chain. The operator IAM and role views can also be empty in this case.

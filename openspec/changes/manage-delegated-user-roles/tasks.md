@@ -3,4 +3,5 @@
 - [x] Exercise the existing CLI, browser requests and concurrent requests on both backends.
 - [x] Compare chain group selection, identity lookup, unsigned transaction data and provider failures.
 - [x] Verify version-pinned PostgreSQL role hook dispatch for configured delegated writers.
-- [ ] Verify confirmed chain mutations and migration contracts for provider rejection and commit-time rollback.
+- [x] Confirm global and scoped chain grants and revocations, subscribed deliveries and rejected audit commits.
+- [ ] Resolve the migration contract for existing-group provider rejection.
