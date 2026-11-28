@@ -4,3 +4,4 @@
 - [x] Prepare unsigned chain calls and verify group selection, call data, provider failures, and contract reverts.
 - [ ] Resolve migration signoff for simultaneous edits and the response to a failed commit.
 - [ ] Implement and verify confirmed chain mutations and their audit and mapping changes.
+- [x] Rehearse simultaneous operator and delegated creates on two Rust replicas with reference inventory reads and an independent client write.
