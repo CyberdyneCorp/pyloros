@@ -228,6 +228,20 @@ After batching the two indexed destination lookups, a repeat of the statement pr
 
 In two fresh relay trials, all 1,024 measured decisions matched. With 1 ms of delay per response chunk, both the one-rule and two-rule permissions used 11–12 chunks. The median gap between those permissions fell from about 1.65 ms in each earlier trial to 0.04 ms and 0.01 ms. The change trades more database execution time per check for one fewer network exchange on this graph. Production throughput remains unmeasured.
 
+### Concurrent inherited checks over a delayed database connection
+
+Two Rust replicas checked permissions for two tenants against PostgreSQL 17.12 on the same host. Each short phase issued 128 requests, evenly split between allowed and denied users. Folders had 32 or 33 team edges. Half the checks used a team rule and half used team and parent rules. Each worker waited for its response before sending another request.
+
+The ranges cover four phases per configuration across two fresh databases. The relay applied the requested delay to each PostgreSQL response chunk. HTTP latency includes local scheduling. All 3,072 decisions matched the expected result.
+
+| HTTP workers | Checks/s, no added delay | Checks/s, 1 ms per chunk | HTTP p95, no added delay (ms) | HTTP p95, 1 ms per chunk (ms) |
+|---:|---:|---:|---:|---:|
+| 1 | 383–502 | 66–67 | 2.1–3.1 | 16.0–16.1 |
+| 8 | 854–1094 | 416–427 | 10.3–15.0 | 20.4–21.4 |
+| 16 | 1047–1102 | 667–746 | 23.1–26.3 | 25.4–29.4 |
+
+With the added delay, 16 workers completed roughly ten times as many checks per second as one worker. Their p95 latency rose from about 16 ms to 25–29 ms. These short runs measure concurrency on a warm graph. Sustained capacity and network latency on the deployment remain open.
+
 ### Starting a ReBAC permission snapshot
 
 Each permission check opens a read-only repeatable-read transaction. Opening it with both modes in the initial SQL statement removes one round trip to PostgreSQL. Statement traces confirmed the change on direct, inherited and wide-graph checks.
